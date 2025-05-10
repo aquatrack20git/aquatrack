@@ -10,9 +10,11 @@
     <meta name="description" content="AquaTrack - Sistema de Gestión de Lecturas de Agua" />
     <link rel="manifest" href="/manifest.json" />
     <title>AquaTrack - Registro de consumo de agua</title>
+    <!-- Precargar el módulo principal -->
+    <link rel="modulepreload" href="/src/main.tsx" />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx" crossorigin="anonymous"></script>
   </body>
 </html>
