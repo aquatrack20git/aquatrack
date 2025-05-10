@@ -6,8 +6,9 @@
       "use": "@vercel/static-build",
       "config": {
         "distDir": "dist",
-        "buildCommand": "npm install && npm run build",
-        "installCommand": "npm install --legacy-peer-deps"
+        "buildCommand": "npm ci && npm run build",
+        "installCommand": "npm ci --prefer-offline --no-audit --progress=false",
+        "nodeVersion": "18.x"
       }
     }
   ],
@@ -16,5 +17,8 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 } 
