@@ -325,7 +325,16 @@ const Readings = () => {
               fullWidth
               label="Medidor"
               value={formData.meter_id}
-              onChange={(e) => setFormData(prev => ({ ...prev, meter_id: e.target.value }))}
+              onChange={(e) => {
+                // Convertir a mayúsculas y eliminar caracteres no permitidos
+                const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                setFormData(prev => ({ ...prev, meter_id: value }));
+              }}
+              inputProps={{
+                style: { textTransform: 'uppercase' },
+                pattern: '[A-Z0-9]*',
+                title: 'Solo se permiten letras mayúsculas y números'
+              }}
               sx={{ mb: 2 }}
             >
               {meters.map((meter) => (
