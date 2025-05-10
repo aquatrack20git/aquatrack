@@ -1,54 +1,61 @@
-# React + TypeScript + Vite
+# AquaTrack - Sistema de Gestión de Lecturas de Agua
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistema web para la gestión y seguimiento de lecturas de medidores de agua, desarrollado con React, TypeScript y Supabase.
 
-Currently, two official plugins are available:
+## Características
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 📊 Gestión de lecturas de medidores de agua
+- 📱 Interfaz responsiva y moderna
+- 📈 Reportes de consumo por período
+- 📤 Exportación de datos a Excel
+- 🔐 Autenticación y control de acceso
+- 📸 Soporte para fotos de lecturas
+- 📝 Sistema de comentarios
 
-## Expanding the ESLint configuration
+## Tecnologías Utilizadas
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- React 18
+- TypeScript
+- Material-UI
+- Supabase (Backend y Base de datos)
+- Vite
+- XLSX (Exportación a Excel)
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## Requisitos
+
+- Node.js 16+
+- npm o yarn
+- Cuenta en Supabase
+
+## Instalación
+
+1. Clonar el repositorio:
+```bash
+git clone https://github.com/aquatrack20git/aquatrack.git
+cd aquatrack
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+2. Instalar dependencias:
+```bash
+npm install
 ```
+
+3. Configurar variables de entorno:
+Crear un archivo `.env` en la raíz del proyecto con las siguientes variables:
+```
+VITE_SUPABASE_URL=tu_url_de_supabase
+VITE_SUPABASE_ANON_KEY=tu_key_de_supabase
+```
+
+4. Iniciar el servidor de desarrollo:
+```bash
+npm run dev
+```
+
+## Despliegue
+
+El proyecto está configurado para ser desplegado en Vercel. Cada push a la rama principal desencadenará un nuevo despliegue.
+
+## Licencia
+
+MIT
