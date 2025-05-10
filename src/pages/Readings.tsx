@@ -321,9 +321,8 @@ const Readings = () => {
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <TextField
-              select
               fullWidth
-              label="Medidor"
+              label="Código de Medidor"
               value={formData.meter_id}
               onChange={(e) => {
                 // Convertir a mayúsculas y eliminar caracteres no permitidos
@@ -333,16 +332,15 @@ const Readings = () => {
               inputProps={{
                 style: { textTransform: 'uppercase' },
                 pattern: '[A-Z0-9]*',
-                title: 'Solo se permiten letras mayúsculas y números'
+                title: 'Solo se permiten letras mayúsculas y números',
+                maxLength: 50
               }}
+              error={!formData.meter_id || !meters.some(m => m.code_meter === formData.meter_id)}
+              helperText={!formData.meter_id ? 'El código de medidor es requerido' : 
+                         !meters.some(m => m.code_meter === formData.meter_id) ? 
+                         'El código de medidor no existe' : ''}
               sx={{ mb: 2 }}
-            >
-              {meters.map((meter) => (
-                <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                  {meter.code_meter} - {meter.location}
-                </MenuItem>
-              ))}
-            </TextField>
+            />
             <TextField
               fullWidth
               label="Valor"
