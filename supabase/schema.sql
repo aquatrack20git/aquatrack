@@ -64,17 +64,17 @@ ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Enable read access for all users" ON meters;
-DROP POLICY IF EXISTS "Enable insert for all users" ON meters;
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON meters;
 DROP POLICY IF EXISTS "Enable update for authenticated users" ON meters;
 DROP POLICY IF EXISTS "Enable delete for authenticated users" ON meters;
 
 DROP POLICY IF EXISTS "Enable read access for all users" ON readings;
-DROP POLICY IF EXISTS "Enable insert for all users" ON readings;
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON readings;
 DROP POLICY IF EXISTS "Enable update for authenticated users" ON readings;
 DROP POLICY IF EXISTS "Enable delete for authenticated users" ON readings;
 
 DROP POLICY IF EXISTS "Enable read access for all users" ON comments;
-DROP POLICY IF EXISTS "Enable insert for all users" ON comments;
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON comments;
 DROP POLICY IF EXISTS "Enable update for authenticated users" ON comments;
 DROP POLICY IF EXISTS "Enable delete for authenticated users" ON comments;
 
@@ -83,8 +83,8 @@ DROP POLICY IF EXISTS "Enable delete for authenticated users" ON comments;
 CREATE POLICY "Enable read access for all users" ON meters
     FOR SELECT USING (true);
 
-CREATE POLICY "Enable insert for all users" ON meters
-    FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable insert for authenticated users" ON meters
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "Enable update for authenticated users" ON meters
     FOR UPDATE USING (auth.role() = 'authenticated');
@@ -96,8 +96,8 @@ CREATE POLICY "Enable delete for authenticated users" ON meters
 CREATE POLICY "Enable read access for all users" ON readings
     FOR SELECT USING (true);
 
-CREATE POLICY "Enable insert for all users" ON readings
-    FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable insert for authenticated users" ON readings
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "Enable update for authenticated users" ON readings
     FOR UPDATE USING (auth.role() = 'authenticated');
@@ -109,8 +109,8 @@ CREATE POLICY "Enable delete for authenticated users" ON readings
 CREATE POLICY "Enable read access for all users" ON comments
     FOR SELECT USING (true);
 
-CREATE POLICY "Enable insert for all users" ON comments
-    FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable insert for authenticated users" ON comments
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "Enable update for authenticated users" ON comments
     FOR UPDATE USING (auth.role() = 'authenticated');

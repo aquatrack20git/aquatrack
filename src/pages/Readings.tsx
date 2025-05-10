@@ -18,13 +18,17 @@ import {
   IconButton,
   CircularProgress,
   MenuItem,
+  Alert,
+  Snackbar,
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon, Image as ImageIcon } from '@mui/icons-material';
 import { supabase } from '../config/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import type { Reading, Meter } from '../types';
 import { getCurrentPeriod } from '../utils/periodUtils';
 
 const Readings = () => {
+  const { isAuthenticated } = useAuth();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +42,11 @@ const Readings = () => {
   const [selectedPeriod, setSelectedPeriod] = useState(getCurrentPeriod());
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error'
+  });
 
   useEffect(() => {
     fetchData();
@@ -63,15 +72,21 @@ const Readings = () => {
 
       if (readingsError) throw readingsError;
       setReadings(readingsData || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching data:', error);
       setError('Error al cargar los datos');
+      showSnackbar('Error al cargar los datos', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenDialog = (reading?: Reading) => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
     if (reading) {
       setEditingReading(reading);
       setFormData({
@@ -98,9 +113,15 @@ const Readings = () => {
     setOpenDialog(false);
     setEditingReading(null);
     setImagePreview(null);
+    setError(null);
   };
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (file) {
       try {
@@ -112,19 +133,36 @@ const Readings = () => {
 
         if (uploadError) throw uploadError;
         setImagePreview(data.path);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading image:', error);
         setError('Error al subir la imagen');
+        showSnackbar('Error al subir la imagen', 'error');
       }
     }
   };
 
   const handleSubmit = async () => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
     try {
       // Validar que el valor sea un número
       const value = parseFloat(formData.value);
       if (isNaN(value)) {
         throw new Error('El valor debe ser un número');
+      }
+
+      // Verificar que el medidor existe
+      const { data: meter, error: meterError } = await supabase
+        .from('meters')
+        .select('code_meter')
+        .eq('code_meter', formData.meter_id)
+        .single();
+
+      if (meterError) {
+        throw new Error('El medidor seleccionado no existe');
       }
 
       if (editingReading) {
@@ -138,6 +176,7 @@ const Readings = () => {
           .eq('id', editingReading.id);
 
         if (error) throw error;
+        showSnackbar('Lectura actualizada exitosamente');
       } else {
         const { error } = await supabase
           .from('readings')
@@ -150,6 +189,7 @@ const Readings = () => {
           }]);
 
         if (error) throw error;
+        showSnackbar('Lectura guardada exitosamente');
       }
 
       handleCloseDialog();
@@ -157,24 +197,20 @@ const Readings = () => {
     } catch (error: any) {
       console.error('Error saving reading:', error);
       setError(error.message);
+      showSnackbar(error.message || 'Error al guardar la lectura', 'error');
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('¿Está seguro de eliminar esta lectura?')) {
-      try {
-        const { error } = await supabase
-          .from('readings')
-          .delete()
-          .eq('id', id);
+  const showSnackbar = (message: string, severity: 'success' | 'error' = 'success') => {
+    setSnackbar({
+      open: true,
+      message,
+      severity,
+    });
+  };
 
-        if (error) throw error;
-        fetchData();
-      } catch (error) {
-        console.error('Error deleting reading:', error);
-        setError('Error al eliminar la lectura');
-      }
-    }
+  const handleCloseSnackbar = () => {
+    setSnackbar(prev => ({ ...prev, open: false }));
   };
 
   if (loading) {
@@ -186,167 +222,180 @@ const Readings = () => {
   }
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Lecturas</Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => handleOpenDialog()}
-        >
-          Nueva Lectura
-        </Button>
-      </Box>
+    <Box sx={{ p: 3 }}>
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          Registro de Consumo de Agua
+        </Typography>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <>
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <TextField
+                select
+                label="Período"
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                sx={{ minWidth: 200 }}
+              >
+                {Array.from(new Set(readings.map(r => r.period))).map((period) => (
+                  <MenuItem key={period} value={period}>
+                    {period}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => handleOpenDialog()}
+                disabled={!isAuthenticated}
+              >
+                Nueva Lectura
+              </Button>
+            </Box>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Medidor</TableCell>
+                    <TableCell>Ubicación</TableCell>
+                    <TableCell>Valor</TableCell>
+                    <TableCell>Período</TableCell>
+                    <TableCell>Fecha</TableCell>
+                    <TableCell>Foto</TableCell>
+                    <TableCell>Acciones</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {readings.map((reading) => (
+                    <TableRow key={reading.id}>
+                      <TableCell>{reading.meter_id}</TableCell>
+                      <TableCell>
+                        {meters.find(m => m.code_meter === reading.meter_id)?.location || '-'}
+                      </TableCell>
+                      <TableCell>{reading.value}</TableCell>
+                      <TableCell>{reading.period}</TableCell>
+                      <TableCell>
+                        {new Date(reading.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        {reading.photo_url && (
+                          <IconButton
+                            size="small"
+                            onClick={() => window.open(reading.photo_url, '_blank')}
+                          >
+                            <ImageIcon />
+                          </IconButton>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleOpenDialog(reading)}
+                          disabled={!isAuthenticated}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        )}
+      </Paper>
 
-      <Box mb={3}>
-        <TextField
-          select
-          label="Período"
-          value={selectedPeriod}
-          onChange={(e) => setSelectedPeriod(e.target.value)}
-          fullWidth
-        >
-          {Array.from(new Set(readings.map(r => r.period))).map((period) => (
-            <MenuItem key={period} value={period}>
-              {period}
-            </MenuItem>
-          ))}
-        </TextField>
-      </Box>
-
-      {error && (
-        <Box mb={3}>
-          <Typography color="error">{error}</Typography>
-        </Box>
-      )}
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Código Medidor</TableCell>
-              <TableCell>Valor</TableCell>
-              <TableCell>Período</TableCell>
-              <TableCell>Foto</TableCell>
-              <TableCell>Fecha</TableCell>
-              <TableCell>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {readings.map((reading) => (
-              <TableRow key={reading.id}>
-                <TableCell>{reading.meter_id}</TableCell>
-                <TableCell>{reading.value}</TableCell>
-                <TableCell>{reading.period}</TableCell>
-                <TableCell>
-                  {reading.photo_url && (
-                    <IconButton
-                      color="primary"
-                      onClick={() => window.open(reading.photo_url, '_blank')}
-                    >
-                      <ImageIcon />
-                    </IconButton>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {new Date(reading.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <IconButton
-                    color="primary"
-                    onClick={() => handleOpenDialog(reading)}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    color="error"
-                    onClick={() => handleDelete(reading.id)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      <Dialog open={openDialog} onClose={handleCloseDialog}>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
           {editingReading ? 'Editar Lectura' : 'Nueva Lectura'}
         </DialogTitle>
         <DialogContent>
-          <TextField
-            select
-            fullWidth
-            label="Medidor"
-            value={formData.meter_id}
-            onChange={(e) => setFormData({ ...formData, meter_id: e.target.value })}
-            margin="normal"
-            required
-            disabled={!!editingReading}
-          >
-            {meters.map((meter) => (
-              <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                {meter.code_meter} - {meter.location}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            fullWidth
-            label="Valor"
-            type="number"
-            value={formData.value}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                setFormData({ ...formData, value });
-              }
-            }}
-            margin="normal"
-            required
-            inputProps={{ step: "any" }}
-          />
-          <TextField
-            fullWidth
-            label="Período"
-            value={formData.period}
-            onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-            margin="normal"
-            required
-            disabled={!!editingReading}
-          />
-          <Button
-            variant="contained"
-            component="label"
-            fullWidth
-            sx={{ mt: 2 }}
-          >
-            Subir Foto
-            <input
-              type="file"
-              hidden
-              accept="image/*"
-              onChange={handleImageUpload}
+          <Box sx={{ mt: 2 }}>
+            <TextField
+              select
+              fullWidth
+              label="Medidor"
+              value={formData.meter_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, meter_id: e.target.value }))}
+              sx={{ mb: 2 }}
+            >
+              {meters.map((meter) => (
+                <MenuItem key={meter.code_meter} value={meter.code_meter}>
+                  {meter.code_meter} - {meter.location}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              fullWidth
+              label="Valor"
+              type="number"
+              value={formData.value}
+              onChange={(e) => setFormData(prev => ({ ...prev, value: e.target.value }))}
+              sx={{ mb: 2 }}
             />
-          </Button>
-          {imagePreview && (
-            <Box mt={2}>
-              <img
-                src={imagePreview}
-                alt="Preview"
-                style={{ maxWidth: '100%', maxHeight: '200px' }}
+            <TextField
+              fullWidth
+              label="Período"
+              value={formData.period}
+              onChange={(e) => setFormData(prev => ({ ...prev, period: e.target.value }))}
+              sx={{ mb: 2 }}
+            />
+            <Button
+              variant="outlined"
+              component="label"
+              fullWidth
+              sx={{ mb: 2 }}
+            >
+              Subir Foto
+              <input
+                type="file"
+                hidden
+                accept="image/*"
+                onChange={handleImageUpload}
               />
-            </Box>
-          )}
+            </Button>
+            {imagePreview && (
+              <Box sx={{ mb: 2 }}>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{ maxWidth: '100%', maxHeight: 200 }}
+                />
+              </Box>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancelar</Button>
           <Button onClick={handleSubmit} variant="contained" color="primary">
-            {editingReading ? 'Actualizar' : 'Crear'}
+            {editingReading ? 'Actualizar' : 'Guardar'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
