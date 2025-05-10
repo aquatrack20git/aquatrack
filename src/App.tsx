@@ -17,11 +17,21 @@ import SetupAdmin from './pages/admin/SetupAdmin';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
+  console.log('PrivateRoute - Auth State:', { isAuthenticated, loading });
+  
+  if (loading) {
+    console.log('PrivateRoute - Loading state, showing nothing');
+    return null;
+  }
+  
+  console.log('PrivateRoute - Rendering:', isAuthenticated ? 'Protected Content' : 'Redirect to Login');
   return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" />;
 };
 
 function App() {
+  console.log('App - Initializing');
+  
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

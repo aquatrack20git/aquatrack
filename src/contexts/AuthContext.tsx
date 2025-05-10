@@ -17,14 +17,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('AuthProvider - Initializing auth check');
+    
     // Verificar sesión actual
     const checkUser = async () => {
       try {
+        console.log('AuthProvider - Checking current session');
         const { data: { session } } = await supabase.auth.getSession();
+        console.log('AuthProvider - Session check result:', session ? 'Session found' : 'No session');
         setUser(session?.user ?? null);
       } catch (error) {
-        console.error('Error checking auth session:', error);
+        console.error('AuthProvider - Error checking auth session:', error);
       } finally {
+        console.log('AuthProvider - Setting loading to false');
         setLoading(false);
       }
     };
@@ -32,34 +37,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkUser();
 
     // Suscribirse a cambios en la autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    console.log('AuthProvider - Setting up auth state change subscription');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('AuthProvider - Auth state changed:', event, session ? 'Session exists' : 'No session');
       setUser(session?.user ?? null);
     });
 
     return () => {
+      console.log('AuthProvider - Cleaning up auth subscription');
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string) => {
+    console.log('AuthProvider - Attempting login');
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (error) {
+        console.error('AuthProvider - Login error:', error);
+        throw error;
+      }
+      console.log('AuthProvider - Login successful');
     } catch (error) {
-      console.error('Error logging in:', error);
+      console.error('AuthProvider - Error in login function:', error);
       throw error;
     }
   };
 
   const logout = async () => {
+    console.log('AuthProvider - Attempting logout');
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      if (error) {
+        console.error('AuthProvider - Logout error:', error);
+        throw error;
+      }
+      console.log('AuthProvider - Logout successful');
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error('AuthProvider - Error in logout function:', error);
       throw error;
     }
   };
+
+  console.log('AuthProvider - Rendering with state:', { user: user ? 'User exists' : 'No user', loading });
 
   return (
     <AuthContext.Provider value={{
@@ -77,6 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
+    console.error('useAuth - Used outside of AuthProvider');
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
