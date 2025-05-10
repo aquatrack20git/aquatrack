@@ -1,8 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ToastContainer } from 'react-toastify';
+import { Box, Typography, Alert, useMediaQuery } from '@mui/material';
 import 'react-toastify/dist/ReactToastify.css';
+import { useEffect } from 'react';
 import Home from './pages/Home';
 import theme from './theme';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -16,21 +18,80 @@ import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
+const ErrorScreen = ({ message }: { message: string }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      p: 3,
+      textAlign: 'center',
+      backgroundColor: 'background.default',
+    }}
+  >
+    <Alert severity="error" sx={{ mb: 2, maxWidth: 600, width: '100%' }}>
+      {message}
+    </Alert>
+    <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+      Por favor, intenta recargar la página o contacta al administrador si el problema persiste.
+    </Typography>
+    <Typography variant="body2" color="text.secondary">
+      Si el problema persiste, intenta:
+      <ul style={{ textAlign: 'left', marginTop: '8px' }}>
+        <li>Limpiar la caché del navegador</li>
+        <li>Usar el modo incógnito</li>
+        <li>Actualizar el navegador a la última versión</li>
+      </ul>
+    </Typography>
+  </Box>
+);
+
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading } = useAuth();
-  console.log('PrivateRoute - Auth State:', { isAuthenticated, loading });
+  const { isAuthenticated, loading, error } = useAuth();
+  const location = useLocation();
+  const isMobile = useMediaQuery('(max-width:600px)');
   
-  if (loading) {
-    console.log('PrivateRoute - Loading state, showing nothing');
-    return null;
+  useEffect(() => {
+    console.log('PrivateRoute - Auth State:', { 
+      isAuthenticated, 
+      loading, 
+      error,
+      path: location.pathname,
+      isMobile
+    });
+  }, [isAuthenticated, loading, error, location.pathname, isMobile]);
+  
+  if (error) {
+    return <ErrorScreen message={error} />;
   }
   
-  console.log('PrivateRoute - Rendering:', isAuthenticated ? 'Protected Content' : 'Redirect to Login');
-  return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" />;
+  if (loading) {
+    return null; // El AuthProvider ya muestra el LoadingScreen
+  }
+  
+  if (!isAuthenticated) {
+    console.log('PrivateRoute - Redirecting to login');
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 function App() {
-  console.log('App - Initializing');
+  const isMobile = useMediaQuery('(max-width:600px)');
+  
+  useEffect(() => {
+    console.log('App - Initializing', {
+      isMobile,
+      userAgent: navigator.userAgent,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+    });
+  }, [isMobile]);
   
   return (
     <ThemeProvider theme={theme}>
@@ -56,11 +117,12 @@ function App() {
               <Route path="reports/readings" element={<ReadingsReport />} />
               <Route path="reports/comments" element={<CommentsReport />} />
             </Route>
+            <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
           </Routes>
         </Router>
       </AuthProvider>
       <ToastContainer
-        position="top-center"
+        position={isMobile ? "bottom-center" : "top-center"}
         autoClose={3000}
         hideProgressBar={false}
         newestOnTop
@@ -70,6 +132,7 @@ function App() {
         draggable
         pauseOnHover
         theme="light"
+        style={{ zIndex: 9999 }}
       />
     </ThemeProvider>
   );
