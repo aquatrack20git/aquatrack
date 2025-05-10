@@ -1,6 +1,6 @@
-import { createTheme } from '@mui/material/styles';
+import { createTheme, responsiveFontSizes } from '@mui/material/styles';
 
-const theme = createTheme({
+let theme = createTheme({
   palette: {
     primary: {
       main: '#006064',
@@ -40,6 +40,20 @@ const theme = createTheme({
     },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          WebkitTapHighlightColor: 'transparent',
+          WebkitTouchCallout: 'none',
+          WebkitUserSelect: 'none',
+          KhtmlUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none',
+          userSelect: 'none',
+          touchAction: 'manipulation',
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
@@ -48,6 +62,7 @@ const theme = createTheme({
           fontWeight: 600,
           padding: '10px 20px',
           boxShadow: 'none',
+          minHeight: '44px',
           '&:hover': {
             boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
           },
@@ -85,6 +100,9 @@ const theme = createTheme({
               borderWidth: 2,
             },
           },
+          '& .MuiInputBase-input': {
+            fontSize: '16px',
+          },
         },
       },
     },
@@ -114,6 +132,9 @@ const theme = createTheme({
       styleOverrides: {
         paper: {
           borderRadius: 16,
+          margin: '16px',
+          width: 'calc(100% - 32px)',
+          maxWidth: '100%',
         },
       },
     },
@@ -138,6 +159,31 @@ const theme = createTheme({
         },
       },
     },
+    MuiBottomNavigation: {
+      styleOverrides: {
+        root: {
+          height: '56px',
+          borderTop: '1px solid rgba(0, 0, 0, 0.12)',
+        },
+      },
+    },
+    MuiBottomNavigationAction: {
+      styleOverrides: {
+        root: {
+          minWidth: 'auto',
+          padding: '6px 12px',
+          '&.Mui-selected': {
+            paddingTop: '6px',
+          },
+        },
+        label: {
+          fontSize: '0.75rem',
+          '&.Mui-selected': {
+            fontSize: '0.75rem',
+          },
+        },
+      },
+    },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
@@ -155,6 +201,11 @@ const theme = createTheme({
   shape: {
     borderRadius: 8,
   },
+});
+
+theme = responsiveFontSizes(theme, {
+  breakpoints: ['xs', 'sm', 'md', 'lg', 'xl'],
+  factor: 2,
 });
 
 export default theme; 
