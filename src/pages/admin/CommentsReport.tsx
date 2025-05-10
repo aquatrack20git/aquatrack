@@ -19,10 +19,21 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
-import { Download as DownloadIcon } from '@mui/icons-material';
+import type { SelectChangeEvent } from '@mui/material';
+import { 
+  Download as DownloadIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+} from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Comment {
   id: number;
@@ -41,6 +52,7 @@ interface Meter {
 }
 
 const CommentsReport: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filters, setFilters] = useState({
@@ -54,6 +66,11 @@ const CommentsReport: React.FC = () => {
     severity: 'success' as 'success' | 'error',
   });
   const [loading, setLoading] = useState(true);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editingComment, setEditingComment] = useState<Comment | null>(null);
+  const [formData, setFormData] = useState({
+    notes: '',
+  });
 
   useEffect(() => {
     fetchMeters();
@@ -108,12 +125,97 @@ const CommentsReport: React.FC = () => {
     }
   };
 
-  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>) => {
+  const handleSelectChange = (e: SelectChangeEvent<string>) => {
     const { name, value } = e.target;
     setFilters(prev => ({
       ...prev,
-      [name as string]: value,
+      [name]: value,
     }));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleOpenDialog = (comment?: Comment) => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
+    if (comment) {
+      setEditingComment(comment);
+      setFormData({
+        notes: comment.notes,
+      });
+    } else {
+      setEditingComment(null);
+      setFormData({
+        notes: '',
+      });
+    }
+    setOpenDialog(true);
+  };
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setEditingComment(null);
+    setFormData({ notes: '' });
+  };
+
+  const handleSubmit = async () => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
+    try {
+      if (editingComment) {
+        const { error } = await supabase
+          .from('comments')
+          .update({
+            notes: formData.notes,
+            created_at: new Date().toISOString(),
+          })
+          .eq('id', editingComment.id);
+
+        if (error) throw error;
+        showSnackbar('Comentario actualizado exitosamente');
+      }
+
+      handleCloseDialog();
+      fetchComments();
+    } catch (error: any) {
+      console.error('Error saving comment:', error);
+      showSnackbar(error.message || 'Error al guardar el comentario', 'error');
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!isAuthenticated) {
+      showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
+      return;
+    }
+
+    if (window.confirm('¿Está seguro de eliminar este comentario?')) {
+      try {
+        const { error } = await supabase
+          .from('comments')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        showSnackbar('Comentario eliminado exitosamente');
+        fetchComments();
+      } catch (error: any) {
+        console.error('Error deleting comment:', error);
+        showSnackbar(error.message || 'Error al eliminar el comentario', 'error');
+      }
+    }
   };
 
   const handleExport = () => {
@@ -168,7 +270,7 @@ const CommentsReport: React.FC = () => {
               <Select
                 name="meter_id"
                 value={filters.meter_id}
-                onChange={handleFilterChange}
+                onChange={handleSelectChange}
                 label="Medidor"
               >
                 <MenuItem value="">Todos</MenuItem>
@@ -186,7 +288,7 @@ const CommentsReport: React.FC = () => {
               label="Fecha Inicio"
               type="date"
               value={filters.start_date}
-              onChange={handleFilterChange}
+              onChange={handleInputChange}
               fullWidth
               InputLabelProps={{ shrink: true }}
             />
@@ -197,7 +299,7 @@ const CommentsReport: React.FC = () => {
               label="Fecha Fin"
               type="date"
               value={filters.end_date}
-              onChange={handleFilterChange}
+              onChange={handleInputChange}
               fullWidth
               InputLabelProps={{ shrink: true }}
             />
@@ -214,6 +316,7 @@ const CommentsReport: React.FC = () => {
               <TableCell>Ubicación</TableCell>
               <TableCell>Comentario</TableCell>
               <TableCell>Fecha</TableCell>
+              <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -224,16 +327,59 @@ const CommentsReport: React.FC = () => {
                 <TableCell>{comment.meter.location}</TableCell>
                 <TableCell>{comment.notes}</TableCell>
                 <TableCell>{new Date(comment.created_at).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleOpenDialog(comment)}
+                    disabled={!isAuthenticated}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleDelete(comment.id)}
+                    disabled={!isAuthenticated}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
 
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editingComment ? 'Editar Comentario' : 'Nuevo Comentario'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              label="Comentario"
+              value={formData.notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              multiline
+              rows={4}
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancelar</Button>
+          <Button onClick={handleSubmit} variant="contained" color="primary">
+            {editingComment ? 'Guardar' : 'Crear'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
