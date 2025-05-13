@@ -92,7 +92,8 @@ const ReadingsManagement: React.FC = () => {
   useEffect(() => {
     // Filtrar lecturas cuando cambian los filtros
     const filtered = readings.filter(reading => {
-      const matchesMeter = !filters.meter_id || reading.meter_id === filters.meter_id;
+      const matchesMeter = !filters.meter_id || 
+        reading.meter.code_meter.toUpperCase().includes(filters.meter_id.toUpperCase());
       const matchesPeriod = !filters.period || reading.period.toUpperCase().includes(filters.period.toUpperCase());
       return matchesMeter && matchesPeriod;
     });
@@ -455,23 +456,16 @@ const ReadingsManagement: React.FC = () => {
       )}
 
       {/* Controles de búsqueda */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 3 }}>
         <Box display="flex" gap={2} alignItems="center">
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Medidor</InputLabel>
-            <Select
-              value={filters.meter_id}
-              onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
-              label="Medidor"
-            >
-              <MenuItem value="">Todos</MenuItem>
-              {meters.map((meter) => (
-                <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                  {meter.code_meter}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField
+            label="Medidor"
+            value={filters.meter_id}
+            onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
+            placeholder="Ej: MED-001"
+            sx={{ minWidth: 200 }}
+            helperText="Ingrese el código del medidor"
+          />
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel>Período</InputLabel>
             <Select

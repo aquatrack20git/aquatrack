@@ -2,18 +2,22 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
 
 console.log('Supabase Config - Checking environment variables:', {
   hasUrl: !!supabaseUrl,
   hasKey: !!supabaseAnonKey,
+  hasSiteUrl: !!siteUrl,
   urlLength: supabaseUrl?.length,
-  keyLength: supabaseAnonKey?.length
+  keyLength: supabaseAnonKey?.length,
+  siteUrl
 });
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase Config - Missing environment variables:', {
     url: supabaseUrl ? 'present' : 'missing',
-    key: supabaseAnonKey ? 'present' : 'missing'
+    key: supabaseAnonKey ? 'present' : 'missing',
+    siteUrl
   });
   throw new Error('Faltan las variables de entorno de Supabase')
 }
@@ -23,7 +27,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+    redirectTo: `${siteUrl}/admin/login`
   }
 });
 
