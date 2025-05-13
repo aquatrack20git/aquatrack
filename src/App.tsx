@@ -92,7 +92,7 @@ function App() {
       }
     });
   }, [isMobile]);
-  
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
