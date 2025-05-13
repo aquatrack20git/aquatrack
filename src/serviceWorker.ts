@@ -1,99 +1,56 @@
-const isLocalhost = Boolean(
-  window.location.hostname === 'localhost' ||
-    window.location.hostname === '[::1]' ||
-    window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
-);
+/// <reference types="vite-plugin-pwa/client" />
+import { registerSW } from 'virtual:pwa-register'
+import type { ServiceWorkerRegistration } from 'virtual:pwa-register'
 
-type Config = {
-  onSuccess?: (registration: ServiceWorkerRegistration) => void;
-  onUpdate?: (registration: ServiceWorkerRegistration) => void;
-};
-
-export function register(config?: Config) {
-  if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
-    const publicUrl = new URL(process.env.PUBLIC_URL, window.location.href);
-    if (publicUrl.origin !== window.location.origin) {
-      return;
-    }
-
-    window.addEventListener('load', () => {
-      const swUrl = `${process.env.PUBLIC_URL}/service-worker.js`;
-
-      if (isLocalhost) {
-        checkValidServiceWorker(swUrl, config);
-        navigator.serviceWorker.ready.then(() => {
-          console.log('This web app is being served cache-first by a service worker.');
-        });
-      } else {
-        registerValidSW(swUrl, config);
-      }
-    });
-  }
-}
-
-function registerValidSW(swUrl: string, config?: Config) {
-  navigator.serviceWorker
-    .register(swUrl)
-    .then((registration) => {
-      registration.onupdatefound = () => {
-        const installingWorker = registration.installing;
-        if (installingWorker == null) {
-          return;
-        }
-        installingWorker.onstatechange = () => {
-          if (installingWorker.state === 'installed') {
-            if (navigator.serviceWorker.controller) {
-              console.log('New content is available and will be used when all tabs for this page are closed.');
-              if (config && config.onUpdate) {
-                config.onUpdate(registration);
-              }
-            } else {
-              console.log('Content is cached for offline use.');
-              if (config && config.onSuccess) {
-                config.onSuccess(registration);
-              }
-            }
+// Función para limpiar el caché
+const clearCache = async () => {
+  if ('caches' in window) {
+    try {
+      const cacheNames = await caches.keys()
+      await Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheName.startsWith('workbox-') || 
+              cacheName.startsWith('api-cache-') || 
+              cacheName.startsWith('images-cache-')) {
+            return caches.delete(cacheName)
           }
-        };
-      };
-    })
-    .catch((error) => {
-      console.error('Error during service worker registration:', error);
-    });
-}
-
-function checkValidServiceWorker(swUrl: string, config?: Config) {
-  fetch(swUrl, {
-    headers: { 'Service-Worker': 'script' },
-  })
-    .then((response) => {
-      const contentType = response.headers.get('content-type');
-      if (
-        response.status === 404 ||
-        (contentType != null && contentType.indexOf('javascript') === -1)
-      ) {
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.unregister().then(() => {
-            window.location.reload();
-          });
-        });
-      } else {
-        registerValidSW(swUrl, config);
-      }
-    })
-    .catch(() => {
-      console.log('No internet connection found. App is running in offline mode.');
-    });
-}
-
-export function unregister() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-      .then((registration) => {
-        registration.unregister();
-      })
-      .catch((error) => {
-        console.error(error.message);
-      });
+          return Promise.resolve()
+        })
+      )
+      console.log('Cache limpiado exitosamente')
+    } catch (error) {
+      console.error('Error al limpiar el cache:', error)
+    }
   }
-} 
+}
+
+// Registrar el Service Worker con opciones mejoradas
+const updateSW = registerSW({
+  onNeedRefresh() {
+    if (confirm('Hay una nueva versión disponible. ¿Desea actualizar?')) {
+      clearCache().then(() => {
+        updateSW(true)
+      })
+    }
+  },
+  onOfflineReady() {
+    console.log('La aplicación está lista para uso offline')
+  },
+  immediate: true,
+  onRegistered(registration: ServiceWorkerRegistration | undefined) {
+    if (registration) {
+      // Limpiar caché al registrar
+      clearCache()
+      
+      // Verificar actualizaciones cada hora
+      setInterval(() => {
+        registration.update()
+      }, 60 * 60 * 1000)
+    }
+  }
+})
+
+// Limpiar caché al iniciar
+clearCache()
+
+export default updateSW 

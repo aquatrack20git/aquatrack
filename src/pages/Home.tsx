@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Paper,
@@ -30,7 +30,6 @@ import {
 import { toast } from 'react-toastify';
 import { supabase } from '../config/supabase';
 import { getCurrentPeriod } from '../utils/periodUtils';
-import type { Meter, Reading } from '../types';
 import banner from '../assets/images/banner.png';
 import sello from '../assets/images/sello.png';
 
@@ -54,60 +53,7 @@ interface PendingComment {
   timestamp: number;
 }
 
-// Función para comprimir imagen
-const compressImage = async (file: File): Promise<File> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            } else {
-              reject(new Error('Error al comprimir la imagen'));
-            }
-          },
-          'image/jpeg',
-          0.7
-        );
-      };
-    };
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-const Home = () => {
+const Home: React.FC = () => {
   const [meterCode, setMeterCode] = useState('');
   const [readingValue, setReadingValue] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -188,196 +134,6 @@ const Home = () => {
     }
   };
 
-  const saveReadingLocally = () => {
-    if (!meterCode.trim() || !readingValue) {
-      toast.error('Por favor complete todos los campos');
-      return;
-    }
-
-    const value = parseInt(readingValue);
-    if (isNaN(value)) {
-      toast.error('El valor debe ser un número entero');
-      return;
-    }
-
-    const pendingReading: PendingReading = {
-      meterCode: meterCode.trim(),
-      value,
-      period: getCurrentPeriod(),
-      timestamp: Date.now(),
-      photo: photo || undefined
-    };
-
-    setPendingReadings(prev => [...prev, pendingReading]);
-    toast.success('Lectura guardada localmente');
-    
-    // Limpiar formulario
-    setMeterCode('');
-    setReadingValue('');
-    setPhoto(null);
-  };
-
-  const syncPendingData = async () => {
-    if (pendingReadings.length === 0 && pendingPhotos.length === 0 && pendingComments.length === 0) {
-      toast.info('No hay datos pendientes para sincronizar');
-      return;
-    }
-
-    setSyncStatus('syncing');
-    const failedReadings: PendingReading[] = [];
-    const failedComments: PendingComment[] = [];
-
-    // Sincronizar comentarios
-    for (const comment of pendingComments) {
-      try {
-        const { error } = await supabase
-          .from('comments')
-          .insert([{
-            meter_id_comment: comment.meterCode,
-            notes: comment.notes
-          }]);
-
-        if (error) throw error;
-
-        // Si todo salió bien, eliminar el comentario de las pendientes
-        setPendingComments(prev => prev.filter(c => c.timestamp !== comment.timestamp));
-      } catch (error) {
-        console.error('Error al sincronizar comentario:', error);
-        failedComments.push(comment);
-      }
-    }
-
-    // Sincronizar lecturas
-    for (const reading of pendingReadings) {
-      try {
-        // Verificar si existe el medidor
-        const { data: existingMeter, error: meterCheckError } = await supabase
-          .from('meters')
-          .select('*')
-          .eq('code_meter', reading.meterCode)
-          .single();
-
-        if (meterCheckError && meterCheckError.code !== 'PGRST116') {
-          throw meterCheckError;
-        }
-
-        if (!existingMeter) {
-          // Crear medidor si no existe
-          const { error: meterError } = await supabase
-            .from('meters')
-            .insert([{
-              code_meter: reading.meterCode,
-              status: 'active'
-            }]);
-
-          if (meterError) throw meterError;
-        }
-
-        // Subir foto si existe
-        let photoUrl = '';
-        if (reading.photo) {
-          try {
-            console.log('Iniciando compresión de foto pendiente...');
-            // Comprimir la foto antes de subirla
-            const compressedPhoto = await compressImage(reading.photo);
-            console.log('Foto pendiente comprimida exitosamente');
-            
-            const fileExt = compressedPhoto.name.split('.').pop();
-            const fileName = `${reading.meterCode}-${reading.timestamp}.${fileExt}`;
-            
-            console.log('Intentando subir foto pendiente comprimida:', fileName);
-            
-            // Subir la foto al storage
-            const { error: uploadError, data } = await supabase.storage
-              .from('meter-photos')
-              .upload(fileName, compressedPhoto, {
-                cacheControl: '3600',
-                upsert: true
-              });
-
-            if (uploadError) {
-              console.error('Error al subir la foto pendiente:', uploadError);
-              throw uploadError;
-            }
-
-            console.log('Foto pendiente subida exitosamente:', data);
-
-            // Obtener la URL pública de la foto
-            const { data: { publicUrl } } = supabase.storage
-              .from('meter-photos')
-              .getPublicUrl(fileName);
-
-            photoUrl = publicUrl;
-            console.log('URL pública de la foto pendiente:', photoUrl);
-          } catch (photoError) {
-            console.error('Error al procesar la foto pendiente:', photoError);
-            toast.warning('La lectura se guardó pero hubo un error al subir la foto');
-          }
-        }
-
-        // Verificar lectura existente
-        const { data: existingReading, error: readingCheckError } = await supabase
-          .from('readings')
-          .select('*')
-          .eq('meter_id', reading.meterCode)
-          .eq('period', reading.period)
-          .single();
-
-        if (readingCheckError && readingCheckError.code !== 'PGRST116') {
-          throw readingCheckError;
-        }
-
-        if (existingReading) {
-          // Actualizar lectura existente
-          const { error: updateError } = await supabase
-            .from('readings')
-            .update({
-              value: reading.value,
-              photo_url: photoUrl || existingReading.photo_url
-            })
-            .eq('id', existingReading.id);
-
-          if (updateError) throw updateError;
-        } else {
-          // Crear nueva lectura
-          const { error: readingError } = await supabase
-            .from('readings')
-            .insert([{
-              meter_id: reading.meterCode,
-              value: reading.value,
-              photo_url: photoUrl,
-              period: reading.period
-            }]);
-
-          if (readingError) {
-            console.error('Error al crear lectura:', readingError);
-            throw readingError;
-          }
-        }
-
-        // Si todo salió bien, eliminar la lectura de las pendientes
-        setPendingReadings(prev => prev.filter(r => r.timestamp !== reading.timestamp));
-      } catch (error) {
-        console.error('Error al sincronizar lectura:', error);
-        failedReadings.push(reading);
-      }
-    }
-
-    if (failedReadings.length === 0 && failedComments.length === 0) {
-      toast.success('Todos los datos se sincronizaron correctamente');
-      setSyncStatus('success');
-    } else {
-      if (failedReadings.length > 0) {
-        setPendingReadings(failedReadings);
-      }
-      if (failedComments.length > 0) {
-        setPendingComments(failedComments);
-      }
-      toast.error(`${failedReadings.length} lecturas y ${failedComments.length} comentarios no pudieron sincronizarse`);
-      setSyncStatus('error');
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -422,126 +178,278 @@ const Home = () => {
       // Upload photo if exists
       let photoUrl = '';
       if (photo) {
-        try {
-          console.log('Iniciando compresión de foto...');
-          // Comprimir la foto antes de subirla
-          const compressedPhoto = await compressImage(photo);
-          console.log('Foto comprimida exitosamente');
-          
-          const fileExt = compressedPhoto.name.split('.').pop();
-          const fileName = `${meterCode}-${Date.now()}.${fileExt}`;
-          
-          console.log('Intentando subir foto comprimida:', fileName);
-          
-          // Subir la foto al storage
-          const { error: uploadError, data } = await supabase.storage
-            .from('meter-photos')
-            .upload(fileName, compressedPhoto, {
-              cacheControl: '3600',
-              upsert: true
-            });
+        const fileExt = photo.name.split('.').pop();
+        const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('photos')
+          .upload(fileName, photo);
 
-          if (uploadError) {
-            console.error('Error al subir la foto:', uploadError);
-            throw uploadError;
-          }
+        if (uploadError) throw uploadError;
 
-          console.log('Foto subida exitosamente:', data);
+        const { data: { publicUrl } } = supabase.storage
+          .from('photos')
+          .getPublicUrl(fileName);
 
-          // Obtener la URL pública de la foto
-          const { data: { publicUrl } } = supabase.storage
-            .from('meter-photos')
-            .getPublicUrl(fileName);
-
-          photoUrl = publicUrl;
-          console.log('URL pública de la foto:', photoUrl);
-        } catch (photoError) {
-          console.error('Error al procesar la foto:', photoError);
-          toast.warning('La lectura se guardó pero hubo un error al subir la foto');
-        }
+        photoUrl = publicUrl;
       }
 
-      // Check for existing reading in the same period
-      const { data: existingReading, error: readingCheckError } = await supabase
+      // Create reading
+      const { error: readingError } = await supabase
         .from('readings')
-        .select('*')
-        .eq('meter_id', meterCode)
-        .eq('period', period)
-        .single();
+        .insert([{
+          meter_id: meterCode.trim(),
+          value,
+          period,
+          photo_url: photoUrl,
+          created_at: new Date().toISOString()
+        }]);
 
-      if (readingCheckError && readingCheckError.code !== 'PGRST116') {
-        throw readingCheckError;
-      }
+      if (readingError) throw readingError;
 
-      if (existingReading) {
-        // Update existing reading
-        const { error: updateError } = await supabase
-          .from('readings')
-          .update({
-            value: value,
-            photo_url: photoUrl || existingReading.photo_url
-          })
-          .eq('id', existingReading.id);
-
-        if (updateError) throw updateError;
-      } else {
-        // Create new reading
-        const { error: readingError } = await supabase
-          .from('readings')
-          .insert([{
-            meter_id: meterCode.trim(),
-            value: value,
-            photo_url: photoUrl,
-            period
-          }]);
-
-        if (readingError) throw readingError;
-      }
-
-      toast.success('Lectura registrada exitosamente');
+      // Limpiar formulario
       setMeterCode('');
       setReadingValue('');
       setPhoto(null);
+      toast.success('Lectura registrada exitosamente');
     } catch (error: any) {
-      console.error('Error:', error);
-      toast.error(error.message || 'Error al registrar la lectura');
+      console.error('Error al guardar la lectura:', error);
+      toast.error(error.message || 'Error al guardar la lectura');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCommentSubmit = async () => {
+  const saveReadingLocally = () => {
+    if (!meterCode.trim() || !readingValue.trim()) {
+      toast.error('Por favor complete todos los campos');
+      return;
+    }
+
+    const value = parseInt(readingValue);
+    if (isNaN(value)) {
+      toast.error('El valor debe ser un número entero');
+      return;
+    }
+
+    const newReading: PendingReading = {
+      meterCode: meterCode.trim(),
+      value,
+      period: getCurrentPeriod(),
+      timestamp: Date.now(),
+      photo: photo || undefined
+    };
+
+    setPendingReadings(prev => [...prev, newReading]);
+    setMeterCode('');
+    setReadingValue('');
+    setPhoto(null);
+    toast.success('Lectura guardada localmente');
+  };
+
+  const handleSync = async () => {
+    if (!isOnline) {
+      toast.error('No hay conexión a internet');
+      return;
+    }
+
+    setSyncStatus('syncing');
     try {
-      if (!isOnline) {
-        // Guardar comentario localmente
-        const pendingComment: PendingComment = {
-          meterCode: meterCode.trim(),
-          notes: comment,
-          timestamp: Date.now()
-        };
-        setPendingComments(prev => [...prev, pendingComment]);
-        toast.success('Comentario guardado localmente');
-        setComment('');
-        setIsCommentDialogOpen(false);
-        return;
+      // Sincronizar lecturas pendientes
+      for (const reading of pendingReadings) {
+        const { error: meterError } = await supabase
+          .from('meters')
+          .insert([{
+            code_meter: reading.meterCode,
+            status: 'active'
+          }])
+          .select()
+          .single();
+
+        if (meterError && meterError.code !== '23505') { // Ignorar error de duplicado
+          throw meterError;
+        }
+
+        let photoUrl = '';
+        if (reading.photo) {
+          const fileExt = reading.photo.name.split('.').pop();
+          const fileName = `${reading.meterCode}_${reading.timestamp}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage
+            .from('photos')
+            .upload(fileName, reading.photo);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('photos')
+            .getPublicUrl(fileName);
+
+          photoUrl = publicUrl;
+        }
+
+        const { error: readingError } = await supabase
+          .from('readings')
+          .insert([{
+            meter_id: reading.meterCode,
+            value: reading.value,
+            period: reading.period,
+            photo_url: photoUrl,
+            created_at: new Date(reading.timestamp).toISOString()
+          }]);
+
+        if (readingError) throw readingError;
       }
 
-      const { error } = await supabase
-        .from('comments')
-        .insert([{
-          meter_id_comment: meterCode,
-          notes: comment
-        }]);
+      // Sincronizar comentarios pendientes
+      for (const comment of pendingComments) {
+        const { error: commentError } = await supabase
+          .from('comments')
+          .insert([{
+            meter_id: comment.meterCode,
+            notes: comment.notes,
+            created_at: new Date(comment.timestamp).toISOString()
+          }]);
 
-      if (error) throw error;
+        if (commentError) throw commentError;
+      }
 
-      toast.success('Comentario guardado exitosamente');
+      // Limpiar datos pendientes
+      setPendingReadings([]);
+      setPendingComments([]);
+      setPendingPhotos([]);
+      localStorage.removeItem('pendingReadings');
+      localStorage.removeItem('pendingComments');
+      localStorage.removeItem('pendingPhotos');
+
+      setSyncStatus('success');
+      toast.success('Datos sincronizados exitosamente');
+    } catch (error: any) {
+      console.error('Error al sincronizar:', error);
+      setSyncStatus('error');
+      toast.error(error.message || 'Error al sincronizar los datos');
+    }
+  };
+
+  const handleCommentSubmit = async () => {
+    if (!meterCode.trim() || !comment.trim()) {
+      toast.error('Por favor complete todos los campos');
+      return;
+    }
+
+    if (isOnline) {
+      try {
+        // Check if meter exists
+        const { data: existingMeter, error: meterCheckError } = await supabase
+          .from('meters')
+          .select('*')
+          .eq('code_meter', meterCode)
+          .single();
+
+        if (meterCheckError && meterCheckError.code !== 'PGRST116') {
+          throw meterCheckError;
+        }
+
+        if (!existingMeter) {
+          // Create new meter
+          const { error: meterError } = await supabase
+            .from('meters')
+            .insert([{
+              code_meter: meterCode.trim(),
+              status: 'active'
+            }]);
+
+          if (meterError) throw meterError;
+        }
+
+        // Create comment
+        const { error: commentError } = await supabase
+          .from('comments')
+          .insert([{
+            meter_id: meterCode.trim(),
+            notes: comment.trim(),
+            created_at: new Date().toISOString()
+          }]);
+
+        if (commentError) throw commentError;
+
+        setMeterCode('');
+        setComment('');
+        setIsCommentDialogOpen(false);
+        toast.success('Comentario registrado exitosamente');
+      } catch (error: any) {
+        console.error('Error al guardar el comentario:', error);
+        toast.error(error.message || 'Error al guardar el comentario');
+      }
+    } else {
+      // Guardar comentario localmente
+      const newComment: PendingComment = {
+        meterCode: meterCode.trim(),
+        notes: comment.trim(),
+        timestamp: Date.now()
+      };
+
+      setPendingComments(prev => [...prev, newComment]);
+      setMeterCode('');
       setComment('');
       setIsCommentDialogOpen(false);
-    } catch (error) {
-      console.error('Error:', error);
-      toast.error('Error al guardar el comentario');
+      toast.success('Comentario guardado localmente');
     }
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const compressedFile = new File([blob], file.name, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } else {
+                reject(new Error('Error al comprimir la imagen'));
+              }
+            },
+            'image/jpeg',
+            0.7
+          );
+        };
+        img.onerror = () => {
+          reject(new Error('Error al cargar la imagen'));
+        };
+      };
+      reader.onerror = () => {
+        reject(new Error('Error al leer el archivo'));
+      };
+    });
   };
 
   return (
@@ -683,29 +591,18 @@ const Home = () => {
                 '100%': { opacity: 1, transform: 'translateX(0)' }
               }
             }}
-            action={
-              <Button 
-                color="inherit" 
-                size="small" 
-                onClick={syncPendingData}
-                disabled={!isOnline || syncStatus === 'syncing'}
-                startIcon={<SyncIcon />}
-                sx={{ 
-                  minWidth: { xs: 'auto', sm: '100px' },
-                  px: { xs: 1, sm: 2 },
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                    transform: 'scale(1.05)'
-                  },
-                  transition: 'all 0.2s ease-in-out'
-                }}
-              >
-                {syncStatus === 'syncing' ? 'Sincronizando...' : 'Sincronizar'}
-              </Button>
-            }
           >
-            {pendingReadings.length} lectura(s) y {pendingComments.length} comentario(s) pendiente(s) de sincronizar
+            Tienes {pendingReadings.length} lecturas, {pendingPhotos.length} fotos y {pendingComments.length} comentarios pendientes de sincronizar.
+            {isOnline && (
+              <Button
+                startIcon={<SyncIcon />}
+                onClick={handleSync}
+                disabled={syncStatus === 'syncing'}
+                sx={{ ml: 2 }}
+              >
+                {syncStatus === 'syncing' ? 'Sincronizando...' : 'Sincronizar ahora'}
+              </Button>
+            )}
           </Alert>
         )}
 
@@ -841,10 +738,8 @@ const Home = () => {
               <Button
                 type="submit"
                 variant="contained"
-                color="primary"
                 fullWidth
                 disabled={isLoading}
-                startIcon={<SaveIcon />}
                 sx={{ 
                   py: { xs: 1.5, sm: 2 },
                   fontSize: { xs: '0.875rem', sm: '1rem' },
@@ -854,30 +749,25 @@ const Home = () => {
                   transition: 'all 0.2s ease-in-out'
                 }}
               >
-                {isLoading ? 'Guardando...' : isOnline ? 'Guardar lectura' : 'Guardar localmente'}
+                {isLoading ? 'Guardando...' : 'Guardar lectura'}
               </Button>
             </Grid>
             <Grid item xs={12}>
               <Button
                 variant="outlined"
-                color="secondary"
                 fullWidth
-                onClick={() => setIsCommentDialogOpen(true)}
                 startIcon={<CommentIcon />}
+                onClick={() => setIsCommentDialogOpen(true)}
                 sx={{ 
                   py: { xs: 1.5, sm: 2 },
                   fontSize: { xs: '0.875rem', sm: '1rem' },
-                  borderColor: 'secondary.main',
-                  color: 'secondary.main',
                   '&:hover': {
-                    borderColor: 'secondary.dark',
-                    backgroundColor: 'rgba(255, 143, 0, 0.04)',
                     transform: 'scale(1.02)'
                   },
                   transition: 'all 0.2s ease-in-out'
                 }}
               >
-                Ingresar comentario
+                Agregar comentario
               </Button>
             </Grid>
           </Grid>
@@ -983,34 +873,30 @@ const Home = () => {
             }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 2, gap: 1 }}>
+        <DialogActions sx={{ p: 2, pt: 0 }}>
           <Button 
             onClick={() => setIsCommentDialogOpen(false)}
-            startIcon={<CloseIcon />}
             sx={{ 
-              fontSize: { xs: '0.875rem', sm: '1rem' },
-              color: 'text.secondary',
-              '&:hover': {
-                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-              }
-            }}
-          >
-            Cancelar
-          </Button>
-          <Button 
-            onClick={handleCommentSubmit} 
-            variant="contained" 
-            color="primary"
-            startIcon={<SaveIcon />}
-            sx={{ 
-              fontSize: { xs: '0.875rem', sm: '1rem' },
+              mr: 1,
               '&:hover': {
                 transform: 'scale(1.05)'
               },
               transition: 'all 0.2s ease-in-out'
             }}
           >
-            Guardar
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleCommentSubmit}
+            sx={{ 
+              '&:hover': {
+                transform: 'scale(1.05)'
+              },
+              transition: 'all 0.2s ease-in-out'
+            }}
+          >
+            Guardar comentario
           </Button>
         </DialogActions>
       </Dialog>

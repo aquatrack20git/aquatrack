@@ -1,8 +1,8 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ToastContainer } from 'react-toastify';
-import { Box, Typography, Alert, useMediaQuery } from '@mui/material';
+import { Box, Typography, Alert, useMediaQuery, CircularProgress } from '@mui/material';
 import 'react-toastify/dist/ReactToastify.css';
 import { useEffect } from 'react';
 import Home from './pages/Home';
@@ -17,6 +17,7 @@ import ReadingsReport from './pages/admin/ReadingsReport';
 import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import Readings from './pages/Readings';
 
 const ErrorScreen = ({ message }: { message: string }) => (
   <Box
@@ -68,7 +69,19 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   if (loading) {
-    return null; // El AuthProvider ya muestra el LoadingScreen
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          backgroundColor: 'background.default'
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
   }
   
   if (!isAuthenticated) {
@@ -77,6 +90,44 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   return <>{children}</>;
+};
+
+// Componente para las rutas de administración
+const AdminRoutes = () => {
+  const location = useLocation();
+  const { isAuthenticated, loading } = useAuth();
+  
+  // Si estamos en /admin o /admin/, redirigir a /admin/dashboard
+  if (location.pathname === '/admin' || location.pathname === '/admin/') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  // Si no está autenticado y no está en login o setup, redirigir a login
+  if (!isAuthenticated && !loading && !location.pathname.includes('/admin/login') && !location.pathname.includes('/admin/setup')) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  return (
+    <Routes>
+      <Route path="login" element={<Login />} />
+      <Route path="setup" element={<SetupAdmin />} />
+      <Route
+        element={
+          <PrivateRoute>
+            <AdminLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="meters" element={<MetersManagement />} />
+        <Route path="users" element={<UsersManagement />} />
+        <Route path="readings" element={<ReadingsManagement />} />
+        <Route path="reports/readings" element={<ReadingsReport />} />
+        <Route path="reports/comments" element={<CommentsReport />} />
+        <Route index element={<Navigate to="dashboard" replace />} />
+      </Route>
+    </Routes>
+  );
 };
 
 function App() {
@@ -97,29 +148,17 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <Router>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/admin/login" element={<Login />} />
-            <Route path="/admin/setup" element={<SetupAdmin />} />
-            <Route
-              path="/admin"
-              element={
-                <PrivateRoute>
-                  <AdminLayout />
-                </PrivateRoute>
-              }
-            >
-              <Route index element={<Dashboard />} />
-              <Route path="meters" element={<MetersManagement />} />
-              <Route path="users" element={<UsersManagement />} />
-              <Route path="readings" element={<ReadingsManagement />} />
-              <Route path="reports/readings" element={<ReadingsReport />} />
-              <Route path="reports/comments" element={<CommentsReport />} />
-            </Route>
-            <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
-          </Routes>
-        </Router>
+        <Routes>
+          {/* Rutas públicas */}
+          <Route path="/" element={<Home />} />
+          <Route path="/readings" element={<Readings />} />
+          
+          {/* Rutas de administración */}
+          <Route path="/admin/*" element={<AdminRoutes />} />
+
+          {/* Ruta 404 */}
+          <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
+        </Routes>
       </AuthProvider>
       <ToastContainer
         position={isMobile ? "bottom-center" : "top-center"}

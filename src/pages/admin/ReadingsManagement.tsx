@@ -24,6 +24,7 @@ import {
   Select,
   MenuItem,
   TablePagination,
+  ButtonGroup,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -32,6 +33,7 @@ import {
   Image as ImageIcon,
   FileDownload as FileDownloadIcon,
   Assessment as AssessmentIcon,
+  PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
@@ -83,16 +85,69 @@ const ReadingsManagement: React.FC = () => {
   });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [printContent, setPrintContent] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchMeters();
-    fetchReadings();
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          setLoading(true);
+          setError(null);
+          await Promise.all([fetchMeters(), fetchReadings()]);
+        }
+      } catch (error: any) {
+        if (isMounted) {
+          setError(error.message);
+          showSnackbar(error.message || 'Error al cargar los datos', 'error');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+      // Reiniciar estados
+      setReadings([]);
+      setFilteredReadings([]);
+      setMeters([]);
+      setAvailablePeriods([]);
+      setOpen(false);
+      setEditingReading(null);
+      setFormData({
+        meter_id: '',
+        value: '',
+        period: '',
+        photo_url: '',
+      });
+      setError(null);
+      setSelectedImage(null);
+      setFilters({
+        meter_id: '',
+        period: '',
+      });
+      setPage(0);
+      setRowsPerPage(25);
+      setPrintContent(null);
+    };
   }, []);
 
   useEffect(() => {
     // Filtrar lecturas cuando cambian los filtros
     const filtered = readings.filter(reading => {
-      const matchesMeter = !filters.meter_id || reading.meter_id === filters.meter_id;
+      const meterCode = reading.meter?.code_meter?.toLowerCase() || '';
+      const meterLocation = reading.meter?.location?.toLowerCase() || '';
+      const searchTerm = filters.meter_id.toLowerCase();
+      
+      const matchesMeter = !filters.meter_id || 
+        meterCode.includes(searchTerm) ||
+        meterLocation.includes(searchTerm);
       const matchesPeriod = !filters.period || reading.period.toUpperCase().includes(filters.period.toUpperCase());
       return matchesMeter && matchesPeriod;
     });
@@ -129,7 +184,6 @@ const ReadingsManagement: React.FC = () => {
       if (error) throw error;
       setMeters(data || []);
     } catch (error: any) {
-      console.error('Error fetching meters:', error);
       setError(error.message);
     }
   };
@@ -146,8 +200,6 @@ const ReadingsManagement: React.FC = () => {
         .order('id', { ascending: false });
 
       if (error) throw error;
-
-      console.log('Total de lecturas obtenidas:', data?.length);
 
       // Mapeo de nombres de meses a números
       const meses: Record<string, number> = {
@@ -221,7 +273,6 @@ const ReadingsManagement: React.FC = () => {
       setReadings(sortedData);
       setFilteredReadings(sortedData);
     } catch (error: any) {
-      console.error('Error fetching readings:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -293,7 +344,6 @@ const ReadingsManagement: React.FC = () => {
       handleClose();
       fetchReadings();
     } catch (error: any) {
-      console.error('Error saving reading:', error);
       showSnackbar(error.message || 'Error al guardar la lectura', 'error');
     }
   };
@@ -310,7 +360,6 @@ const ReadingsManagement: React.FC = () => {
         showSnackbar('Lectura eliminada exitosamente');
         fetchReadings();
       } catch (error: any) {
-        console.error('Error deleting reading:', error);
         showSnackbar(error.message || 'Error al eliminar la lectura', 'error');
       }
     }
@@ -376,9 +425,8 @@ const ReadingsManagement: React.FC = () => {
     const reportData = Object.entries(consumptionByPeriod)
       .map(([period, data]) => ({
         'Período': period,
-        'Consumo Total': data.total,
-        'Cantidad de Medidores': data.count,
-        'Consumo Promedio': (data.total / data.count).toFixed(2)
+        'Consumo Total': data.total.toFixed(2),
+        'Cantidad de Medidores': data.count
       }))
       .sort((a, b) => {
         const [mesA, añoA] = a['Período'].split(' ');
@@ -406,13 +454,129 @@ const ReadingsManagement: React.FC = () => {
       { wch: 15 }, // Período
       { wch: 15 }, // Consumo Total
       { wch: 20 }, // Cantidad de Medidores
-      { wch: 15 }, // Consumo Promedio
     ];
     ws['!cols'] = wscols;
 
     // Generar el archivo Excel
     const fileName = `Reporte_Consumo_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`;
     XLSX.writeFile(wb, fileName);
+  };
+
+  const exportToPdf = () => {
+    // Obtener los datos filtrados
+    const data = filteredReadings.map(reading => ({
+      medidor: reading.meter?.code_meter || 'Medidor no encontrado',
+      lecturaAnterior: reading.previous_reading || '-',
+      lecturaActual: reading.value,
+      consumo: reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-',
+      periodo: reading.period,
+      fecha: new Date(reading.created_at).toLocaleDateString(),
+      ubicacion: reading.meter?.location || '-'
+    }));
+
+    // Crear el contenido HTML para imprimir
+    const content = `
+      <div class="print-content">
+        <div class="header">
+          <div class="title">Reporte de Lecturas</div>
+          <div class="date">Generado el: ${new Date().toLocaleDateString()}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Medidor</th>
+              <th>Lectura Anterior</th>
+              <th>Lectura Actual</th>
+              <th>Consumo</th>
+              <th>Período</th>
+              <th>Fecha</th>
+              <th>Ubicación</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(row => `
+              <tr>
+                <td>${row.medidor}</td>
+                <td>${row.lecturaAnterior}</td>
+                <td>${row.lecturaActual}</td>
+                <td>${row.consumo}</td>
+                <td>${row.periodo}</td>
+                <td>${row.fecha}</td>
+                <td>${row.ubicacion}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Agregar estilos de impresión al documento
+    const style = document.createElement('style');
+    style.textContent = `
+      @media print {
+        body * {
+          visibility: hidden;
+        }
+        .print-content, .print-content * {
+          visibility: visible;
+        }
+        .print-content {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+        .title {
+          font-size: 24px;
+          font-weight: bold;
+          margin-bottom: 10px;
+        }
+        .date {
+          font-size: 14px;
+          color: #666;
+          margin-bottom: 20px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+        }
+        th, td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: left;
+          font-size: 12px;
+        }
+        th {
+          background-color: #f5f5f5 !important;
+          font-weight: bold;
+        }
+        tr:nth-child(even) {
+          background-color: #f9f9f9 !important;
+        }
+        @page {
+          size: landscape;
+          margin: 1cm;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Crear un div temporal para el contenido de impresión
+    const printDiv = document.createElement('div');
+    printDiv.innerHTML = content;
+    document.body.appendChild(printDiv);
+
+    // Imprimir
+    window.print();
+
+    // Limpiar después de imprimir
+    document.body.removeChild(printDiv);
+    document.head.removeChild(style);
   };
 
   if (loading) {
@@ -426,21 +590,28 @@ const ReadingsManagement: React.FC = () => {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Gestión de Lecturas</Typography>
+        <Typography variant="h4">Registro de Lecturas</Typography>
         <Box display="flex" gap={2}>
+          <ButtonGroup variant="outlined">
+            <Button
+              startIcon={<FileDownloadIcon />}
+              onClick={exportToExcel}
+            >
+              Excel
+            </Button>
+            <Button
+              startIcon={<PdfIcon />}
+              onClick={exportToPdf}
+            >
+              PDF
+            </Button>
+          </ButtonGroup>
           <Button
             variant="outlined"
             startIcon={<AssessmentIcon />}
             onClick={exportConsumptionReport}
           >
             Reporte de Consumo
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<FileDownloadIcon />}
-            onClick={exportToExcel}
-          >
-            Exportar a Excel
           </Button>
           <Button variant="contained" onClick={() => handleOpen()}>
             Nueva Lectura
@@ -457,21 +628,13 @@ const ReadingsManagement: React.FC = () => {
       {/* Controles de búsqueda */}
       <Paper sx={{ p: 2, mb: 3 }}>
         <Box display="flex" gap={2} alignItems="center">
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Medidor</InputLabel>
-            <Select
-              value={filters.meter_id}
-              onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
-              label="Medidor"
-            >
-              <MenuItem value="">Todos</MenuItem>
-              {meters.map((meter) => (
-                <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                  {meter.code_meter}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField
+            label="Buscar Medidor"
+            value={filters.meter_id}
+            onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
+            placeholder="Buscar por código o ubicación"
+            sx={{ minWidth: 200 }}
+          />
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel>Período</InputLabel>
             <Select
@@ -521,7 +684,7 @@ const ReadingsManagement: React.FC = () => {
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((reading) => (
                 <TableRow key={reading.id}>
-                  <TableCell>{reading.meter.code_meter}</TableCell>
+                  <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
                   <TableCell>{reading.previous_reading || '-'}</TableCell>
                   <TableCell>{reading.value}</TableCell>
                   <TableCell>{reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-'}</TableCell>

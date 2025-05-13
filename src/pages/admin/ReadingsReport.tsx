@@ -86,9 +86,6 @@ const ReadingsReport: React.FC = () => {
         `)
         .order('created_at', { ascending: false });
 
-      if (filters.meter_id) {
-        query = query.eq('meter_id', filters.meter_id);
-      }
       if (filters.period) {
         query = query.eq('period', filters.period);
       }
@@ -102,18 +99,28 @@ const ReadingsReport: React.FC = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setReadings(data || []);
+
+      const filteredData = data?.filter(reading => {
+        if (!filters.meter_id) return true;
+        const searchTerm = filters.meter_id.toLowerCase();
+        return (
+          reading.meter?.code_meter?.toLowerCase().includes(searchTerm) ||
+          reading.meter?.location?.toLowerCase().includes(searchTerm)
+        );
+      }) || [];
+
+      setReadings(filteredData);
     } catch (error) {
       console.error('Error fetching readings:', error);
       showSnackbar('Error al cargar las lecturas', 'error');
     }
   };
 
-  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>) => {
+  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFilters(prev => ({
       ...prev,
-      [name as string]: value,
+      [name]: value,
     }));
   };
 
@@ -157,22 +164,14 @@ const ReadingsReport: React.FC = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={3}>
-            <FormControl fullWidth>
-              <InputLabel>Medidor</InputLabel>
-              <Select
-                name="meter_id"
-                value={filters.meter_id}
-                onChange={handleFilterChange}
-                label="Medidor"
-              >
-                <MenuItem value="">Todos</MenuItem>
-                {meters.map((meter) => (
-                  <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                    {meter.code_meter} - {meter.location}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <TextField
+              name="meter_id"
+              label="Buscar Medidor"
+              value={filters.meter_id}
+              onChange={handleFilterChange}
+              placeholder="Buscar por código o ubicación"
+              fullWidth
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <TextField
@@ -224,8 +223,8 @@ const ReadingsReport: React.FC = () => {
             {readings.map((reading) => (
               <TableRow key={reading.id}>
                 <TableCell>{reading.id}</TableCell>
-                <TableCell>{reading.meter.code_meter}</TableCell>
-                <TableCell>{reading.meter.location}</TableCell>
+                <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
+                <TableCell>{reading.meter?.location || '-'}</TableCell>
                 <TableCell>{reading.value}</TableCell>
                 <TableCell>{reading.period}</TableCell>
                 <TableCell>{new Date(reading.created_at).toLocaleDateString()}</TableCell>

@@ -30,7 +30,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const drawerWidth = 240;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin' },
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
   { text: 'Medidores', icon: <WaterDropIcon />, path: '/admin/meters' },
   { text: 'Usuarios', icon: <PeopleIcon />, path: '/admin/users' },
   { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings' },
@@ -66,6 +66,12 @@ const AdminLayout: React.FC = () => {
     }
   };
 
+  const getCurrentTitle = () => {
+    const currentPath = location.pathname;
+    const menuItem = menuItems.find(item => currentPath.startsWith(item.path));
+    return menuItem?.text || 'Admin';
+  };
+
   const drawer = (
     <div>
       <Toolbar>
@@ -78,7 +84,7 @@ const AdminLayout: React.FC = () => {
         {menuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
-              selected={location.pathname === item.path}
+              selected={location.pathname.startsWith(item.path)}
               onClick={() => handleNavigation(item.path)}
             >
               <ListItemIcon>{item.icon}</ListItemIcon>
@@ -121,7 +127,7 @@ const AdminLayout: React.FC = () => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div">
-            {menuItems.find(item => item.path === location.pathname)?.text || 'Admin'}
+            {getCurrentTitle()}
           </Typography>
         </Toolbar>
       </AppBar>
@@ -134,7 +140,7 @@ const AdminLayout: React.FC = () => {
           open={mobileOpen}
           onClose={handleDrawerToggle}
           ModalProps={{
-            keepMounted: true, // Better open performance on mobile.
+            keepMounted: true,
           }}
           sx={{
             '& .MuiDrawer-paper': {
@@ -153,6 +159,8 @@ const AdminLayout: React.FC = () => {
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           mt: '64px',
+          minHeight: 'calc(100vh - 64px)',
+          backgroundColor: 'background.default'
         }}
       >
         <Outlet />

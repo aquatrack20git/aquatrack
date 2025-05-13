@@ -27,9 +27,33 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
     flowType: 'pkce',
-    redirectTo: `${siteUrl}/admin/login`
+    storage: {
+      getItem: (key) => {
+        try {
+          const value = sessionStorage.getItem(key);
+          return value ? JSON.parse(value) : null;
+        } catch (error) {
+          console.error('Error reading from storage:', error);
+          return null;
+        }
+      },
+      setItem: (key, value) => {
+        try {
+          sessionStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+          console.error('Error writing to storage:', error);
+        }
+      },
+      removeItem: (key) => {
+        try {
+          sessionStorage.removeItem(key);
+        } catch (error) {
+          console.error('Error removing from storage:', error);
+        }
+      }
+    }
   }
 });
 
