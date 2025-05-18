@@ -180,17 +180,40 @@ const Home: React.FC = () => {
       if (photo) {
         const fileExt = photo.name.split('.').pop();
         const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from('photos')
-          .upload(fileName, photo);
+        try {
+          // Verificar que el bucket existe
+          const { data: buckets, error: bucketsError } = await supabase
+            .storage
+            .listBuckets();
+          
+          if (bucketsError) throw bucketsError;
+          
+          const bucketExists = buckets?.some(b => b.name === 'meter-photos');
+          if (!bucketExists) {
+            throw new Error('El bucket meter-photos no existe. Por favor, contacta al administrador.');
+          }
 
-        if (uploadError) throw uploadError;
+          const { error: uploadError, data } = await supabase.storage
+            .from('meter-photos')
+            .upload(fileName, photo);
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('photos')
-          .getPublicUrl(fileName);
+          if (uploadError) {
+            if (uploadError.message.includes('bucket')) {
+              throw new Error('Error de acceso al bucket. Verifica tus permisos.');
+            }
+            throw uploadError;
+          }
 
-        photoUrl = publicUrl;
+          const { data: { publicUrl } } = supabase.storage
+            .from('meter-photos')
+            .getPublicUrl(fileName);
+
+          photoUrl = publicUrl;
+        } catch (error: any) {
+          console.error('Error al subir la foto:', error);
+          toast.error(error.message || 'Error al subir la foto');
+          return;
+        }
       }
 
       // Create reading
@@ -274,13 +297,13 @@ const Home: React.FC = () => {
           const fileExt = reading.photo.name.split('.').pop();
           const fileName = `${reading.meterCode}_${reading.timestamp}.${fileExt}`;
           const { error: uploadError } = await supabase.storage
-            .from('photos')
+            .from('meter-photos')
             .upload(fileName, reading.photo);
 
           if (uploadError) throw uploadError;
 
           const { data: { publicUrl } } = supabase.storage
-            .from('photos')
+            .from('meter-photos')
             .getPublicUrl(fileName);
 
           photoUrl = publicUrl;
