@@ -211,7 +211,11 @@ const Home: React.FC = () => {
           photoUrl = publicUrl;
         } catch (error: any) {
           console.error('Error al subir la foto:', error);
-          toast.error(error.message || 'Error al subir la foto');
+          let mensajeError = (error instanceof Error) ? (error.message || "Error al subir la foto") : "Error al subir la foto";
+          if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
+             mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
+          }
+          toast.error(mensajeError);
           return;
         }
       }
@@ -300,7 +304,14 @@ const Home: React.FC = () => {
             .from('meter-photos')
             .upload(fileName, reading.photo);
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            let mensajeError = (uploadError instanceof Error) ? (uploadError.message || "Error al sincronizar") : "Error al sincronizar";
+            if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
+               mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
+            }
+            toast.error(mensajeError);
+            throw uploadError;
+          }
 
           const { data: { publicUrl } } = supabase.storage
             .from('meter-photos')
