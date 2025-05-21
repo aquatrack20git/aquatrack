@@ -154,6 +154,17 @@ const Home: React.FC = () => {
 
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
+
+        // Si estamos offline, guardar la foto en pendingPhotos
+        if (!isOnline) {
+          const newPendingPhoto: PendingPhoto = {
+            meterCode: meterCode.trim(),
+            file: compressedFile,
+            timestamp: Date.now()
+          };
+          setPendingPhotos(prev => [...prev, newPendingPhoto]);
+          showSnackbar('Foto guardada localmente. Se sincronizará cuando vuelvas a tener conexión', 'info');
+        }
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
         showSnackbar('Ups, hubo un problema al procesar la foto. ¿Podrías intentarlo de nuevo?', 'warning');
@@ -178,94 +189,115 @@ const Home: React.FC = () => {
       if (!meterCode.trim()) {
         throw new Error('El código del medidor es requerido');
       }
-      
-      // Check if meter exists
-      const { data: existingMeter, error: meterCheckError } = await supabase
-        .from('meters')
-        .select('*')
-        .eq('code_meter', meterCode)
-        .single();
 
-      if (meterCheckError && meterCheckError.code !== 'PGRST116') {
-        throw meterCheckError;
-      }
-
-      if (!existingMeter) {
-        // Create new meter
-        const { error: meterError } = await supabase
+      if (isOnline) {
+        // Check if meter exists
+        const { data: existingMeter, error: meterCheckError } = await supabase
           .from('meters')
+          .select('*')
+          .eq('code_meter', meterCode)
+          .single();
+
+        if (meterCheckError && meterCheckError.code !== 'PGRST116') {
+          throw meterCheckError;
+        }
+
+        if (!existingMeter) {
+          // Create new meter
+          const { error: meterError } = await supabase
+            .from('meters')
+            .insert([{
+              code_meter: meterCode.trim(),
+              status: 'active'
+            }]);
+
+          if (meterError) throw meterError;
+        }
+
+        // Upload photo if exists
+        let photoUrl = '';
+        if (photo) {
+          const fileExt = photo.name.split('.').pop();
+          const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
+          try {
+            console.log('Intentando subir archivo:', fileName);
+            
+            // Intentar subir directamente
+            const { error: uploadError, data } = await supabase.storage
+              .from('meter-photos')
+              .upload(fileName, photo, {
+                cacheControl: '3600',
+                upsert: false
+              });
+
+            if (uploadError) {
+              console.error('Error al subir archivo:', uploadError);
+              if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+                throw new Error('El bucket de fotos no está disponible. Por favor, contacta al administrador para que cree el bucket "meter-photos" en Supabase.');
+              }
+              if (uploadError.message.includes('security policy')) {
+                throw new Error('No tienes permisos para subir fotos. Por favor, contacta al administrador para verificar los permisos de acceso.');
+              }
+              throw uploadError;
+            }
+
+            console.log('Archivo subido exitosamente:', data);
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('meter-photos')
+              .getPublicUrl(fileName);
+
+            console.log('URL pública generada:', publicUrl);
+            photoUrl = publicUrl;
+          } catch (error: any) {
+            console.error('Error al subir la foto:', error);
+            let mensajeError = (error instanceof Error) ? (error.message || "Error al subir la foto") : "Error al subir la foto";
+            if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
+               mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
+            }
+            showSnackbar(mensajeError, 'error');
+            return;
+          }
+        }
+
+        // Create reading
+        const { error: readingError } = await supabase
+          .from('readings')
           .insert([{
-            code_meter: meterCode.trim(),
-            status: 'active'
+            meter_id: meterCode.trim(),
+            value,
+            period,
+            photo_url: photoUrl,
+            created_at: new Date().toISOString()
           }]);
 
-        if (meterError) throw meterError;
-      }
+        if (readingError) throw readingError;
 
-      // Upload photo if exists
-      let photoUrl = '';
-      if (photo) {
-        const fileExt = photo.name.split('.').pop();
-        const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
-        try {
-          console.log('Intentando subir archivo:', fileName);
-          
-          // Intentar subir directamente
-          const { error: uploadError, data } = await supabase.storage
-            .from('meter-photos')
-            .upload(fileName, photo, {
-              cacheControl: '3600',
-              upsert: false
-            });
-
-          if (uploadError) {
-            console.error('Error al subir archivo:', uploadError);
-            if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
-              throw new Error('El bucket de fotos no está disponible. Por favor, contacta al administrador para que cree el bucket "meter-photos" en Supabase.');
-            }
-            if (uploadError.message.includes('security policy')) {
-              throw new Error('No tienes permisos para subir fotos. Por favor, contacta al administrador para verificar los permisos de acceso.');
-            }
-            throw uploadError;
-          }
-
-          console.log('Archivo subido exitosamente:', data);
-
-          const { data: { publicUrl } } = supabase.storage
-            .from('meter-photos')
-            .getPublicUrl(fileName);
-
-          console.log('URL pública generada:', publicUrl);
-          photoUrl = publicUrl;
-        } catch (error: any) {
-          console.error('Error al subir la foto:', error);
-          let mensajeError = (error instanceof Error) ? (error.message || "Error al subir la foto") : "Error al subir la foto";
-          if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
-             mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
-          }
-          showSnackbar(mensajeError, 'error');
-          return;
-        }
-      }
-
-      // Create reading
-      const { error: readingError } = await supabase
-        .from('readings')
-        .insert([{
-          meter_id: meterCode.trim(),
+        // Limpiar formulario
+        setMeterCode('');
+        setReadingValue('');
+        setPhoto(null);
+        showSnackbar('¡Listo! Tu lectura se guardó correctamente');
+      } else {
+        // Guardar lectura localmente
+        const newReading: PendingReading = {
+          meterCode: meterCode.trim(),
           value,
           period,
-          photo_url: photoUrl,
-          created_at: new Date().toISOString()
-        }]);
+          timestamp: Date.now(),
+          photo: photo || undefined
+        };
 
-      if (readingError) throw readingError;
-
-      // Limpiar formulario
-      setMeterCode('');
-      setReadingValue('');
-      setPhoto(null);
-      showSnackbar('¡Listo! Tu lectura se guardó correctamente');
+        setPendingReadings(prev => [...prev, newReading]);
+        
+        // Si hay una foto, ya la guardamos en handlePhotoCapture
+        // No necesitamos duplicarla aquí
+        
+        setMeterCode('');
+        setReadingValue('');
+        setPhoto(null);
+        showSnackbar('¡Listo! Tu lectura se guardó y se sincronizará cuando vuelvas a tener conexión');
+      }
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
       showSnackbar(error.message || 'Ups, no pudimos guardar tu lectura. ¿Podrías intentarlo de nuevo?', 'error');
@@ -309,6 +341,25 @@ const Home: React.FC = () => {
 
     setSyncStatus('syncing');
     try {
+      // Sincronizar fotos pendientes primero
+      for (const pendingPhoto of pendingPhotos) {
+        const fileExt = pendingPhoto.file.name.split('.').pop();
+        const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('meter-photos')
+          .upload(fileName, pendingPhoto.file);
+
+        if (uploadError) {
+          let mensajeError = (uploadError instanceof Error) ? (uploadError.message || "Error al sincronizar") : "Error al sincronizar";
+          if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
+             mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
+          }
+          showSnackbar(mensajeError, 'error');
+          throw uploadError;
+        }
+      }
+
       // Sincronizar lecturas pendientes
       for (const reading of pendingReadings) {
         const { error: meterError } = await supabase
@@ -374,7 +425,7 @@ const Home: React.FC = () => {
         if (commentError) throw commentError;
       }
 
-      // Limpiar datos pendientes
+      // Limpiar datos pendientes incluyendo fotos
       setPendingReadings([]);
       setPendingComments([]);
       setPendingPhotos([]);
@@ -693,7 +744,7 @@ const Home: React.FC = () => {
               }
             }}
           >
-            Tienes {pendingReadings.length} lecturas, {pendingPhotos.length} fotos y {pendingComments.length} comentarios pendientes de sincronizar.
+            Tienes {pendingReadings.length} lectura{pendingReadings.length !== 1 ? 's' : ''}, {pendingPhotos.length} foto{pendingPhotos.length !== 1 ? 's' : ''} y {pendingComments.length} comentario{pendingComments.length !== 1 ? 's' : ''} pendientes de sincronizar.
             {isOnline && (
               <Button
                 startIcon={<SyncIcon />}
