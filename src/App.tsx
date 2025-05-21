@@ -161,7 +161,7 @@ function App() {
         </Routes>
       </AuthProvider>
       <ToastContainer
-        position="top-right"
+        position="top-center"
         autoClose={3000}
         hideProgressBar={false}
         newestOnTop
@@ -171,7 +171,7 @@ function App() {
         pauseOnHover
         theme="light"
         style={{ 
-          fontSize: '14px',
+          fontSize: '15px',
           zIndex: 9999
         }}
         toastClassName="custom-toast"
