@@ -155,7 +155,7 @@ const Home: React.FC = () => {
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
 
-        // Si estamos offline, guardar la foto en pendingPhotos
+        // Si estamos offline, guardar la foto en pendingPhotos sin mostrar mensaje
         if (!isOnline) {
           const newPendingPhoto: PendingPhoto = {
             meterCode: meterCode.trim(),
@@ -163,7 +163,6 @@ const Home: React.FC = () => {
             timestamp: Date.now()
           };
           setPendingPhotos(prev => [...prev, newPendingPhoto]);
-          showSnackbar('Foto guardada localmente. Se sincronizará cuando vuelvas a tener conexión', 'info');
         }
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
