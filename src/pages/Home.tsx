@@ -252,10 +252,10 @@ const Home: React.FC = () => {
       setMeterCode('');
       setReadingValue('');
       setPhoto(null);
-      toast.success('Lectura registrada exitosamente');
+      toast.info('Lectura guardada');
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
-      toast.error(error.message || 'Error al guardar la lectura');
+      toast.warning(error.message || 'No se pudo guardar la lectura');
     } finally {
       setIsLoading(false);
     }
@@ -263,13 +263,13 @@ const Home: React.FC = () => {
 
   const saveReadingLocally = () => {
     if (!meterCode.trim() || !readingValue.trim()) {
-      toast.error('Por favor complete todos los campos');
+      toast.info('Complete todos los campos');
       return;
     }
 
     const value = parseInt(readingValue);
     if (isNaN(value)) {
-      toast.error('El valor debe ser un número entero');
+      toast.info('El valor debe ser un número entero');
       return;
     }
 
@@ -285,12 +285,12 @@ const Home: React.FC = () => {
     setMeterCode('');
     setReadingValue('');
     setPhoto(null);
-    toast.success('Lectura guardada localmente');
+    toast.info('Lectura guardada');
   };
 
   const handleSync = async () => {
     if (!isOnline) {
-      toast.error('No hay conexión a internet');
+      toast.warning('Sin conexión a internet');
       return;
     }
 
@@ -370,17 +370,17 @@ const Home: React.FC = () => {
       localStorage.removeItem('pendingPhotos');
 
       setSyncStatus('success');
-      toast.success('Datos sincronizados exitosamente');
+      toast.info('Datos sincronizados');
     } catch (error: any) {
       console.error('Error al sincronizar:', error);
       setSyncStatus('error');
-      toast.error(error.message || 'Error al sincronizar los datos');
+      toast.warning(error.message || 'No se pudieron sincronizar los datos');
     }
   };
 
   const handleCommentSubmit = async () => {
     if (!meterCode.trim() || !comment.trim()) {
-      toast.error('Por favor complete todos los campos');
+      toast.info('Complete todos los campos');
       return;
     }
 
@@ -423,10 +423,10 @@ const Home: React.FC = () => {
         setMeterCode('');
         setComment('');
         setIsCommentDialogOpen(false);
-        toast.success('Comentario registrado exitosamente');
+        toast.info('Comentario guardado');
       } catch (error: any) {
         console.error('Error al guardar el comentario:', error);
-        toast.error(error.message || 'Error al guardar el comentario');
+        toast.warning(error.message || 'No se pudo guardar el comentario');
       }
     } else {
       // Guardar comentario localmente
@@ -440,7 +440,7 @@ const Home: React.FC = () => {
       setMeterCode('');
       setComment('');
       setIsCommentDialogOpen(false);
-      toast.success('Comentario guardado localmente');
+      toast.info('Comentario guardado');
     }
   };
 
