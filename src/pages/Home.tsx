@@ -1006,12 +1006,50 @@ const Home: React.FC = () => {
         open={snackbar.open}
         autoHideDuration={6000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={{
+          '& .MuiAlert-root': {
+            minWidth: '300px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            borderRadius: '8px',
+            '& .MuiAlert-icon': {
+              padding: '8px 0',
+              marginRight: '12px'
+            },
+            '& .MuiAlert-message': {
+              padding: '8px 0',
+              fontSize: '14px',
+              fontWeight: 500
+            }
+          }
+        }}
       >
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: '100%' }}
+          sx={{ 
+            width: '100%',
+            '&.MuiAlert-standardSuccess': {
+              backgroundColor: 'rgba(46, 125, 50, 0.95)',
+              color: 'white',
+              '& .MuiAlert-icon': { color: 'white' }
+            },
+            '&.MuiAlert-standardError': {
+              backgroundColor: 'rgba(211, 47, 47, 0.95)',
+              color: 'white',
+              '& .MuiAlert-icon': { color: 'white' }
+            },
+            '&.MuiAlert-standardWarning': {
+              backgroundColor: 'rgba(237, 108, 2, 0.95)',
+              color: 'white',
+              '& .MuiAlert-icon': { color: 'white' }
+            },
+            '&.MuiAlert-standardInfo': {
+              backgroundColor: 'rgba(2, 136, 209, 0.95)',
+              color: 'white',
+              '& .MuiAlert-icon': { color: 'white' }
+            }
+          }}
         >
           {snackbar.message}
         </Alert>
