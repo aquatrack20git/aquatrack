@@ -189,6 +189,13 @@ const Home: React.FC = () => {
         throw new Error('El código del medidor es requerido');
       }
 
+      // Validar que se haya tomado una foto
+      if (!photo) {
+        showSnackbar('Por favor, toma una foto del medidor antes de guardar la lectura', 'warning');
+        setIsLoading(false);
+        return;
+      }
+
       if (isOnline) {
         // Check if meter exists
         const { data: existingMeter, error: meterCheckError } = await supabase
@@ -759,14 +766,7 @@ const Home: React.FC = () => {
 
         <Box 
           component="form" 
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (isOnline) {
-              handleSubmit(e);
-            } else {
-              saveReadingLocally();
-            }
-          }} 
+          onSubmit={handleSubmit} 
           sx={{ 
             mt: 3,
             '& .MuiTextField-root': {
@@ -847,18 +847,18 @@ const Home: React.FC = () => {
                 component="label"
                 fullWidth
                 startIcon={<PhotoCameraIcon />}
+                color={photo ? "success" : "secondary"}
                 sx={{ 
                   py: { xs: 1.5, sm: 2 },
                   fontSize: { xs: '0.875rem', sm: '1rem' },
-                  backgroundColor: 'secondary.main',
                   '&:hover': {
-                    backgroundColor: 'secondary.dark',
+                    backgroundColor: photo ? 'success.dark' : 'secondary.dark',
                     transform: 'scale(1.02)'
                   },
                   transition: 'all 0.2s ease-in-out'
                 }}
               >
-                Tomar foto
+                {photo ? 'Foto tomada ✓' : 'Tomar foto'}
                 <input
                   type="file"
                   hidden
@@ -873,14 +873,14 @@ const Home: React.FC = () => {
                   sx={{ 
                     mt: 1,
                     fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                    color: 'text.secondary',
+                    color: 'success.main',
                     animation: 'fadeIn 0.5s ease-in-out',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 0.5
                   }}
                 >
-                  <PhotoCameraIcon fontSize="small" color="primary" />
+                  <PhotoCameraIcon fontSize="small" color="success" />
                   Foto seleccionada: {photo.name}
                 </Typography>
               )}
@@ -890,14 +890,18 @@ const Home: React.FC = () => {
                 type="submit"
                 variant="contained"
                 fullWidth
-                disabled={isLoading}
+                disabled={isLoading || !photo}
                 sx={{ 
                   py: { xs: 1.5, sm: 2 },
                   fontSize: { xs: '0.875rem', sm: '1rem' },
                   '&:hover': {
                     transform: 'scale(1.02)'
                   },
-                  transition: 'all 0.2s ease-in-out'
+                  transition: 'all 0.2s ease-in-out',
+                  '&.Mui-disabled': {
+                    backgroundColor: 'action.disabledBackground',
+                    color: 'action.disabled'
+                  }
                 }}
               >
                 {isLoading ? 'Guardando...' : 'Guardar lectura'}
