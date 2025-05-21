@@ -128,14 +128,14 @@ const Home: React.FC = () => {
       try {
         // Validar tamaño máximo (5MB)
         if (file.size > MAX_FILE_SIZE) {
-          toast.warning('La imagen es demasiado grande. El tamaño máximo permitido es 5MB.');
+          toast('La foto es muy pesada. Por favor, elige una imagen más ligera (máximo 5MB)', { type: 'warning', icon: false });
           return;
         }
 
         // Validar tipo de archivo
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
         if (!allowedTypes.includes(file.type)) {
-          toast.info('Tipo de archivo no permitido. Solo se aceptan imágenes JPEG, PNG y WebP.');
+          toast('Por favor, elige una imagen en formato JPG, PNG o WebP', { type: 'info', icon: false });
           return;
         }
 
@@ -143,7 +143,7 @@ const Home: React.FC = () => {
         setPhoto(compressedFile);
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
-        toast.error('Error al procesar la imagen');
+        toast('Ups, hubo un problema al procesar la foto. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
       }
     }
   };
@@ -252,10 +252,10 @@ const Home: React.FC = () => {
       setMeterCode('');
       setReadingValue('');
       setPhoto(null);
-      toast('Lectura guardada', { type: 'info', icon: false });
+      toast('¡Listo! Tu lectura se guardó correctamente', { type: 'info', icon: false });
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
-      toast(error.message || 'No se pudo guardar la lectura', { type: 'warning', icon: false });
+      toast('Ups, no pudimos guardar tu lectura. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
     } finally {
       setIsLoading(false);
     }
@@ -263,13 +263,13 @@ const Home: React.FC = () => {
 
   const saveReadingLocally = () => {
     if (!meterCode.trim() || !readingValue.trim()) {
-      toast('Complete todos los campos', { type: 'info', icon: false });
+      toast('Por favor, completa el código del medidor y el valor de la lectura', { type: 'info', icon: false });
       return;
     }
 
     const value = parseInt(readingValue);
     if (isNaN(value)) {
-      toast('El valor debe ser un número entero', { type: 'info', icon: false });
+      toast('El valor de la lectura debe ser un número sin decimales', { type: 'info', icon: false });
       return;
     }
 
@@ -285,12 +285,12 @@ const Home: React.FC = () => {
     setMeterCode('');
     setReadingValue('');
     setPhoto(null);
-    toast('Lectura guardada', { type: 'info', icon: false });
+    toast('¡Listo! Tu lectura se guardó y se sincronizará cuando vuelvas a tener conexión', { type: 'info', icon: false });
   };
 
   const handleSync = async () => {
     if (!isOnline) {
-      toast('Sin conexión a internet', { type: 'warning', icon: false });
+      toast('No hay conexión a internet. Tus datos se guardarán localmente', { type: 'warning', icon: false });
       return;
     }
 
@@ -370,17 +370,17 @@ const Home: React.FC = () => {
       localStorage.removeItem('pendingPhotos');
 
       setSyncStatus('success');
-      toast('Datos sincronizados', { type: 'info', icon: false });
+      toast('¡Perfecto! Todos tus datos se sincronizaron correctamente', { type: 'info', icon: false });
     } catch (error: any) {
       console.error('Error al sincronizar:', error);
       setSyncStatus('error');
-      toast(error.message || 'No se pudieron sincronizar los datos', { type: 'warning', icon: false });
+      toast('Ups, hubo un problema al sincronizar. No te preocupes, tus datos están seguros', { type: 'warning', icon: false });
     }
   };
 
   const handleCommentSubmit = async () => {
     if (!meterCode.trim() || !comment.trim()) {
-      toast('Complete todos los campos', { type: 'info', icon: false });
+      toast('Por favor, completa el código del medidor y tu comentario', { type: 'info', icon: false });
       return;
     }
 
@@ -423,10 +423,10 @@ const Home: React.FC = () => {
         setMeterCode('');
         setComment('');
         setIsCommentDialogOpen(false);
-        toast('Comentario guardado', { type: 'info', icon: false });
+        toast('¡Listo! Tu comentario se guardó correctamente', { type: 'info', icon: false });
       } catch (error: any) {
         console.error('Error al guardar el comentario:', error);
-        toast(error.message || 'No se pudo guardar el comentario', { type: 'warning', icon: false });
+        toast('Ups, no pudimos guardar tu comentario. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
       }
     } else {
       // Guardar comentario localmente
@@ -440,7 +440,7 @@ const Home: React.FC = () => {
       setMeterCode('');
       setComment('');
       setIsCommentDialogOpen(false);
-      toast('Comentario guardado', { type: 'info', icon: false });
+      toast('¡Listo! Tu comentario se guardó y se sincronizará cuando vuelvas a tener conexión', { type: 'info', icon: false });
     }
   };
 
