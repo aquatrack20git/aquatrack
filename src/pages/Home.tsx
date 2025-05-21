@@ -183,20 +183,7 @@ const Home: React.FC = () => {
         try {
           console.log('Intentando subir archivo:', fileName);
           
-          // Intentar crear el bucket si no existe
-          const { error: createBucketError } = await supabase
-            .storage
-            .createBucket('meter-photos', {
-              public: true,
-              fileSizeLimit: 5242880, // 5MB
-              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp']
-            });
-
-          if (createBucketError && !createBucketError.message.includes('already exists')) {
-            console.error('Error al crear bucket:', createBucketError);
-            throw new Error('No se pudo crear el bucket para las fotos. Por favor, contacta al administrador.');
-          }
-
+          // Intentar subir directamente
           const { error: uploadError, data } = await supabase.storage
             .from('meter-photos')
             .upload(fileName, photo, {
@@ -206,8 +193,11 @@ const Home: React.FC = () => {
 
           if (uploadError) {
             console.error('Error al subir archivo:', uploadError);
-            if (uploadError.message.includes('bucket')) {
-              throw new Error('Error de acceso al bucket. Por favor, contacta al administrador para verificar los permisos.');
+            if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+              throw new Error('El bucket de fotos no está disponible. Por favor, contacta al administrador para que cree el bucket "meter-photos" en Supabase.');
+            }
+            if (uploadError.message.includes('security policy')) {
+              throw new Error('No tienes permisos para subir fotos. Por favor, contacta al administrador para verificar los permisos de acceso.');
             }
             throw uploadError;
           }
