@@ -141,7 +141,6 @@ const Home: React.FC = () => {
 
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
-        toast.success('Imagen procesada correctamente');
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
         toast.error('Error al procesar la imagen');
