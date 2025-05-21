@@ -338,7 +338,7 @@ const Home: React.FC = () => {
         const { error: commentError } = await supabase
           .from('comments')
           .insert([{
-            meter_id: comment.meterCode,
+            meter_id_comment: comment.meterCode,
             notes: comment.notes,
             created_at: new Date(comment.timestamp).toISOString()
           }]);
@@ -398,7 +398,7 @@ const Home: React.FC = () => {
         const { error: commentError } = await supabase
           .from('comments')
           .insert([{
-            meter_id: meterCode.trim(),
+            meter_id_comment: meterCode.trim(),
             notes: comment.trim(),
             created_at: new Date().toISOString()
           }]);

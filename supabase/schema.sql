@@ -23,24 +23,18 @@ CREATE TABLE readings (
 
 CREATE TABLE comments (
     id BIGSERIAL PRIMARY KEY,
-    meter_id_comment VARCHAR(50) REFERENCES meters(code_meter),
+    meter_id VARCHAR(50) REFERENCES meters(code_meter),
     notes TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- Drop existing bucket if it exists
-DELETE FROM storage.buckets WHERE id = 'meter-photos';
-
--- Create storage bucket for meter photos
-INSERT INTO storage.buckets (id, name, public) VALUES ('meter-photos', 'meter-photos', true);
-
--- Drop existing policies if they exist
+-- Configurar las políticas de almacenamiento para el bucket meter-photos existente
 DROP POLICY IF EXISTS "Allow public read access to meter photos" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public upload access to meter photos" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public update access to meter photos" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public delete access to meter photos" ON storage.objects;
 
--- Storage policies for meter-photos bucket
+-- Recrear las políticas de almacenamiento para permitir acceso público
 CREATE POLICY "Allow public read access to meter photos"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'meter-photos');
@@ -96,8 +90,8 @@ CREATE POLICY "Enable delete for authenticated users" ON meters
 CREATE POLICY "Enable read access for all users" ON readings
     FOR SELECT USING (true);
 
-CREATE POLICY "Enable insert for authenticated users" ON readings
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Enable insert for all users" ON readings
+    FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Enable update for authenticated users" ON readings
     FOR UPDATE USING (auth.role() = 'authenticated');
@@ -127,7 +121,7 @@ DROP INDEX IF EXISTS idx_meters_status;
 -- Create indexes for better performance
 CREATE INDEX idx_readings_meter_id ON readings(meter_id);
 CREATE INDEX idx_readings_period ON readings(period);
-CREATE INDEX idx_comments_meter_id ON comments(meter_id_comment);
+CREATE INDEX idx_comments_meter_id ON comments(meter_id);
 CREATE INDEX idx_meters_status ON meters(status);
 
 -- Drop existing function and trigger if they exist
@@ -139,7 +133,7 @@ CREATE OR REPLACE FUNCTION handle_meter_deletion()
 RETURNS TRIGGER AS $$
 BEGIN
     DELETE FROM readings WHERE meter_id = OLD.code_meter;
-    DELETE FROM comments WHERE meter_id_comment = OLD.code_meter;
+    DELETE FROM comments WHERE meter_id = OLD.code_meter;
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -148,4 +142,53 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER on_meter_deletion
     BEFORE DELETE ON meters
     FOR EACH ROW
-    EXECUTE FUNCTION handle_meter_deletion(); 
+    EXECUTE FUNCTION handle_meter_deletion();
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Enable read access for all users" ON users;
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON users;
+DROP POLICY IF EXISTS "Enable update for authenticated users" ON users;
+DROP POLICY IF EXISTS "Enable delete for authenticated users" ON users;
+
+-- Create policies
+-- Users policies
+CREATE POLICY "Enable read access for all users" ON users
+    FOR SELECT USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON users
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Enable update for authenticated users" ON users
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Enable delete for authenticated users" ON users
+    FOR DELETE USING (auth.role() = 'authenticated');
+
+-- Drop (if exists) y definición de la función create_users_policy (en el esquema public) para crear (o reemplazar) políticas en la tabla users.
+DROP FUNCTION IF EXISTS public.create_users_policy(text, text, text);
+CREATE OR REPLACE FUNCTION public.create_users_policy (definition text, operation text, policy_name text) RETURNS void AS $$
+BEGIN
+  EXECUTE format('DROP POLICY IF EXISTS %I ON users; CREATE POLICY %I ON users FOR %s USING (%s);', policy_name, policy_name, operation, definition);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Drop (if exists) y definición de la función create_meters_policy (en el esquema public) para crear (o reemplazar) políticas en la tabla meters.
+DROP FUNCTION IF EXISTS public.create_meters_policy(text, text, text);
+CREATE OR REPLACE FUNCTION public.create_meters_policy (definition text, operation text, policy_name text) RETURNS void AS $$
+BEGIN
+  EXECUTE format('DROP POLICY IF EXISTS %I ON meters; CREATE POLICY %I ON meters FOR %s %s (%s);', policy_name, policy_name, operation, (CASE WHEN operation = 'insert' THEN 'WITH CHECK' ELSE 'USING' END), definition);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Ejecuta (o llama) a la función create_meters_policy para crear (o reemplazar) la política "Enable read access for all users" en la tabla meters.
+SELECT public.create_meters_policy ('true', 'select', 'Enable read access for all users');
+
+/* Se agrega (al final del archivo) un bloque de comentario (o instrucción) que ejecuta (o llama) a la función create_meters_policy (con los parámetros (definition, operation, policy_name) para crear (o reemplazar) la política "Enable insert for authenticated users" en la tabla meters. */
+
+-- Ejecuta (o llama) a la función create_meters_policy para crear (o reemplazar) la política "Enable insert for authenticated users" en la tabla meters.
+SELECT public.create_meters_policy ('auth.role() = ''authenticated''', 'insert', 'Enable insert for authenticated users');
+
+/* Se agrega (al final del archivo) un bloque de comentario (o instrucción) que ejecuta (o llama) a la función create_meters_policy (con los parámetros (definition, operation, policy_name) para crear (o reemplazar) la política "Enable read access for all users" en la tabla meters. */
+
+-- Ejecuta (o llama) a la función create_meters_policy para crear (o reemplazar) la política "Enable read access for all users" en la tabla meters.
+SELECT public.create_meters_policy ('true', 'select', 'Enable read access for all users'); 
