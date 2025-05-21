@@ -164,51 +164,20 @@ function App() {
         position="bottom-center"
         autoClose={3000}
         hideProgressBar={false}
-        newestOnTop={false}
+        newestOnTop
         closeOnClick
-        rtl={false}
         pauseOnFocusLoss
         draggable
         pauseOnHover
         theme="light"
         style={{ 
           fontSize: '14px',
-          zIndex: 9999,
-          bottom: '20px'
+          zIndex: 9999
         }}
-        toastStyle={{
-          background: 'rgba(255, 255, 255, 0.98)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          borderRadius: '8px',
-          padding: '14px 20px',
-          margin: '8px',
-          minHeight: 'auto',
-          maxWidth: '320px',
-          border: '1px solid rgba(0,0,0,0.05)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          fontFamily: 'inherit',
-          color: '#333',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          transition: 'all 0.3s ease',
-          opacity: 1
-        }}
-        bodyStyle={{
-          margin: 0,
-          padding: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontWeight: 500
-        }}
+        toastClassName="custom-toast"
+        bodyClassName="custom-toast-body"
         closeButton={true}
         limit={1}
-        containerId="aquatrack-toast"
-        draggablePercent={20}
-        role="alert"
-        aria-live="assertive"
       />
     </ThemeProvider>
   );
