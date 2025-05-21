@@ -181,34 +181,56 @@ const Home: React.FC = () => {
         const fileExt = photo.name.split('.').pop();
         const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
         try {
-          // Verificar que el bucket existe
+          // Verificar que el bucket existe y obtener más información
           const { data: buckets, error: bucketsError } = await supabase
             .storage
             .listBuckets();
           
-          if (bucketsError) throw bucketsError;
+          if (bucketsError) {
+            console.error('Error al listar buckets:', bucketsError);
+            throw bucketsError;
+          }
+          
+          console.log('Buckets disponibles:', buckets);
           
           const bucketExists = buckets?.some(b => b.name === 'meter-photos');
           if (!bucketExists) {
+            console.error('Bucket meter-photos no encontrado en:', buckets);
             throw new Error('El bucket meter-photos no existe. Por favor, contacta al administrador.');
           }
+
+          // Intentar obtener información del bucket
+          const { data: bucketInfo, error: bucketInfoError } = await supabase
+            .storage
+            .getBucket('meter-photos');
+          
+          if (bucketInfoError) {
+            console.error('Error al obtener información del bucket:', bucketInfoError);
+            throw bucketInfoError;
+          }
+          
+          console.log('Información del bucket:', bucketInfo);
 
           const { error: uploadError, data } = await supabase.storage
             .from('meter-photos')
             .upload(fileName, photo);
 
           if (uploadError) {
+            console.error('Error detallado al subir:', uploadError);
             if (uploadError.message.includes('bucket')) {
-              throw new Error('Error de acceso al bucket. Verifica tus permisos.');
+              throw new Error(`Error de acceso al bucket: ${uploadError.message}`);
             }
             throw uploadError;
           }
+
+          console.log('Archivo subido exitosamente:', data);
 
           const { data: { publicUrl } } = supabase.storage
             .from('meter-photos')
             .getPublicUrl(fileName);
 
-          photoUrl = publicUrl;
+            console.log('URL pública generada:', publicUrl);
+            photoUrl = publicUrl;
         } catch (error: any) {
           console.error('Error al subir la foto:', error);
           let mensajeError = (error instanceof Error) ? (error.message || "Error al subir la foto") : "Error al subir la foto";
