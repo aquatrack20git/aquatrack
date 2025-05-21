@@ -161,7 +161,7 @@ function App() {
         </Routes>
       </AuthProvider>
       <ToastContainer
-        position="bottom-center"
+        position="top-right"
         autoClose={3000}
         hideProgressBar={false}
         newestOnTop
