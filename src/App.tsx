@@ -161,9 +161,9 @@ function App() {
         </Routes>
       </AuthProvider>
       <ToastContainer
-        position={isMobile ? "bottom-center" : "top-center"}
-        autoClose={3000}
-        hideProgressBar={false}
+        position="bottom-right"
+        autoClose={2000}
+        hideProgressBar
         newestOnTop
         closeOnClick
         rtl={false}
@@ -171,7 +171,16 @@ function App() {
         draggable
         pauseOnHover
         theme="light"
-        style={{ zIndex: 9999 }}
+        style={{ fontSize: '14px' }}
+        toastStyle={{
+          background: 'rgba(255, 255, 255, 0.9)',
+          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+          borderRadius: '4px',
+          padding: '8px 12px',
+          margin: '4px',
+          minHeight: 'auto',
+          maxWidth: '300px'
+        }}
       />
     </ThemeProvider>
   );

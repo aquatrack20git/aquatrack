@@ -252,10 +252,10 @@ const Home: React.FC = () => {
       setMeterCode('');
       setReadingValue('');
       setPhoto(null);
-      toast.info('Lectura guardada');
+      toast('Lectura guardada', { type: 'info', icon: false });
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
-      toast.warning(error.message || 'No se pudo guardar la lectura');
+      toast(error.message || 'No se pudo guardar la lectura', { type: 'warning', icon: false });
     } finally {
       setIsLoading(false);
     }
@@ -263,13 +263,13 @@ const Home: React.FC = () => {
 
   const saveReadingLocally = () => {
     if (!meterCode.trim() || !readingValue.trim()) {
-      toast.info('Complete todos los campos');
+      toast('Complete todos los campos', { type: 'info', icon: false });
       return;
     }
 
     const value = parseInt(readingValue);
     if (isNaN(value)) {
-      toast.info('El valor debe ser un número entero');
+      toast('El valor debe ser un número entero', { type: 'info', icon: false });
       return;
     }
 
@@ -285,12 +285,12 @@ const Home: React.FC = () => {
     setMeterCode('');
     setReadingValue('');
     setPhoto(null);
-    toast.info('Lectura guardada');
+    toast('Lectura guardada', { type: 'info', icon: false });
   };
 
   const handleSync = async () => {
     if (!isOnline) {
-      toast.warning('Sin conexión a internet');
+      toast('Sin conexión a internet', { type: 'warning', icon: false });
       return;
     }
 
@@ -370,17 +370,17 @@ const Home: React.FC = () => {
       localStorage.removeItem('pendingPhotos');
 
       setSyncStatus('success');
-      toast.info('Datos sincronizados');
+      toast('Datos sincronizados', { type: 'info', icon: false });
     } catch (error: any) {
       console.error('Error al sincronizar:', error);
       setSyncStatus('error');
-      toast.warning(error.message || 'No se pudieron sincronizar los datos');
+      toast(error.message || 'No se pudieron sincronizar los datos', { type: 'warning', icon: false });
     }
   };
 
   const handleCommentSubmit = async () => {
     if (!meterCode.trim() || !comment.trim()) {
-      toast.info('Complete todos los campos');
+      toast('Complete todos los campos', { type: 'info', icon: false });
       return;
     }
 
@@ -423,10 +423,10 @@ const Home: React.FC = () => {
         setMeterCode('');
         setComment('');
         setIsCommentDialogOpen(false);
-        toast.info('Comentario guardado');
+        toast('Comentario guardado', { type: 'info', icon: false });
       } catch (error: any) {
         console.error('Error al guardar el comentario:', error);
-        toast.warning(error.message || 'No se pudo guardar el comentario');
+        toast(error.message || 'No se pudo guardar el comentario', { type: 'warning', icon: false });
       }
     } else {
       // Guardar comentario localmente
@@ -440,7 +440,7 @@ const Home: React.FC = () => {
       setMeterCode('');
       setComment('');
       setIsCommentDialogOpen(false);
-      toast.info('Comentario guardado');
+      toast('Comentario guardado', { type: 'info', icon: false });
     }
   };
 
