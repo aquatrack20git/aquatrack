@@ -128,14 +128,14 @@ const Home: React.FC = () => {
       try {
         // Validar tamaño máximo (5MB)
         if (file.size > MAX_FILE_SIZE) {
-          toast.error('La imagen es demasiado grande. El tamaño máximo permitido es 5MB.');
+          toast.warning('La imagen es demasiado grande. El tamaño máximo permitido es 5MB.');
           return;
         }
 
         // Validar tipo de archivo
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
         if (!allowedTypes.includes(file.type)) {
-          toast.error('Tipo de archivo no permitido. Solo se aceptan imágenes JPEG, PNG y WebP.');
+          toast.info('Tipo de archivo no permitido. Solo se aceptan imágenes JPEG, PNG y WebP.');
           return;
         }
 
