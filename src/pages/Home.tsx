@@ -181,44 +181,33 @@ const Home: React.FC = () => {
         const fileExt = photo.name.split('.').pop();
         const fileName = `${meterCode}_${Date.now()}.${fileExt}`;
         try {
-          // Verificar que el bucket existe y obtener más información
-          const { data: buckets, error: bucketsError } = await supabase
+          console.log('Intentando subir archivo:', fileName);
+          
+          // Intentar crear el bucket si no existe
+          const { error: createBucketError } = await supabase
             .storage
-            .listBuckets();
-          
-          if (bucketsError) {
-            console.error('Error al listar buckets:', bucketsError);
-            throw bucketsError;
-          }
-          
-          console.log('Buckets disponibles:', buckets);
-          
-          const bucketExists = buckets?.some(b => b.name === 'meter-photos');
-          if (!bucketExists) {
-            console.error('Bucket meter-photos no encontrado en:', buckets);
-            throw new Error('El bucket meter-photos no existe. Por favor, contacta al administrador.');
-          }
+            .createBucket('meter-photos', {
+              public: true,
+              fileSizeLimit: 5242880, // 5MB
+              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp']
+            });
 
-          // Intentar obtener información del bucket
-          const { data: bucketInfo, error: bucketInfoError } = await supabase
-            .storage
-            .getBucket('meter-photos');
-          
-          if (bucketInfoError) {
-            console.error('Error al obtener información del bucket:', bucketInfoError);
-            throw bucketInfoError;
+          if (createBucketError && !createBucketError.message.includes('already exists')) {
+            console.error('Error al crear bucket:', createBucketError);
+            throw new Error('No se pudo crear el bucket para las fotos. Por favor, contacta al administrador.');
           }
-          
-          console.log('Información del bucket:', bucketInfo);
 
           const { error: uploadError, data } = await supabase.storage
             .from('meter-photos')
-            .upload(fileName, photo);
+            .upload(fileName, photo, {
+              cacheControl: '3600',
+              upsert: false
+            });
 
           if (uploadError) {
-            console.error('Error detallado al subir:', uploadError);
+            console.error('Error al subir archivo:', uploadError);
             if (uploadError.message.includes('bucket')) {
-              throw new Error(`Error de acceso al bucket: ${uploadError.message}`);
+              throw new Error('Error de acceso al bucket. Por favor, contacta al administrador para verificar los permisos.');
             }
             throw uploadError;
           }
@@ -229,8 +218,8 @@ const Home: React.FC = () => {
             .from('meter-photos')
             .getPublicUrl(fileName);
 
-            console.log('URL pública generada:', publicUrl);
-            photoUrl = publicUrl;
+          console.log('URL pública generada:', publicUrl);
+          photoUrl = publicUrl;
         } catch (error: any) {
           console.error('Error al subir la foto:', error);
           let mensajeError = (error instanceof Error) ? (error.message || "Error al subir la foto") : "Error al subir la foto";
