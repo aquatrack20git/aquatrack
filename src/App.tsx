@@ -1,9 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { ToastContainer } from 'react-toastify';
 import { Box, Typography, Alert, useMediaQuery, CircularProgress } from '@mui/material';
-import 'react-toastify/dist/ReactToastify.css';
 import { useEffect } from 'react';
 import Home from './pages/Home';
 import theme from './theme';
@@ -160,25 +158,6 @@ function App() {
           <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
         </Routes>
       </AuthProvider>
-      <ToastContainer
-        position="top-center"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-        style={{ 
-          fontSize: '15px',
-          zIndex: 9999
-        }}
-        toastClassName="custom-toast"
-        bodyClassName="custom-toast-body"
-        closeButton={true}
-        limit={1}
-      />
     </ThemeProvider>
   );
 }

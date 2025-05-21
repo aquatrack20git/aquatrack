@@ -67,98 +67,13 @@ button:focus-visible {
   }
 }
 
+/* Eliminar todos los estilos de toast */
 /* Estilos para las notificaciones toast */
-.custom-toast {
-  background: rgba(255, 255, 255, 0.95) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
-  border-radius: 12px !important;
-  padding: 16px 24px !important;
-  margin: 8px auto !important;
-  min-height: auto !important;
-  max-width: 400px !important;
-  width: 90% !important;
-  border: 1px solid rgba(255, 255, 255, 0.8) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  font-family: inherit !important;
-  color: #1a1a1a !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center !important;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  opacity: 1 !important;
-  transform: translateY(0) !important;
-  animation: fadeInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  letter-spacing: 0.3px !important;
-  line-height: 1.5 !important;
-}
-
-@keyframes fadeInUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.custom-toast-body {
-  margin: 0 !important;
-  padding: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 12px !important;
-  font-weight: 500 !important;
-  font-size: 15px !important;
-  width: 100% !important;
-}
-
-/* Ajustar la posición del contenedor de notificaciones */
-.Toastify__toast-container {
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 100% !important;
-  max-width: 100vw !important;
-  padding: 0 16px !important;
-  box-sizing: border-box !important;
-  pointer-events: none !important;
-}
-
-.Toastify__toast-container > div {
-  pointer-events: auto !important;
-}
-
-/* Estilo para el botón de cerrar */
-.Toastify__close-button {
-  opacity: 0.5 !important;
-  padding: 8px !important;
-  margin-left: 12px !important;
-  color: #666 !important;
-  transition: all 0.2s ease !important;
-}
-
-.Toastify__close-button:hover {
-  opacity: 1 !important;
-  color: #1a1a1a !important;
-  transform: scale(1.1) !important;
-}
-
-/* Estilo para la barra de progreso */
-.Toastify__progress-bar {
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.05)) !important;
-  height: 3px !important;
-  border-radius: 3px !important;
-}
-
-/* Estilo para el contenedor de múltiples toasts */
+.custom-toast,
+.custom-toast-body,
+.Toastify__toast-container,
+.Toastify__close-button,
+.Toastify__progress-bar,
 .Toastify__toast-container--top-center {
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
+  display: none !important;
 }

@@ -66,6 +66,11 @@ const Home: React.FC = () => {
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error' | 'info' | 'warning'
+  });
 
   // Verificar estado de conexión
   useEffect(() => {
@@ -122,20 +127,28 @@ const Home: React.FC = () => {
     localStorage.setItem('pendingComments', JSON.stringify(pendingComments));
   }, [pendingPhotos, pendingReadings, pendingComments]);
 
+  const showSnackbar = (message: string, severity: 'success' | 'error' | 'info' | 'warning' = 'success') => {
+    setSnackbar({
+      open: true,
+      message,
+      severity
+    });
+  };
+
   const handlePhotoCapture = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       try {
         // Validar tamaño máximo (5MB)
         if (file.size > MAX_FILE_SIZE) {
-          toast('La foto es muy pesada. Por favor, elige una imagen más ligera (máximo 5MB)', { type: 'warning', icon: false });
+          showSnackbar('La foto es muy pesada. Por favor, elige una imagen más ligera (máximo 5MB)', 'warning');
           return;
         }
 
         // Validar tipo de archivo
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
         if (!allowedTypes.includes(file.type)) {
-          toast('Por favor, elige una imagen en formato JPG, PNG o WebP', { type: 'info', icon: false });
+          showSnackbar('Por favor, elige una imagen en formato JPG, PNG o WebP', 'warning');
           return;
         }
 
@@ -143,7 +156,7 @@ const Home: React.FC = () => {
         setPhoto(compressedFile);
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
-        toast('Ups, hubo un problema al procesar la foto. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
+        showSnackbar('Ups, hubo un problema al procesar la foto. ¿Podrías intentarlo de nuevo?', 'warning');
       }
     }
   };
@@ -230,7 +243,7 @@ const Home: React.FC = () => {
           if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
              mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
           }
-          toast.error(mensajeError);
+          showSnackbar(mensajeError, 'error');
           return;
         }
       }
@@ -252,10 +265,10 @@ const Home: React.FC = () => {
       setMeterCode('');
       setReadingValue('');
       setPhoto(null);
-      toast('¡Listo! Tu lectura se guardó correctamente', { type: 'info', icon: false });
+      showSnackbar('¡Listo! Tu lectura se guardó correctamente');
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
-      toast('Ups, no pudimos guardar tu lectura. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
+      showSnackbar(error.message || 'Ups, no pudimos guardar tu lectura. ¿Podrías intentarlo de nuevo?', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -263,13 +276,13 @@ const Home: React.FC = () => {
 
   const saveReadingLocally = () => {
     if (!meterCode.trim() || !readingValue.trim()) {
-      toast('Por favor, completa el código del medidor y el valor de la lectura', { type: 'info', icon: false });
+      showSnackbar('Por favor, completa el código del medidor y el valor de la lectura', 'info');
       return;
     }
 
     const value = parseInt(readingValue);
     if (isNaN(value)) {
-      toast('El valor de la lectura debe ser un número sin decimales', { type: 'info', icon: false });
+      showSnackbar('El valor de la lectura debe ser un número sin decimales', 'info');
       return;
     }
 
@@ -285,12 +298,12 @@ const Home: React.FC = () => {
     setMeterCode('');
     setReadingValue('');
     setPhoto(null);
-    toast('¡Listo! Tu lectura se guardó y se sincronizará cuando vuelvas a tener conexión', { type: 'info', icon: false });
+    showSnackbar('¡Listo! Tu lectura se guardó y se sincronizará cuando vuelvas a tener conexión');
   };
 
   const handleSync = async () => {
     if (!isOnline) {
-      toast('No hay conexión a internet. Tus datos se guardarán localmente', { type: 'warning', icon: false });
+      showSnackbar('No hay conexión a internet. Tus datos se guardarán localmente', 'info');
       return;
     }
 
@@ -324,7 +337,7 @@ const Home: React.FC = () => {
             if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
                mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
             }
-            toast.error(mensajeError);
+            showSnackbar(mensajeError, 'error');
             throw uploadError;
           }
 
@@ -370,17 +383,17 @@ const Home: React.FC = () => {
       localStorage.removeItem('pendingPhotos');
 
       setSyncStatus('success');
-      toast('¡Perfecto! Todos tus datos se sincronizaron correctamente', { type: 'info', icon: false });
+      showSnackbar('¡Perfecto! Todos tus datos se sincronizaron correctamente');
     } catch (error: any) {
       console.error('Error al sincronizar:', error);
       setSyncStatus('error');
-      toast('Ups, hubo un problema al sincronizar. No te preocupes, tus datos están seguros', { type: 'warning', icon: false });
+      showSnackbar(error.message || 'Ups, hubo un problema al sincronizar. No te preocupes, tus datos están seguros', 'error');
     }
   };
 
   const handleCommentSubmit = async () => {
     if (!meterCode.trim() || !comment.trim()) {
-      toast('Por favor, completa el código del medidor y tu comentario', { type: 'info', icon: false });
+      showSnackbar('Por favor, completa el código del medidor y tu comentario', 'info');
       return;
     }
 
@@ -423,10 +436,10 @@ const Home: React.FC = () => {
         setMeterCode('');
         setComment('');
         setIsCommentDialogOpen(false);
-        toast('¡Listo! Tu comentario se guardó correctamente', { type: 'info', icon: false });
+        showSnackbar('¡Listo! Tu comentario se guardó correctamente');
       } catch (error: any) {
         console.error('Error al guardar el comentario:', error);
-        toast('Ups, no pudimos guardar tu comentario. ¿Podrías intentarlo de nuevo?', { type: 'warning', icon: false });
+        showSnackbar('Ups, no pudimos guardar tu comentario. ¿Podrías intentarlo de nuevo?', 'warning');
       }
     } else {
       // Guardar comentario localmente
@@ -440,7 +453,7 @@ const Home: React.FC = () => {
       setMeterCode('');
       setComment('');
       setIsCommentDialogOpen(false);
-      toast('¡Listo! Tu comentario se guardó y se sincronizará cuando vuelvas a tener conexión', { type: 'info', icon: false });
+      showSnackbar('¡Listo! Tu comentario se guardó y se sincronizará cuando vuelvas a tener conexión');
     }
   };
 
@@ -988,6 +1001,21 @@ const Home: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };
