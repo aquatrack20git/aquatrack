@@ -161,10 +161,10 @@ function App() {
         </Routes>
       </AuthProvider>
       <ToastContainer
-        position="bottom-right"
-        autoClose={2000}
-        hideProgressBar
-        newestOnTop
+        position="bottom-center"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
         closeOnClick
         rtl={false}
         pauseOnFocusLoss
@@ -172,14 +172,15 @@ function App() {
         pauseOnHover
         theme="light"
         style={{ 
-          fontSize: '13px',
-          zIndex: 9999
+          fontSize: '14px',
+          zIndex: 9999,
+          bottom: '20px'
         }}
         toastStyle={{
           background: 'rgba(255, 255, 255, 0.98)',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.1)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
           borderRadius: '8px',
-          padding: '12px 16px',
+          padding: '14px 20px',
           margin: '8px',
           minHeight: 'auto',
           maxWidth: '320px',
@@ -191,22 +192,23 @@ function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
+          opacity: 1
         }}
         bodyStyle={{
           margin: 0,
           padding: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '8px',
+          fontWeight: 500
         }}
-        closeButton={false}
-        limit={3}
+        closeButton={true}
+        limit={1}
         containerId="aquatrack-toast"
-        enableMultiContainer={false}
         draggablePercent={20}
         role="alert"
-        aria-live="polite"
+        aria-live="assertive"
       />
     </ThemeProvider>
   );
