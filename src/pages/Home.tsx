@@ -54,6 +54,7 @@ interface PendingComment {
 }
 
 const Home: React.FC = () => {
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB en bytes
   const [meterCode, setMeterCode] = useState('');
   const [readingValue, setReadingValue] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -125,8 +126,22 @@ const Home: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       try {
+        // Validar tamaño máximo (5MB)
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error('La imagen es demasiado grande. El tamaño máximo permitido es 5MB.');
+          return;
+        }
+
+        // Validar tipo de archivo
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+          toast.error('Tipo de archivo no permitido. Solo se aceptan imágenes JPEG, PNG y WebP.');
+          return;
+        }
+
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
+        toast.success('Imagen procesada correctamente');
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
         toast.error('Error al procesar la imagen');
@@ -439,11 +454,13 @@ const Home: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800;
-          const MAX_HEIGHT = 800;
+          // Reducir dimensiones máximas para fotos de medidores
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
           let width = img.width;
           let height = img.height;
 
+          // Calcular nuevas dimensiones manteniendo la proporción
           if (width > height) {
             if (width > MAX_WIDTH) {
               height *= MAX_WIDTH / width;
@@ -456,25 +473,62 @@ const Home: React.FC = () => {
             }
           }
 
+          // Asegurar que las dimensiones sean números enteros
+          width = Math.floor(width);
+          height = Math.floor(height);
+
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
+          
+          // Mejorar la calidad de la imagen
+          ctx!.imageSmoothingEnabled = true;
+          ctx!.imageSmoothingQuality = 'high';
+          
           ctx?.drawImage(img, 0, 0, width, height);
+
+          // Ajustar la calidad de compresión según el tamaño original
+          let quality = 0.8; // calidad por defecto
+          if (file.size > 2 * 1024 * 1024) { // si es mayor a 2MB
+            quality = 0.6; // mayor compresión
+          } else if (file.size < 500 * 1024) { // si es menor a 500KB
+            quality = 0.9; // menor compresión
+          }
 
           canvas.toBlob(
             (blob) => {
               if (blob) {
-                const compressedFile = new File([blob], file.name, {
-                  type: 'image/jpeg',
-                  lastModified: Date.now(),
-                });
-                resolve(compressedFile);
+                // Verificar el tamaño final
+                if (blob.size > MAX_FILE_SIZE) {
+                  // Si aún es muy grande, intentar con más compresión
+                  canvas.toBlob(
+                    (finalBlob) => {
+                      if (finalBlob) {
+                        const compressedFile = new File([finalBlob], file.name, {
+                          type: 'image/jpeg',
+                          lastModified: Date.now(),
+                        });
+                        resolve(compressedFile);
+                      } else {
+                        reject(new Error('Error al comprimir la imagen'));
+                      }
+                    },
+                    'image/jpeg',
+                    0.5 // compresión más agresiva
+                  );
+                } else {
+                  const compressedFile = new File([blob], file.name, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now(),
+                  });
+                  resolve(compressedFile);
+                }
               } else {
                 reject(new Error('Error al comprimir la imagen'));
               }
             },
             'image/jpeg',
-            0.7
+            quality
           );
         };
         img.onerror = () => {
