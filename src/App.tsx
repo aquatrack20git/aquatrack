@@ -171,16 +171,42 @@ function App() {
         draggable
         pauseOnHover
         theme="light"
-        style={{ fontSize: '14px' }}
-        toastStyle={{
-          background: 'rgba(255, 255, 255, 0.9)',
-          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-          borderRadius: '4px',
-          padding: '8px 12px',
-          margin: '4px',
-          minHeight: 'auto',
-          maxWidth: '300px'
+        style={{ 
+          fontSize: '13px',
+          zIndex: 9999
         }}
+        toastStyle={{
+          background: 'rgba(255, 255, 255, 0.98)',
+          boxShadow: '0 3px 10px rgba(0,0,0,0.1)',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          margin: '8px',
+          minHeight: 'auto',
+          maxWidth: '320px',
+          border: '1px solid rgba(0,0,0,0.05)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          fontFamily: 'inherit',
+          color: '#333',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          transition: 'all 0.3s ease'
+        }}
+        bodyStyle={{
+          margin: 0,
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}
+        closeButton={false}
+        limit={3}
+        containerId="aquatrack-toast"
+        enableMultiContainer={false}
+        draggablePercent={20}
+        role="alert"
+        aria-live="polite"
       />
     </ThemeProvider>
   );
