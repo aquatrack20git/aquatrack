@@ -3,6 +3,11 @@ DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS readings;
 DROP TABLE IF EXISTS meters;
 
+-- Create bucket for meter photos if it doesn't exist
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('meter-photos', 'meter-photos', true)
+ON CONFLICT (id) DO NOTHING;
+
 -- Create tables
 CREATE TABLE meters (
     code_meter VARCHAR(50) PRIMARY KEY,
