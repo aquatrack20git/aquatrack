@@ -610,6 +610,124 @@ const Home: React.FC = () => {
     });
   };
 
+  const syncPendingData = async () => {
+    if (!isOnline || pendingReadings.length === 0 && pendingPhotos.length === 0) return;
+
+    setIsSyncing(true);
+    let syncedReadings = 0;
+    let syncedPhotos = 0;
+    let syncedComments = 0;
+    let errors = 0;
+
+    try {
+      // Primero sincronizar fotos pendientes
+      for (const pendingPhoto of pendingPhotos) {
+        try {
+          const formData = new FormData();
+          formData.append('photo', pendingPhoto.file);
+          formData.append('meterCode', pendingPhoto.meterCode);
+          formData.append('timestamp', pendingPhoto.timestamp.toString());
+
+          const response = await fetch(`${API_URL}/photos`, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!response.ok) {
+            throw new Error(`Error al sincronizar foto: ${response.statusText}`);
+          }
+
+          syncedPhotos++;
+          showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+        } catch (error) {
+          console.error('Error al sincronizar foto:', error);
+          errors++;
+          // No removemos la foto del array para intentar sincronizarla después
+        }
+      }
+
+      // Luego sincronizar lecturas pendientes
+      for (const pendingReading of pendingReadings) {
+        try {
+          // Validar que la lectura tenga todos los campos necesarios
+          if (!pendingReading.meterCode || !pendingReading.value || !pendingReading.period) {
+            console.error('Lectura pendiente inválida:', pendingReading);
+            errors++;
+            continue;
+          }
+
+          const response = await fetch(`${API_URL}/readings`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              meterCode: pendingReading.meterCode.trim(),
+              value: parseInt(pendingReading.value),
+              period: pendingReading.period,
+              timestamp: pendingReading.timestamp,
+              comment: pendingReading.comment || ''
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Error al sincronizar lectura: ${response.statusText}`);
+          }
+
+          syncedReadings++;
+          if (pendingReading.comment) syncedComments++;
+          showSnackbar(`Lectura sincronizada: ${pendingReading.meterCode}`, 'success');
+        } catch (error) {
+          console.error('Error al sincronizar lectura:', error);
+          errors++;
+          // No removemos la lectura del array para intentar sincronizarla después
+        }
+      }
+
+      // Solo limpiar los datos que se sincronizaron exitosamente
+      if (syncedPhotos > 0) {
+        setPendingPhotos(prev => prev.filter(photo => 
+          !pendingPhotos.slice(0, syncedPhotos).some(synced => 
+            synced.meterCode === photo.meterCode && 
+            synced.timestamp === photo.timestamp
+          )
+        ));
+      }
+
+      if (syncedReadings > 0) {
+        setPendingReadings(prev => prev.filter(reading => 
+          !pendingReadings.slice(0, syncedReadings).some(synced => 
+            synced.meterCode === reading.meterCode && 
+            synced.period === reading.period &&
+            synced.timestamp === reading.timestamp
+          )
+        ));
+      }
+
+      // Mostrar resumen de sincronización
+      const totalSynced = syncedReadings + syncedPhotos + syncedComments;
+      if (totalSynced > 0) {
+        const message = [
+          syncedReadings > 0 && `${syncedReadings} lectura${syncedReadings !== 1 ? 's' : ''}`,
+          syncedPhotos > 0 && `${syncedPhotos} foto${syncedPhotos !== 1 ? 's' : ''}`,
+          syncedComments > 0 && `${syncedComments} comentario${syncedComments !== 1 ? 's' : ''}`
+        ].filter(Boolean).join(', ');
+
+        showSnackbar(`¡Sincronización exitosa! Se sincronizaron ${message}`, 'success');
+      }
+
+      if (errors > 0) {
+        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
+      }
+
+    } catch (error) {
+      console.error('Error durante la sincronización:', error);
+      showSnackbar('Ups, hubo un problema durante la sincronización. Los datos se mantendrán guardados para intentarlo más tarde.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <Container 
       maxWidth="sm" 
