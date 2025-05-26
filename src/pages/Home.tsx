@@ -355,23 +355,44 @@ const Home: React.FC = () => {
       // Sincronizar fotos pendientes primero
       for (const pendingPhoto of [...pendingPhotos]) {
         try {
-          const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
-          const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from('meter-photos')
-            .upload(fileName, pendingPhoto.file);
-
-          if (uploadError) {
-            console.error('Error al subir foto:', uploadError);
+          // Verificar que el archivo existe y es válido
+          if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
+            console.error('Foto inválida:', pendingPhoto);
             errors++;
             continue;
           }
+
+          const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
+          const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
+          
+          console.log('Intentando subir foto:', fileName);
+          
+          // Intentar subir la foto
+          const { error: uploadError, data } = await supabase.storage
+            .from('meter-photos')
+            .upload(fileName, pendingPhoto.file, {
+              cacheControl: '3600',
+              upsert: true // Permitir sobrescribir si existe
+            });
+
+          if (uploadError) {
+            console.error('Error al subir foto:', uploadError);
+            if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+              showSnackbar('El bucket de fotos no está disponible. Por favor, contacta al administrador.', 'error');
+              throw uploadError;
+            }
+            errors++;
+            continue;
+          }
+
+          console.log('Foto subida exitosamente:', data);
 
           // Obtener URL pública de la foto
           const { data: { publicUrl } } = supabase.storage
             .from('meter-photos')
             .getPublicUrl(fileName);
+
+          console.log('URL pública generada:', publicUrl);
 
           // Actualizar la lectura asociada con la URL de la foto
           const readingToUpdate = pendingReadings.find(r => 
@@ -380,7 +401,20 @@ const Home: React.FC = () => {
           );
 
           if (readingToUpdate) {
-            readingToUpdate.photoUrl = publicUrl;
+            // Actualizar la lectura en la base de datos con la URL de la foto
+            const { error: updateError } = await supabase
+              .from('readings')
+              .update({ photo_url: publicUrl })
+              .match({ 
+                meter_id: readingToUpdate.meterCode,
+                created_at: new Date(readingToUpdate.timestamp).toISOString()
+              });
+
+            if (updateError) {
+              console.error('Error al actualizar lectura con URL de foto:', updateError);
+              errors++;
+              continue;
+            }
           }
 
           syncedPhotos++;
@@ -478,12 +512,21 @@ const Home: React.FC = () => {
         }
       }
 
-      // Solo eliminar los datos que se sincronizaron exitosamente
+      // Solo eliminar las fotos que se sincronizaron exitosamente
       if (syncedPhotos > 0) {
         setPendingPhotos(prev => prev.filter(photo => 
           !pendingPhotos.slice(0, syncedPhotos).some(synced => 
             synced.meterCode === photo.meterCode && 
             synced.timestamp === photo.timestamp
+          )
+        ));
+        // Guardar en localStorage
+        localStorage.setItem('pendingPhotos', JSON.stringify(
+          pendingPhotos.filter(photo => 
+            !pendingPhotos.slice(0, syncedPhotos).some(synced => 
+              synced.meterCode === photo.meterCode && 
+              synced.timestamp === photo.timestamp
+            )
           )
         ));
       }
