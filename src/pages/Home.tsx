@@ -346,105 +346,188 @@ const Home: React.FC = () => {
     }
 
     setSyncStatus('syncing');
+    let syncedReadings = 0;
+    let syncedPhotos = 0;
+    let syncedComments = 0;
+    let errors = 0;
+
     try {
       // Sincronizar fotos pendientes primero
-      for (const pendingPhoto of pendingPhotos) {
-        const fileExt = pendingPhoto.file.name.split('.').pop();
-        const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('meter-photos')
-          .upload(fileName, pendingPhoto.file);
-
-        if (uploadError) {
-          let mensajeError = (uploadError instanceof Error) ? (uploadError.message || "Error al sincronizar") : "Error al sincronizar";
-          if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
-             mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
-          }
-          showSnackbar(mensajeError, 'error');
-          throw uploadError;
-        }
-      }
-
-      // Sincronizar lecturas pendientes
-      for (const reading of pendingReadings) {
-        const { error: meterError } = await supabase
-          .from('meters')
-          .insert([{
-            code_meter: reading.meterCode,
-            status: 'active'
-          }])
-          .select()
-          .single();
-
-        if (meterError && meterError.code !== '23505') { // Ignorar error de duplicado
-          throw meterError;
-        }
-
-        let photoUrl = '';
-        if (reading.photo) {
-          const fileExt = reading.photo.name.split('.').pop();
-          const fileName = `${reading.meterCode}_${reading.timestamp}.${fileExt}`;
+      for (const pendingPhoto of [...pendingPhotos]) {
+        try {
+          const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
+          const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
+          
           const { error: uploadError } = await supabase.storage
             .from('meter-photos')
-            .upload(fileName, reading.photo);
+            .upload(fileName, pendingPhoto.file);
 
           if (uploadError) {
-            let mensajeError = (uploadError instanceof Error) ? (uploadError.message || "Error al sincronizar") : "Error al sincronizar";
-            if (mensajeError.includes("BUCKET NOT FOUND") || mensajeError.includes("BUCKET NO FOUND")) {
-               mensajeError = "EL BUCKET METER-PHOTOS NO EXISTE POR FAVOR CONTACTA AL ADMINISTRADOR";
-            }
-            showSnackbar(mensajeError, 'error');
-            throw uploadError;
+            console.error('Error al subir foto:', uploadError);
+            errors++;
+            continue;
           }
 
+          // Obtener URL pública de la foto
           const { data: { publicUrl } } = supabase.storage
             .from('meter-photos')
             .getPublicUrl(fileName);
 
-          photoUrl = publicUrl;
+          // Actualizar la lectura asociada con la URL de la foto
+          const readingToUpdate = pendingReadings.find(r => 
+            r.meterCode === pendingPhoto.meterCode && 
+            r.timestamp === pendingPhoto.timestamp
+          );
+
+          if (readingToUpdate) {
+            readingToUpdate.photoUrl = publicUrl;
+          }
+
+          syncedPhotos++;
+          showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+        } catch (error) {
+          console.error('Error al sincronizar foto:', error);
+          errors++;
         }
+      }
 
-        const { error: readingError } = await supabase
-          .from('readings')
-          .insert([{
-            meter_id: reading.meterCode,
-            value: reading.value,
-            period: reading.period,
-            photo_url: photoUrl,
-            created_at: new Date(reading.timestamp).toISOString()
-          }]);
+      // Sincronizar lecturas pendientes
+      for (const reading of [...pendingReadings]) {
+        try {
+          // Validar que la lectura tenga los datos necesarios
+          if (!reading.meterCode || typeof reading.value !== 'number' || !reading.period) {
+            console.error('Lectura inválida:', reading);
+            errors++;
+            continue;
+          }
 
-        if (readingError) throw readingError;
+          // Verificar si el medidor existe
+          const { data: existingMeter, error: meterCheckError } = await supabase
+            .from('meters')
+            .select('*')
+            .eq('code_meter', reading.meterCode)
+            .single();
+
+          if (meterCheckError && meterCheckError.code !== 'PGRST116') {
+            throw meterCheckError;
+          }
+
+          // Crear medidor si no existe
+          if (!existingMeter) {
+            const { error: meterError } = await supabase
+              .from('meters')
+              .insert([{
+                code_meter: reading.meterCode,
+                status: 'active'
+              }]);
+
+            if (meterError) {
+              console.error('Error al crear medidor:', meterError);
+              errors++;
+              continue;
+            }
+          }
+
+          // Insertar lectura
+          const { error: readingError } = await supabase
+            .from('readings')
+            .insert([{
+              meter_id: reading.meterCode,
+              value: reading.value,
+              period: reading.period,
+              photo_url: reading.photoUrl || '',
+              created_at: new Date(reading.timestamp).toISOString()
+            }]);
+
+          if (readingError) {
+            console.error('Error al insertar lectura:', readingError);
+            errors++;
+            continue;
+          }
+
+          syncedReadings++;
+          showSnackbar(`Lectura sincronizada: ${reading.meterCode}`, 'success');
+        } catch (error) {
+          console.error('Error al sincronizar lectura:', error);
+          errors++;
+        }
       }
 
       // Sincronizar comentarios pendientes
-      for (const comment of pendingComments) {
-        const { error: commentError } = await supabase
-          .from('comments')
-          .insert([{
-            meter_id_comment: comment.meterCode,
-            notes: comment.notes,
-            created_at: new Date(comment.timestamp).toISOString()
-          }]);
+      for (const comment of [...pendingComments]) {
+        try {
+          const { error: commentError } = await supabase
+            .from('comments')
+            .insert([{
+              meter_id_comment: comment.meterCode,
+              notes: comment.notes,
+              created_at: new Date(comment.timestamp).toISOString()
+            }]);
 
-        if (commentError) throw commentError;
+          if (commentError) {
+            console.error('Error al insertar comentario:', commentError);
+            errors++;
+            continue;
+          }
+
+          syncedComments++;
+          showSnackbar(`Comentario sincronizado: ${comment.meterCode}`, 'success');
+        } catch (error) {
+          console.error('Error al sincronizar comentario:', error);
+          errors++;
+        }
       }
 
-      // Limpiar datos pendientes incluyendo fotos
-      setPendingReadings([]);
-      setPendingComments([]);
-      setPendingPhotos([]);
-      localStorage.removeItem('pendingReadings');
-      localStorage.removeItem('pendingComments');
-      localStorage.removeItem('pendingPhotos');
+      // Solo eliminar los datos que se sincronizaron exitosamente
+      if (syncedPhotos > 0) {
+        setPendingPhotos(prev => prev.filter(photo => 
+          !pendingPhotos.slice(0, syncedPhotos).some(synced => 
+            synced.meterCode === photo.meterCode && 
+            synced.timestamp === photo.timestamp
+          )
+        ));
+      }
 
-      setSyncStatus('success');
-      showSnackbar('¡Perfecto! Todos tus datos se sincronizaron correctamente');
-    } catch (error: any) {
-      console.error('Error al sincronizar:', error);
-      setSyncStatus('error');
-      showSnackbar(error.message || 'Ups, hubo un problema al sincronizar. No te preocupes, tus datos están seguros', 'error');
+      if (syncedReadings > 0) {
+        setPendingReadings(prev => prev.filter(reading => 
+          !pendingReadings.slice(0, syncedReadings).some(synced => 
+            synced.meterCode === reading.meterCode && 
+            synced.period === reading.period &&
+            synced.timestamp === reading.timestamp
+          )
+        ));
+      }
+
+      if (syncedComments > 0) {
+        setPendingComments(prev => prev.filter(comment => 
+          !pendingComments.slice(0, syncedComments).some(synced => 
+            synced.meterCode === comment.meterCode && 
+            synced.timestamp === comment.timestamp
+          )
+        ));
+      }
+
+      // Mostrar resumen de sincronización
+      const totalSynced = syncedReadings + syncedPhotos + syncedComments;
+      if (totalSynced > 0) {
+        const message = [
+          syncedReadings > 0 && `${syncedReadings} lectura${syncedReadings !== 1 ? 's' : ''}`,
+          syncedPhotos > 0 && `${syncedPhotos} foto${syncedPhotos !== 1 ? 's' : ''}`,
+          syncedComments > 0 && `${syncedComments} comentario${syncedComments !== 1 ? 's' : ''}`
+        ].filter(Boolean).join(', ');
+
+        showSnackbar(`¡Sincronización exitosa! Se sincronizaron ${message}`, 'success');
+      }
+
+      if (errors > 0) {
+        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
+      }
+
+    } catch (error) {
+      console.error('Error durante la sincronización:', error);
+      showSnackbar('Ups, hubo un problema durante la sincronización. Los datos se mantendrán guardados para intentarlo más tarde.', 'error');
+    } finally {
+      setSyncStatus('idle');
     }
   };
 
