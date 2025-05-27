@@ -96,9 +96,33 @@ const Home: React.FC = () => {
     if (savedPhotos) {
       try {
         const parsedPhotos = JSON.parse(savedPhotos);
-        setPendingPhotos(parsedPhotos);
+        // Convertir los datos del localStorage a objetos File válidos
+        const processedPhotos = parsedPhotos.map((photo: any) => {
+          if (photo.file && photo.file.data) {
+            // Si el archivo está en formato base64, convertirlo a Blob
+            const byteString = atob(photo.file.data.split(',')[1]);
+            const mimeString = photo.file.type || 'image/jpeg';
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            
+            for (let i = 0; i < byteString.length; i++) {
+              ia[i] = byteString.charCodeAt(i);
+            }
+            
+            const blob = new Blob([ab], { type: mimeString });
+            return {
+              ...photo,
+              file: blob
+            };
+          }
+          return photo;
+        });
+        setPendingPhotos(processedPhotos);
       } catch (error) {
         console.error('Error al cargar fotos pendientes:', error);
+        showSnackbar('Error al cargar las fotos pendientes. Se reiniciará el almacenamiento local.', 'error');
+        localStorage.removeItem('pendingPhotos');
+        setPendingPhotos([]);
       }
     }
 
@@ -123,9 +147,38 @@ const Home: React.FC = () => {
 
   // Guardar datos pendientes en localStorage cuando cambien
   useEffect(() => {
-    localStorage.setItem('pendingPhotos', JSON.stringify(pendingPhotos));
-    localStorage.setItem('pendingReadings', JSON.stringify(pendingReadings));
-    localStorage.setItem('pendingComments', JSON.stringify(pendingComments));
+    try {
+      // Convertir los archivos a base64 antes de guardar
+      const photosToSave = pendingPhotos.map(photo => {
+        if (photo.file instanceof Blob) {
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              resolve({
+                ...photo,
+                file: {
+                  type: photo.file.type || 'image/jpeg',
+                  data: reader.result
+                }
+              });
+            };
+            reader.readAsDataURL(photo.file);
+          });
+        }
+        return photo;
+      });
+
+      // Guardar los datos una vez que se hayan convertido todas las fotos
+      Promise.all(photosToSave).then(processedPhotos => {
+        localStorage.setItem('pendingPhotos', JSON.stringify(processedPhotos));
+      });
+
+      localStorage.setItem('pendingReadings', JSON.stringify(pendingReadings));
+      localStorage.setItem('pendingComments', JSON.stringify(pendingComments));
+    } catch (error) {
+      console.error('Error al guardar datos pendientes:', error);
+      showSnackbar('Error al guardar los datos pendientes. Intenta nuevamente.', 'error');
+    }
   }, [pendingPhotos, pendingReadings, pendingComments]);
 
   const showSnackbar = (message: string, severity: 'success' | 'error' | 'info' | 'warning' = 'success') => {
@@ -1063,42 +1116,33 @@ const Home: React.FC = () => {
             continue;
           }
 
-          // Verificar que el archivo tiene la propiedad type
-          if (!('type' in photo.file)) {
-            console.error('Archivo no tiene tipo definido:', photo.file);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo no válido: tipo no definido' });
-            failedCount++;
-            continue;
-          }
-
-          // Verificar que el archivo es una imagen y tiene un formato permitido
-          const fileType = String(photo.file.type).toLowerCase();
+          // Asegurar que el archivo tenga un tipo válido
+          const fileType = photo.file instanceof Blob ? photo.file.type : 'image/jpeg';
+          const safeFileType = fileType || 'image/jpeg';
           const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-          const isAllowedType = allowedTypes.includes(fileType);
           
-          if (!isAllowedType) {
-            console.error('Formato de archivo no permitido:', fileType);
+          // Verificar que el tipo de archivo es permitido
+          if (!allowedTypes.includes(safeFileType)) {
+            console.error('Formato de archivo no permitido:', safeFileType);
             failedPhotos.push({ 
               meterCode: photo.meterCode, 
-              error: `Formato de archivo no válido: ${fileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
+              error: `Formato de archivo no válido: ${safeFileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
             });
             failedCount++;
             continue;
           }
 
           // Crear un nombre de archivo seguro con la extensión correcta
-          const fileExt = fileType.split('/')[1];
+          const fileExt = safeFileType.split('/')[1];
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileExt}`;
           
           // Convertir el archivo a blob si no lo es ya
           let photoBlob: Blob;
           try {
             if (photo.file instanceof File) {
-              // Si es un File, convertirlo a Blob manteniendo el tipo original
               const arrayBuffer = await photo.file.arrayBuffer();
-              photoBlob = new Blob([arrayBuffer], { type: fileType });
+              photoBlob = new Blob([arrayBuffer], { type: safeFileType });
             } else if (photo.file instanceof Blob) {
-              // Si ya es un Blob, usarlo directamente
               photoBlob = photo.file;
             } else {
               throw new Error(`Formato de archivo no soportado: ${typeof photo.file}`);
