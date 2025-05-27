@@ -430,6 +430,8 @@ const Home: React.FC = () => {
     let successfullySyncedPhotos: { meterCode: string; timestamp: number }[] = [];
     let failedReadings: { meterCode: string; timestamp: number; error: string }[] = [];
     let failedComments: { meterCode: string; timestamp: number; error: string }[] = [];
+    let successfullySyncedReadings: { meterCode: string; timestamp: number }[] = [];
+    let successfullySyncedComments: { meterCode: string; timestamp: number }[] = [];
 
     try {
       // Verificar conexión a Supabase antes de comenzar
@@ -621,6 +623,10 @@ const Home: React.FC = () => {
 
             success = true;
             syncedReadings++;
+            successfullySyncedReadings.push({
+              meterCode: reading.meterCode,
+              timestamp: reading.timestamp
+            });
             showSnackbar(`Lectura sincronizada: ${reading.meterCode}`, 'success');
 
           } catch (error: any) {
@@ -642,16 +648,6 @@ const Home: React.FC = () => {
             error: lastError
           });
           showSnackbar(`No se pudo sincronizar la lectura del medidor ${reading.meterCode}: ${lastError}`, 'warning');
-        } else {
-          // Remover solo la lectura sincronizada exitosamente
-          setPendingReadings(prev => {
-            const updated = prev.filter(r => 
-              r.meterCode !== reading.meterCode || 
-              r.timestamp !== reading.timestamp
-            );
-            localStorage.setItem('pendingReadings', JSON.stringify(updated));
-            return updated;
-          });
         }
       }
 
@@ -719,6 +715,10 @@ const Home: React.FC = () => {
 
             success = true;
             syncedComments++;
+            successfullySyncedComments.push({
+              meterCode: comment.meterCode,
+              timestamp: comment.timestamp
+            });
             showSnackbar(`Comentario sincronizado: ${comment.meterCode}`, 'success');
 
           } catch (error: any) {
@@ -740,17 +740,47 @@ const Home: React.FC = () => {
             error: lastError
           });
           showSnackbar(`No se pudo sincronizar el comentario del medidor ${comment.meterCode}: ${lastError}`, 'warning');
-        } else {
-          // Remover comentario sincronizado exitosamente
-          setPendingComments(prev => {
-            const updated = prev.filter(c => 
-              c.meterCode !== comment.meterCode || 
-              c.timestamp !== comment.timestamp
-            );
-            localStorage.setItem('pendingComments', JSON.stringify(updated));
-            return updated;
-          });
         }
+      }
+
+      // Actualizar el estado local solo después de que toda la sincronización se haya completado
+      if (successfullySyncedReadings.length > 0) {
+        setPendingReadings(prev => {
+          const updated = prev.filter(r => 
+            !successfullySyncedReadings.some(sr => 
+              sr.meterCode === r.meterCode && 
+              sr.timestamp === r.timestamp
+            )
+          );
+          localStorage.setItem('pendingReadings', JSON.stringify(updated));
+          return updated;
+        });
+      }
+
+      if (successfullySyncedPhotos.length > 0) {
+        setPendingPhotos(prev => {
+          const updated = prev.filter(p => 
+            !successfullySyncedPhotos.some(sp => 
+              sp.meterCode === p.meterCode && 
+              sp.timestamp === p.timestamp
+            )
+          );
+          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+          return updated;
+        });
+      }
+
+      if (successfullySyncedComments.length > 0) {
+        setPendingComments(prev => {
+          const updated = prev.filter(c => 
+            !successfullySyncedComments.some(sc => 
+              sc.meterCode === c.meterCode && 
+              sc.timestamp === c.timestamp
+            )
+          );
+          localStorage.setItem('pendingComments', JSON.stringify(updated));
+          return updated;
+        });
       }
 
       // Mostrar resumen detallado de la sincronización
@@ -788,22 +818,7 @@ const Home: React.FC = () => {
         console.error('Detalles de errores:', errorMessages);
       }
 
-      // Verificar estado final
-      const remainingItems = pendingPhotos.length + pendingReadings.length + pendingComments.length;
-      if (remainingItems > 0) {
-        const remainingDetails = [
-          pendingPhotos.length > 0 && `${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''}`,
-          pendingReadings.length > 0 && `${pendingReadings.length} lectura${pendingReadings.length !== 1 ? 's' : ''}`,
-          pendingComments.length > 0 && `${pendingComments.length} comentario${pendingComments.length !== 1 ? 's' : ''}`
-        ].filter(Boolean).join(', ');
-
-        showSnackbar(
-          `Quedan ${remainingItems} registro${remainingItems !== 1 ? 's' : ''} pendientes: ${remainingDetails}. Intenta sincronizar nuevamente.`,
-          'warning'
-        );
-      }
-
-      // Al final de la sincronización, verificar si quedan fotos sin lecturas asociadas
+      // Verificar estado final y limpiar registros huérfanos
       const remainingPhotos = pendingPhotos.filter(photo => {
         // Buscar si existe una lectura pendiente asociada a esta foto
         const hasPendingReading = pendingReadings.some(reading => 
@@ -826,6 +841,21 @@ const Home: React.FC = () => {
           localStorage.setItem('pendingPhotos', JSON.stringify(updated));
           return updated;
         });
+      }
+
+      // Verificar estado final después de la limpieza
+      const finalPendingItems = pendingPhotos.length + pendingReadings.length + pendingComments.length;
+      if (finalPendingItems > 0) {
+        const remainingDetails = [
+          pendingPhotos.length > 0 && `${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''}`,
+          pendingReadings.length > 0 && `${pendingReadings.length} lectura${pendingReadings.length !== 1 ? 's' : ''}`,
+          pendingComments.length > 0 && `${pendingComments.length} comentario${pendingComments.length !== 1 ? 's' : ''}`
+        ].filter(Boolean).join(', ');
+
+        showSnackbar(
+          `Quedan ${finalPendingItems} registro${finalPendingItems !== 1 ? 's' : ''} pendientes: ${remainingDetails}. Intenta sincronizar nuevamente.`,
+          'warning'
+        );
       }
 
     } catch (error: any) {
