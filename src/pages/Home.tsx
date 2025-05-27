@@ -670,22 +670,47 @@ const Home: React.FC = () => {
       // Verificar estado final de fotos pendientes
       const remainingPhotos = pendingPhotos.length;
       console.log('Fotos pendientes restantes:', remainingPhotos);
-      if (remainingPhotos > 0) {
+      if (remainingPhotos > 0 || pendingReadings.length > 0 || pendingComments.length > 0) {
         // Agrupar fotos pendientes por medidor
         const pendingByMeter = pendingPhotos.reduce((acc, photo) => {
           if (!acc[photo.meterCode]) {
-            acc[photo.meterCode] = 0;
+            acc[photo.meterCode] = { photos: 0, readings: 0, comments: 0 };
           }
-          acc[photo.meterCode]++;
+          acc[photo.meterCode].photos++;
           return acc;
-        }, {} as Record<string, number>);
+        }, {} as Record<string, { photos: number; readings: number; comments: number }>);
 
-        // Crear mensaje detallado de fotos pendientes
+        // Agrupar lecturas pendientes por medidor
+        pendingReadings.forEach(reading => {
+          if (!pendingByMeter[reading.meterCode]) {
+            pendingByMeter[reading.meterCode] = { photos: 0, readings: 0, comments: 0 };
+          }
+          pendingByMeter[reading.meterCode].readings++;
+        });
+
+        // Agrupar comentarios pendientes por medidor
+        pendingComments.forEach(comment => {
+          if (!pendingByMeter[comment.meterCode]) {
+            pendingByMeter[comment.meterCode] = { photos: 0, readings: 0, comments: 0 };
+          }
+          pendingByMeter[comment.meterCode].comments++;
+        });
+
+        // Crear mensaje detallado de registros pendientes
         const pendingDetails = Object.entries(pendingByMeter)
-          .map(([meterCode, count]) => `${meterCode} (${count} foto${count !== 1 ? 's' : ''})`)
-          .join(', ');
+          .map(([meterCode, counts]) => {
+            const parts = [];
+            if (counts.photos > 0) parts.push(`${counts.photos} foto${counts.photos !== 1 ? 's' : ''}`);
+            if (counts.readings > 0) parts.push(`${counts.readings} lectura${counts.readings !== 1 ? 's' : ''}`);
+            if (counts.comments > 0) parts.push(`${counts.comments} comentario${counts.comments !== 1 ? 's' : ''}`);
+            return `Medidor ${meterCode}: ${parts.join(', ')}`;
+          })
+          .join('\n• ');
 
-        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar para los medidores: ${pendingDetails}. Intenta sincronizar nuevamente.`, 'warning');
+        const totalPending = remainingPhotos + pendingReadings.length + pendingComments.length;
+        const message = `Quedan ${totalPending} registro${totalPending !== 1 ? 's' : ''} pendientes de sincronizar:\n• ${pendingDetails}`;
+
+        showSnackbar(message, 'warning');
       }
 
     } catch (error) {
