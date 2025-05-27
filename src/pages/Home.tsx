@@ -382,12 +382,28 @@ const Home: React.FC = () => {
             
             console.log(`Intentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, fileName);
             
-            // Intentar subir la foto
+            // Primero intentar eliminar la foto si existe
+            try {
+              const { error: deleteError } = await supabase.storage
+                .from('meter-photos')
+                .remove([fileName]);
+              
+              if (deleteError) {
+                console.log('No se pudo eliminar la foto existente, continuando con la subida:', deleteError);
+              } else {
+                console.log('Foto existente eliminada, procediendo con nueva subida');
+              }
+            } catch (deleteError) {
+              console.log('Error al intentar eliminar foto existente, continuando con la subida:', deleteError);
+            }
+            
+            // Intentar subir la foto con upsert forzado
             const { error: uploadError, data } = await supabase.storage
               .from('meter-photos')
               .upload(fileName, pendingPhoto.file, {
                 cacheControl: '3600',
-                upsert: true
+                upsert: true,
+                duplex: 'half'
               });
 
             if (uploadError) {
@@ -461,7 +477,26 @@ const Home: React.FC = () => {
               }
             } else {
               console.log('No se encontró la lectura asociada para medidor:', pendingPhoto.meterCode);
-              // Aún así consideramos la foto como sincronizada ya que se subió correctamente
+              // Intentar crear la lectura si no existe
+              try {
+                const { error: insertError } = await supabase
+                  .from('readings')
+                  .insert([{
+                    meter_id: pendingPhoto.meterCode,
+                    value: 0, // Valor por defecto
+                    period: getCurrentPeriod(),
+                    photo_url: publicUrl,
+                    created_at: new Date(pendingPhoto.timestamp).toISOString()
+                  }]);
+
+                if (insertError) {
+                  console.error('Error al crear lectura para foto:', insertError);
+                } else {
+                  console.log('Lectura creada para foto del medidor:', pendingPhoto.meterCode);
+                }
+              } catch (insertError) {
+                console.error('Error al intentar crear lectura:', insertError);
+              }
             }
 
             // Si llegamos aquí, la foto se sincronizó correctamente
