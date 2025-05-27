@@ -146,13 +146,15 @@ const Home: React.FC = () => {
           return;
         }
 
-        // Validar tipo de archivo
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-        if (!allowedTypes.includes(file.type)) {
-          showSnackbar('Por favor, elige una imagen en formato JPG, PNG o WebP', 'warning');
+        // Validar tipo de archivo de manera más flexible
+        const fileType = file.type.toLowerCase();
+        const isImage = fileType.startsWith('image/');
+        if (!isImage) {
+          showSnackbar('Por favor, elige una imagen válida (JPG, PNG, WebP)', 'warning');
           return;
         }
 
+        // Comprimir la imagen
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
 
@@ -1052,7 +1054,7 @@ const Home: React.FC = () => {
       
       for (const photo of pendingPhotos) {
         try {
-          // Verificar que el archivo existe y es válido
+          // Verificar que el archivo existe
           if (!photo.file) {
             console.error('Archivo de foto no existe:', photo);
             failedPhotos.push({ meterCode: photo.meterCode, error: 'Archivo no encontrado' });
@@ -1060,10 +1062,12 @@ const Home: React.FC = () => {
             continue;
           }
 
-          // Verificar que el archivo es un Blob o File
-          if (!(photo.file instanceof Blob)) {
-            console.error('Archivo de foto no es un Blob:', photo);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo inválido' });
+          // Verificar que el archivo es una imagen
+          const fileType = photo.file.type.toLowerCase();
+          const isImage = fileType.startsWith('image/');
+          if (!isImage) {
+            console.error('Archivo no es una imagen:', photo.file.type);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'El archivo no es una imagen válida' });
             failedCount++;
             continue;
           }
@@ -1075,13 +1079,20 @@ const Home: React.FC = () => {
           let photoBlob: Blob;
           try {
             if (photo.file instanceof File) {
+              // Si es un File, convertirlo a Blob
               photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
-            } else {
+            } else if (photo.file instanceof Blob) {
+              // Si ya es un Blob, usarlo directamente
               photoBlob = photo.file;
+            } else {
+              throw new Error('Formato de archivo no soportado');
             }
           } catch (error) {
             console.error('Error al procesar el archivo:', error);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Error al procesar el archivo' });
+            failedPhotos.push({ 
+              meterCode: photo.meterCode, 
+              error: `Error al procesar el archivo: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+            });
             failedCount++;
             continue;
           }
@@ -1102,7 +1113,10 @@ const Home: React.FC = () => {
             showSnackbar(`Descargando foto ${downloadedCount} de ${pendingPhotos.length}...`, 'info');
           } catch (error) {
             console.error('Error al hacer clic en el enlace:', error);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Error al iniciar la descarga' });
+            failedPhotos.push({ 
+              meterCode: photo.meterCode, 
+              error: `Error al iniciar la descarga: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+            });
             failedCount++;
           } finally {
             // Limpiar
