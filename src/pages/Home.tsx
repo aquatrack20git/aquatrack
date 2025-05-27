@@ -432,8 +432,20 @@ const Home: React.FC = () => {
     let errors = 0;
     let failedPhotos: { meterCode: string; timestamp: number; error: string }[] = [];
     let successfullySyncedPhotos: { meterCode: string; timestamp: number }[] = [];
+    let failedReadings: { meterCode: string; timestamp: number; error: string }[] = [];
+    let failedComments: { meterCode: string; timestamp: number; error: string }[] = [];
 
     try {
+      // Verificar conexión a Supabase antes de comenzar
+      try {
+        const { data, error: healthCheckError } = await supabase.from('meters').select('count').limit(1);
+        if (healthCheckError) {
+          throw new Error('No se pudo conectar a la base de datos. Por favor, verifica tu conexión.');
+        }
+      } catch (error) {
+        throw new Error('Error de conexión con la base de datos. Por favor, intenta nuevamente más tarde.');
+      }
+
       // Sincronizar fotos pendientes primero
       const photosToSync = [...pendingPhotos];
       console.log('Fotos pendientes a sincronizar:', photosToSync.length);
@@ -450,37 +462,64 @@ const Home: React.FC = () => {
         while (retryCount < 3 && !success) {
           try {
             // Verificar que el archivo existe y es válido
-            if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
-              lastError = 'Archivo de foto inválido';
+            if (!pendingPhoto.file) {
+              lastError = 'Archivo de foto inválido o vacío';
               console.error('Foto inválida:', pendingPhoto);
               errors++;
               break;
             }
 
-            const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
+            let photoBlob: Blob;
+            let fileType: string;
+
+            // Convertir el archivo a Blob según su tipo
+            if ('data' in pendingPhoto.file) {
+              try {
+                const base64String = pendingPhoto.file.data;
+                const base64Data = base64String.split(',')[1] || base64String;
+                const byteString = atob(base64Data);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                
+                for (let i = 0; i < byteString.length; i++) {
+                  ia[i] = byteString.charCodeAt(i);
+                }
+                
+                fileType = pendingPhoto.file.type || 'image/jpeg';
+                photoBlob = new Blob([ab], { type: fileType });
+              } catch (error) {
+                lastError = 'Error al procesar la foto: formato inválido';
+                console.error('Error al procesar foto base64:', error);
+                retryCount++;
+                continue;
+              }
+            } else if (pendingPhoto.file instanceof File || pendingPhoto.file instanceof Blob) {
+              photoBlob = pendingPhoto.file;
+              fileType = pendingPhoto.file.type || 'image/jpeg';
+            } else {
+              lastError = 'Formato de archivo no soportado';
+              console.error('Formato de archivo no soportado:', pendingPhoto.file);
+              retryCount++;
+              continue;
+            }
+
+            // Verificar tamaño del archivo
+            if (photoBlob.size > MAX_FILE_SIZE) {
+              lastError = 'La foto excede el tamaño máximo permitido (5MB)';
+              console.error('Foto demasiado grande:', photoBlob.size);
+              retryCount++;
+              continue;
+            }
+
+            const fileExt = fileType.split('/')[1] || 'jpg';
             const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
             
             console.log(`Intentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, fileName);
             
-            // Primero intentar eliminar la foto si existe
-            try {
-              const { error: deleteError } = await supabase.storage
-                .from('meter-photos')
-                .remove([fileName]);
-              
-              if (deleteError) {
-                console.log('No se pudo eliminar la foto existente, continuando con la subida:', deleteError);
-              } else {
-                console.log('Foto existente eliminada, procediendo con nueva subida');
-              }
-            } catch (deleteError) {
-              console.log('Error al intentar eliminar foto existente, continuando con la subida:', deleteError);
-            }
-            
             // Intentar subir la foto con upsert forzado
             const { error: uploadError, data } = await supabase.storage
               .from('meter-photos')
-              .upload(fileName, pendingPhoto.file, {
+              .upload(fileName, photoBlob, {
                 cacheControl: '3600',
                 upsert: true,
                 duplex: 'half'
@@ -489,30 +528,47 @@ const Home: React.FC = () => {
             if (uploadError) {
               lastError = uploadError.message;
               console.error(`Error al subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, uploadError);
+              
+              // Manejar errores específicos
               if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
-                showSnackbar('El bucket de fotos no está disponible. Por favor, contacta al administrador.', 'error');
-                throw uploadError;
+                throw new Error('El bucket de fotos no está disponible. Por favor, contacta al administrador.');
               }
-              retryCount++;
-              if (retryCount < 3) {
-                console.log(`Reintentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Aumentar tiempo de espera a 2 segundos
-                continue;
+              if (uploadError.message.includes('security policy')) {
+                throw new Error('No tienes permisos para subir fotos. Por favor, contacta al administrador.');
               }
-              errors++;
-              break;
+              if (uploadError.message.includes('duplicate')) {
+                // Si es un error de duplicado, intentar con un nombre diferente
+                const newFileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}_${Date.now()}.${fileExt}`;
+                const { error: retryError } = await supabase.storage
+                  .from('meter-photos')
+                  .upload(newFileName, photoBlob, {
+                    cacheControl: '3600',
+                    upsert: true
+                  });
+                
+                if (retryError) {
+                  lastError = retryError.message;
+                  retryCount++;
+                  continue;
+                }
+              } else {
+                retryCount++;
+                if (retryCount < 3) {
+                  console.log(`Reintentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  continue;
+                }
+                errors++;
+                break;
+              }
             }
-
-            console.log('Foto subida exitosamente para medidor:', pendingPhoto.meterCode);
 
             // Obtener URL pública de la foto
             const { data: { publicUrl } } = supabase.storage
               .from('meter-photos')
               .getPublicUrl(fileName);
 
-            console.log('URL pública generada para medidor:', pendingPhoto.meterCode);
-
-            // Buscar la lectura asociada en la base de datos
+            // Buscar o crear la lectura asociada
             const { data: existingReading, error: readingError } = await supabase
               .from('readings')
               .select('*')
@@ -524,17 +580,11 @@ const Home: React.FC = () => {
               console.error('Error al buscar lectura:', readingError);
               lastError = readingError.message;
               retryCount++;
-              if (retryCount < 3) {
-                console.log(`Reintentando buscar lectura para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue;
-              }
-              errors++;
-              break;
+              continue;
             }
 
-            // Si la lectura existe, actualizar con la URL de la foto
             if (existingReading) {
+              // Actualizar lectura existente
               const { error: updateError } = await supabase
                 .from('readings')
                 .update({ photo_url: publicUrl })
@@ -545,55 +595,43 @@ const Home: React.FC = () => {
 
               if (updateError) {
                 lastError = updateError.message;
-                console.error('Error al actualizar lectura con URL de foto para medidor:', pendingPhoto.meterCode, updateError);
+                console.error('Error al actualizar lectura:', updateError);
                 retryCount++;
-                if (retryCount < 3) {
-                  console.log(`Reintentando actualizar lectura para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  continue;
-                }
-                errors++;
-                break;
+                continue;
               }
             } else {
-              console.log('No se encontró la lectura asociada para medidor:', pendingPhoto.meterCode);
-              // Intentar crear la lectura si no existe
-              try {
-                const { error: insertError } = await supabase
-                  .from('readings')
-                  .insert([{
-                    meter_id: pendingPhoto.meterCode,
-                    value: 0, // Valor por defecto
-                    period: getCurrentPeriod(),
-                    photo_url: publicUrl,
-                    created_at: new Date(pendingPhoto.timestamp).toISOString()
-                  }]);
+              // Crear nueva lectura
+              const { error: insertError } = await supabase
+                .from('readings')
+                .insert([{
+                  meter_id: pendingPhoto.meterCode,
+                  value: 0,
+                  period: getCurrentPeriod(),
+                  photo_url: publicUrl,
+                  created_at: new Date(pendingPhoto.timestamp).toISOString()
+                }]);
 
-                if (insertError) {
-                  console.error('Error al crear lectura para foto:', insertError);
-                } else {
-                  console.log('Lectura creada para foto del medidor:', pendingPhoto.meterCode);
-                }
-              } catch (insertError) {
-                console.error('Error al intentar crear lectura:', insertError);
+              if (insertError) {
+                lastError = insertError.message;
+                console.error('Error al crear lectura:', insertError);
+                retryCount++;
+                continue;
               }
             }
 
-            // Si llegamos aquí, la foto se sincronizó correctamente
             success = true;
             syncedPhotos++;
             successfullySyncedPhotos.push({
               meterCode: pendingPhoto.meterCode,
               timestamp: pendingPhoto.timestamp
             });
-            showSnackbar(`Foto sincronizada exitosamente para medidor ${pendingPhoto.meterCode}`, 'success');
+            showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
 
           } catch (error: any) {
             lastError = error.message || 'Error desconocido';
-            console.error(`Error al sincronizar foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, error);
+            console.error(`Error al sincronizar foto para medidor ${pendingPhoto.meterCode}:`, error);
             retryCount++;
             if (retryCount < 3) {
-              console.log(`Reintentando sincronización para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
               await new Promise(resolve => setTimeout(resolve, 2000));
               continue;
             }
@@ -602,18 +640,16 @@ const Home: React.FC = () => {
         }
 
         if (!success) {
-          console.error(`No se pudo sincronizar la foto para medidor ${pendingPhoto.meterCode} después de ${retryCount} intentos`);
           failedPhotos.push({
             meterCode: pendingPhoto.meterCode,
             timestamp: pendingPhoto.timestamp,
             error: lastError
           });
-          // Mostrar mensaje específico para esta foto
-          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}. Error: ${lastError}`, 'warning');
+          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}: ${lastError}`, 'warning');
         }
       }
 
-      // Actualizar el estado de las fotos pendientes después de procesar todas las fotos
+      // Actualizar estado de fotos pendientes
       if (successfullySyncedPhotos.length > 0) {
         setPendingPhotos(prev => {
           const updated = prev.filter(photo => 
@@ -622,102 +658,246 @@ const Home: React.FC = () => {
               synced.timestamp === photo.timestamp
             )
           );
-          // Actualizar localStorage con el nuevo estado
           localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-          console.log('Fotos pendientes actualizadas:', updated.length);
           return updated;
         });
       }
 
       // Sincronizar lecturas pendientes
       for (const reading of [...pendingReadings]) {
-        try {
-          // Validar que la lectura tenga los datos necesarios
-          if (!reading.meterCode || typeof reading.value !== 'number' || !reading.period) {
-            console.error('Lectura inválida:', reading);
-            errors++;
-            continue;
-          }
+        let retryCount = 0;
+        let success = false;
+        let lastError = '';
 
-          // Verificar si el medidor existe
-          const { data: existingMeter, error: meterCheckError } = await supabase
-            .from('meters')
-            .select('*')
-            .eq('code_meter', reading.meterCode)
-            .single();
-
-          if (meterCheckError && meterCheckError.code !== 'PGRST116') {
-            throw meterCheckError;
-          }
-
-          // Crear medidor si no existe
-          if (!existingMeter) {
-            const { error: meterError } = await supabase
-              .from('meters')
-              .insert([{
-                code_meter: reading.meterCode,
-                status: 'active'
-              }]);
-
-            if (meterError) {
-              console.error('Error al crear medidor:', meterError);
+        while (retryCount < 3 && !success) {
+          try {
+            // Validar datos de la lectura
+            if (!reading.meterCode || typeof reading.value !== 'number' || !reading.period) {
+              lastError = 'Datos de lectura inválidos';
+              console.error('Lectura inválida:', reading);
               errors++;
+              break;
+            }
+
+            // Verificar si el medidor existe
+            const { data: existingMeter, error: meterCheckError } = await supabase
+              .from('meters')
+              .select('*')
+              .eq('code_meter', reading.meterCode)
+              .single();
+
+            if (meterCheckError && meterCheckError.code !== 'PGRST116') {
+              lastError = meterCheckError.message;
+              retryCount++;
               continue;
             }
-          }
 
-          // Insertar lectura
-          const { error: readingError } = await supabase
-            .from('readings')
-            .insert([{
-              meter_id: reading.meterCode,
-              value: reading.value,
-              period: reading.period,
-              photo_url: reading.photoUrl || '',
-              created_at: new Date(reading.timestamp).toISOString()
-            }]);
+            // Crear medidor si no existe
+            if (!existingMeter) {
+              const { error: meterError } = await supabase
+                .from('meters')
+                .insert([{
+                  code_meter: reading.meterCode,
+                  status: 'active'
+                }]);
 
-          if (readingError) {
-            console.error('Error al insertar lectura:', readingError);
+              if (meterError) {
+                lastError = meterError.message;
+                console.error('Error al crear medidor:', meterError);
+                retryCount++;
+                continue;
+              }
+            }
+
+            // Verificar si la lectura ya existe
+            const { data: existingReading, error: readingCheckError } = await supabase
+              .from('readings')
+              .select('*')
+              .eq('meter_id', reading.meterCode)
+              .eq('created_at', new Date(reading.timestamp).toISOString())
+              .single();
+
+            if (readingCheckError && readingCheckError.code !== 'PGRST116') {
+              lastError = readingCheckError.message;
+              retryCount++;
+              continue;
+            }
+
+            if (existingReading) {
+              // Actualizar lectura existente
+              const { error: updateError } = await supabase
+                .from('readings')
+                .update({
+                  value: reading.value,
+                  period: reading.period,
+                  photo_url: reading.photoUrl || existingReading.photo_url
+                })
+                .match({
+                  meter_id: reading.meterCode,
+                  created_at: new Date(reading.timestamp).toISOString()
+                });
+
+              if (updateError) {
+                lastError = updateError.message;
+                console.error('Error al actualizar lectura:', updateError);
+                retryCount++;
+                continue;
+              }
+            } else {
+              // Insertar nueva lectura
+              const { error: insertError } = await supabase
+                .from('readings')
+                .insert([{
+                  meter_id: reading.meterCode,
+                  value: reading.value,
+                  period: reading.period,
+                  photo_url: reading.photoUrl || '',
+                  created_at: new Date(reading.timestamp).toISOString()
+                }]);
+
+              if (insertError) {
+                lastError = insertError.message;
+                console.error('Error al insertar lectura:', insertError);
+                retryCount++;
+                continue;
+              }
+            }
+
+            success = true;
+            syncedReadings++;
+            showSnackbar(`Lectura sincronizada: ${reading.meterCode}`, 'success');
+
+          } catch (error: any) {
+            lastError = error.message || 'Error desconocido';
+            console.error('Error al sincronizar lectura:', error);
+            retryCount++;
+            if (retryCount < 3) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue;
+            }
             errors++;
-            continue;
           }
+        }
 
-          syncedReadings++;
-          showSnackbar(`Lectura sincronizada: ${reading.meterCode}`, 'success');
-        } catch (error) {
-          console.error('Error al sincronizar lectura:', error);
-          errors++;
-          // No removemos la lectura del array para intentar sincronizarla después
+        if (!success) {
+          failedReadings.push({
+            meterCode: reading.meterCode,
+            timestamp: reading.timestamp,
+            error: lastError
+          });
+          showSnackbar(`No se pudo sincronizar la lectura del medidor ${reading.meterCode}: ${lastError}`, 'warning');
+        } else {
+          // Remover lectura sincronizada exitosamente
+          setPendingReadings(prev => {
+            const updated = prev.filter(r => 
+              r.meterCode !== reading.meterCode || 
+              r.timestamp !== reading.timestamp
+            );
+            localStorage.setItem('pendingReadings', JSON.stringify(updated));
+            return updated;
+          });
         }
       }
 
       // Sincronizar comentarios pendientes
       for (const comment of [...pendingComments]) {
-        try {
-          const { error: commentError } = await supabase
-            .from('comments')
-            .insert([{
-              meter_id_comment: comment.meterCode,
-              notes: comment.notes,
-              created_at: new Date(comment.timestamp).toISOString()
-            }]);
+        let retryCount = 0;
+        let success = false;
+        let lastError = '';
 
-          if (commentError) {
-            console.error('Error al insertar comentario:', commentError);
+        while (retryCount < 3 && !success) {
+          try {
+            // Validar datos del comentario
+            if (!comment.meterCode || !comment.notes) {
+              lastError = 'Datos de comentario inválidos';
+              console.error('Comentario inválido:', comment);
+              errors++;
+              break;
+            }
+
+            // Verificar si el medidor existe
+            const { data: existingMeter, error: meterCheckError } = await supabase
+              .from('meters')
+              .select('*')
+              .eq('code_meter', comment.meterCode)
+              .single();
+
+            if (meterCheckError && meterCheckError.code !== 'PGRST116') {
+              lastError = meterCheckError.message;
+              retryCount++;
+              continue;
+            }
+
+            // Crear medidor si no existe
+            if (!existingMeter) {
+              const { error: meterError } = await supabase
+                .from('meters')
+                .insert([{
+                  code_meter: comment.meterCode,
+                  status: 'active'
+                }]);
+
+              if (meterError) {
+                lastError = meterError.message;
+                console.error('Error al crear medidor:', meterError);
+                retryCount++;
+                continue;
+              }
+            }
+
+            // Insertar comentario
+            const { error: commentError } = await supabase
+              .from('comments')
+              .insert([{
+                meter_id_comment: comment.meterCode,
+                notes: comment.notes,
+                created_at: new Date(comment.timestamp).toISOString()
+              }]);
+
+            if (commentError) {
+              lastError = commentError.message;
+              console.error('Error al insertar comentario:', commentError);
+              retryCount++;
+              continue;
+            }
+
+            success = true;
+            syncedComments++;
+            showSnackbar(`Comentario sincronizado: ${comment.meterCode}`, 'success');
+
+          } catch (error: any) {
+            lastError = error.message || 'Error desconocido';
+            console.error('Error al sincronizar comentario:', error);
+            retryCount++;
+            if (retryCount < 3) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue;
+            }
             errors++;
-            continue;
           }
+        }
 
-          syncedComments++;
-          showSnackbar(`Comentario sincronizado: ${comment.meterCode}`, 'success');
-        } catch (error) {
-          console.error('Error al sincronizar comentario:', error);
-          errors++;
+        if (!success) {
+          failedComments.push({
+            meterCode: comment.meterCode,
+            timestamp: comment.timestamp,
+            error: lastError
+          });
+          showSnackbar(`No se pudo sincronizar el comentario del medidor ${comment.meterCode}: ${lastError}`, 'warning');
+        } else {
+          // Remover comentario sincronizado exitosamente
+          setPendingComments(prev => {
+            const updated = prev.filter(c => 
+              c.meterCode !== comment.meterCode || 
+              c.timestamp !== comment.timestamp
+            );
+            localStorage.setItem('pendingComments', JSON.stringify(updated));
+            return updated;
+          });
         }
       }
 
-      // Mostrar resumen de sincronización
+      // Mostrar resumen detallado de la sincronización
       const totalSynced = syncedReadings + syncedPhotos + syncedComments;
       if (totalSynced > 0) {
         const message = [
@@ -729,73 +909,50 @@ const Home: React.FC = () => {
         showSnackbar(`¡Sincronización exitosa! Se sincronizaron ${message}`, 'success');
       }
 
+      // Mostrar errores detallados si los hubo
       if (errors > 0) {
-        // Agrupar errores por medidor
-        const errorsByMeter = failedPhotos.reduce((acc, photo) => {
-          if (!acc[photo.meterCode]) {
-            acc[photo.meterCode] = [];
-          }
-          acc[photo.meterCode].push(photo.error);
-          return acc;
-        }, {} as Record<string, string[]>);
+        const errorDetails = [
+          failedPhotos.length > 0 && `Fotos: ${failedPhotos.length} error(es)`,
+          failedReadings.length > 0 && `Lecturas: ${failedReadings.length} error(es)`,
+          failedComments.length > 0 && `Comentarios: ${failedComments.length} error(es)`
+        ].filter(Boolean).join(', ');
 
-        // Crear mensaje detallado de errores
-        const errorDetails = Object.entries(errorsByMeter)
-          .map(([meterCode, errors]) => `Medidor ${meterCode}: ${errors.length} error(es)`)
-          .join(', ');
+        showSnackbar(
+          `Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. ${errorDetails}`,
+          'warning'
+        );
 
-        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. ${errorDetails}`, 'warning');
+        // Mostrar detalles específicos de errores
+        const errorMessages = [
+          ...failedPhotos.map(f => `Foto ${f.meterCode}: ${f.error}`),
+          ...failedReadings.map(r => `Lectura ${r.meterCode}: ${r.error}`),
+          ...failedComments.map(c => `Comentario ${c.meterCode}: ${c.error}`)
+        ];
+
+        console.error('Detalles de errores:', errorMessages);
       }
 
-      // Verificar estado final de fotos pendientes
-      const remainingPhotos = pendingPhotos.length;
-      console.log('Fotos pendientes restantes:', remainingPhotos);
-      if (remainingPhotos > 0 || pendingReadings.length > 0 || pendingComments.length > 0) {
-        // Agrupar fotos pendientes por medidor
-        const pendingByMeter = pendingPhotos.reduce((acc, photo) => {
-          if (!acc[photo.meterCode]) {
-            acc[photo.meterCode] = { photos: 0, readings: 0, comments: 0 };
-          }
-          acc[photo.meterCode].photos++;
-          return acc;
-        }, {} as Record<string, { photos: number; readings: number; comments: number }>);
+      // Verificar estado final
+      const remainingItems = pendingPhotos.length + pendingReadings.length + pendingComments.length;
+      if (remainingItems > 0) {
+        const remainingDetails = [
+          pendingPhotos.length > 0 && `${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''}`,
+          pendingReadings.length > 0 && `${pendingReadings.length} lectura${pendingReadings.length !== 1 ? 's' : ''}`,
+          pendingComments.length > 0 && `${pendingComments.length} comentario${pendingComments.length !== 1 ? 's' : ''}`
+        ].filter(Boolean).join(', ');
 
-        // Agrupar lecturas pendientes por medidor
-        pendingReadings.forEach(reading => {
-          if (!pendingByMeter[reading.meterCode]) {
-            pendingByMeter[reading.meterCode] = { photos: 0, readings: 0, comments: 0 };
-          }
-          pendingByMeter[reading.meterCode].readings++;
-        });
-
-        // Agrupar comentarios pendientes por medidor
-        pendingComments.forEach(comment => {
-          if (!pendingByMeter[comment.meterCode]) {
-            pendingByMeter[comment.meterCode] = { photos: 0, readings: 0, comments: 0 };
-          }
-          pendingByMeter[comment.meterCode].comments++;
-        });
-
-        // Crear mensaje detallado de registros pendientes
-        const pendingDetails = Object.entries(pendingByMeter)
-          .map(([meterCode, counts]) => {
-            const parts = [];
-            if (counts.photos > 0) parts.push(`${counts.photos} foto${counts.photos !== 1 ? 's' : ''}`);
-            if (counts.readings > 0) parts.push(`${counts.readings} lectura${counts.readings !== 1 ? 's' : ''}`);
-            if (counts.comments > 0) parts.push(`${counts.comments} comentario${counts.comments !== 1 ? 's' : ''}`);
-            return `Medidor ${meterCode}: ${parts.join(', ')}`;
-          })
-          .join('\n• ');
-
-        const totalPending = remainingPhotos + pendingReadings.length + pendingComments.length;
-        const message = `Quedan ${totalPending} registro${totalPending !== 1 ? 's' : ''} pendientes de sincronizar:\n• ${pendingDetails}`;
-
-        showSnackbar(message, 'warning');
+        showSnackbar(
+          `Quedan ${remainingItems} registro${remainingItems !== 1 ? 's' : ''} pendientes: ${remainingDetails}. Intenta sincronizar nuevamente.`,
+          'warning'
+        );
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error durante la sincronización:', error);
-      showSnackbar('Ups, hubo un problema durante la sincronización. Los datos se mantendrán guardados para intentarlo más tarde.', 'error');
+      showSnackbar(
+        `Error durante la sincronización: ${error.message || 'Error desconocido'}. Los datos se mantendrán guardados para intentarlo más tarde.`,
+        'error'
+      );
     } finally {
       setSyncStatus('idle');
     }
