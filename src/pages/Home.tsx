@@ -356,92 +356,119 @@ const Home: React.FC = () => {
       const photosToSync = [...pendingPhotos];
       console.log('Fotos pendientes a sincronizar:', photosToSync.length);
 
+      // Intentar sincronizar cada foto hasta 3 veces
       for (const pendingPhoto of photosToSync) {
-        try {
-          // Verificar que el archivo existe y es válido
-          if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
-            console.error('Foto inválida:', pendingPhoto);
-            errors++;
-            continue;
-          }
+        let retryCount = 0;
+        let success = false;
 
-          const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
-          const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
-          
-          console.log('Intentando subir foto:', fileName);
-          
-          // Intentar subir la foto
-          const { error: uploadError, data } = await supabase.storage
-            .from('meter-photos')
-            .upload(fileName, pendingPhoto.file, {
-              cacheControl: '3600',
-              upsert: true // Permitir sobrescribir si existe
-            });
-
-          if (uploadError) {
-            console.error('Error al subir foto:', uploadError);
-            if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
-              showSnackbar('El bucket de fotos no está disponible. Por favor, contacta al administrador.', 'error');
-              throw uploadError;
+        while (retryCount < 3 && !success) {
+          try {
+            // Verificar que el archivo existe y es válido
+            if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
+              console.error('Foto inválida:', pendingPhoto);
+              errors++;
+              break;
             }
-            errors++;
-            continue;
-          }
 
-          console.log('Foto subida exitosamente:', data);
-
-          // Obtener URL pública de la foto
-          const { data: { publicUrl } } = supabase.storage
-            .from('meter-photos')
-            .getPublicUrl(fileName);
-
-          console.log('URL pública generada:', publicUrl);
-
-          // Buscar la lectura asociada
-          const readingToUpdate = pendingReadings.find(r => 
-            r.meterCode === pendingPhoto.meterCode && 
-            r.timestamp === pendingPhoto.timestamp
-          );
-
-          if (readingToUpdate) {
-            // Actualizar la lectura en la base de datos con la URL de la foto
-            const { error: updateError } = await supabase
-              .from('readings')
-              .update({ photo_url: publicUrl })
-              .match({ 
-                meter_id: readingToUpdate.meterCode,
-                created_at: new Date(readingToUpdate.timestamp).toISOString()
+            const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
+            const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
+            
+            console.log(`Intentando subir foto (intento ${retryCount + 1}):`, fileName);
+            
+            // Intentar subir la foto
+            const { error: uploadError, data } = await supabase.storage
+              .from('meter-photos')
+              .upload(fileName, pendingPhoto.file, {
+                cacheControl: '3600',
+                upsert: true
               });
 
-            if (updateError) {
-              console.error('Error al actualizar lectura con URL de foto:', updateError);
-              // No incrementamos errors aquí para no marcar la foto como fallida
-              // ya que la foto se subió correctamente
+            if (uploadError) {
+              console.error(`Error al subir foto (intento ${retryCount + 1}):`, uploadError);
+              if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+                showSnackbar('El bucket de fotos no está disponible. Por favor, contacta al administrador.', 'error');
+                throw uploadError;
+              }
+              retryCount++;
+              if (retryCount < 3) {
+                console.log(`Reintentando subir foto (intento ${retryCount + 1})...`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo antes de reintentar
+                continue;
+              }
+              errors++;
+              break;
+            }
+
+            console.log('Foto subida exitosamente:', data);
+
+            // Obtener URL pública de la foto
+            const { data: { publicUrl } } = supabase.storage
+              .from('meter-photos')
+              .getPublicUrl(fileName);
+
+            console.log('URL pública generada:', publicUrl);
+
+            // Buscar la lectura asociada
+            const readingToUpdate = pendingReadings.find(r => 
+              r.meterCode === pendingPhoto.meterCode && 
+              r.timestamp === pendingPhoto.timestamp
+            );
+
+            if (readingToUpdate) {
+              // Actualizar la lectura en la base de datos con la URL de la foto
+              const { error: updateError } = await supabase
+                .from('readings')
+                .update({ photo_url: publicUrl })
+                .match({ 
+                  meter_id: readingToUpdate.meterCode,
+                  created_at: new Date(readingToUpdate.timestamp).toISOString()
+                });
+
+              if (updateError) {
+                console.error('Error al actualizar lectura con URL de foto:', updateError);
+                retryCount++;
+                if (retryCount < 3) {
+                  console.log(`Reintentando actualizar lectura (intento ${retryCount + 1})...`);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  continue;
+                }
+                errors++;
+                break;
+              }
+            }
+
+            // Si llegamos aquí, la foto se sincronizó correctamente
+            success = true;
+            syncedPhotos++;
+            showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+
+            // Actualizar el estado de las fotos pendientes
+            setPendingPhotos(prev => prev.filter(photo => 
+              !(photo.meterCode === pendingPhoto.meterCode && 
+                photo.timestamp === pendingPhoto.timestamp)
+            ));
+
+            // Actualizar localStorage
+            const updatedPhotos = pendingPhotos.filter(photo => 
+              !(photo.meterCode === pendingPhoto.meterCode && 
+                photo.timestamp === pendingPhoto.timestamp)
+            );
+            localStorage.setItem('pendingPhotos', JSON.stringify(updatedPhotos));
+
+          } catch (error) {
+            console.error(`Error al sincronizar foto (intento ${retryCount + 1}):`, error);
+            retryCount++;
+            if (retryCount < 3) {
+              console.log(`Reintentando sincronización (intento ${retryCount + 1})...`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
               continue;
             }
+            errors++;
           }
+        }
 
-          // Solo si todo salió bien, marcamos la foto como sincronizada
-          syncedPhotos++;
-          showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
-
-          // Actualizar el estado de las fotos pendientes
-          setPendingPhotos(prev => prev.filter(photo => 
-            !(photo.meterCode === pendingPhoto.meterCode && 
-              photo.timestamp === pendingPhoto.timestamp)
-          ));
-
-          // Actualizar localStorage
-          const updatedPhotos = pendingPhotos.filter(photo => 
-            !(photo.meterCode === pendingPhoto.meterCode && 
-              photo.timestamp === pendingPhoto.timestamp)
-          );
-          localStorage.setItem('pendingPhotos', JSON.stringify(updatedPhotos));
-
-        } catch (error) {
-          console.error('Error al sincronizar foto:', error);
-          errors++;
-          // No removemos la foto del array para intentar sincronizarla después
+        if (!success) {
+          console.error(`No se pudo sincronizar la foto después de ${retryCount} intentos:`, pendingPhoto);
         }
       }
 
@@ -550,9 +577,10 @@ const Home: React.FC = () => {
       }
 
       // Mostrar estado final de fotos pendientes
-      console.log('Fotos pendientes restantes:', pendingPhotos.length);
-      if (pendingPhotos.length > 0) {
-        showSnackbar(`Quedan ${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''} pendientes de sincronizar`, 'info');
+      const remainingPhotos = pendingPhotos.length;
+      console.log('Fotos pendientes restantes:', remainingPhotos);
+      if (remainingPhotos > 0) {
+        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar. Intenta sincronizar nuevamente.`, 'warning');
       }
 
     } catch (error) {
