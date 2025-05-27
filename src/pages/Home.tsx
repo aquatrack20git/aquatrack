@@ -744,44 +744,64 @@ const Home: React.FC = () => {
       }
 
       // Actualizar el estado local solo después de que toda la sincronización se haya completado
+      const updatePromises = [];
+
       if (successfullySyncedReadings.length > 0) {
-        setPendingReadings(prev => {
-          const updated = prev.filter(r => 
-            !successfullySyncedReadings.some(sr => 
-              sr.meterCode === r.meterCode && 
-              sr.timestamp === r.timestamp
-            )
-          );
-          localStorage.setItem('pendingReadings', JSON.stringify(updated));
-          return updated;
-        });
+        updatePromises.push(
+          new Promise<void>(resolve => {
+            setPendingReadings(prev => {
+              const updated = prev.filter(r => 
+                !successfullySyncedReadings.some(sr => 
+                  sr.meterCode === r.meterCode && 
+                  sr.timestamp === r.timestamp
+                )
+              );
+              localStorage.setItem('pendingReadings', JSON.stringify(updated));
+              resolve();
+              return updated;
+            });
+          })
+        );
       }
 
       if (successfullySyncedPhotos.length > 0) {
-        setPendingPhotos(prev => {
-          const updated = prev.filter(p => 
-            !successfullySyncedPhotos.some(sp => 
-              sp.meterCode === p.meterCode && 
-              sp.timestamp === p.timestamp
-            )
-          );
-          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-          return updated;
-        });
+        updatePromises.push(
+          new Promise<void>(resolve => {
+            setPendingPhotos(prev => {
+              const updated = prev.filter(p => 
+                !successfullySyncedPhotos.some(sp => 
+                  sp.meterCode === p.meterCode && 
+                  sp.timestamp === p.timestamp
+                )
+              );
+              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+              resolve();
+              return updated;
+            });
+          })
+        );
       }
 
       if (successfullySyncedComments.length > 0) {
-        setPendingComments(prev => {
-          const updated = prev.filter(c => 
-            !successfullySyncedComments.some(sc => 
-              sc.meterCode === c.meterCode && 
-              sc.timestamp === c.timestamp
-            )
-          );
-          localStorage.setItem('pendingComments', JSON.stringify(updated));
-          return updated;
-        });
+        updatePromises.push(
+          new Promise<void>(resolve => {
+            setPendingComments(prev => {
+              const updated = prev.filter(c => 
+                !successfullySyncedComments.some(sc => 
+                  sc.meterCode === c.meterCode && 
+                  sc.timestamp === c.timestamp
+                )
+              );
+              localStorage.setItem('pendingComments', JSON.stringify(updated));
+              resolve();
+              return updated;
+            });
+          })
+        );
       }
+
+      // Esperar a que todas las actualizaciones de estado se completen
+      await Promise.all(updatePromises);
 
       // Mostrar resumen detallado de la sincronización
       const totalSynced = syncedReadings + syncedPhotos + syncedComments;
@@ -831,21 +851,24 @@ const Home: React.FC = () => {
       if (remainingPhotos.length > 0) {
         console.warn('Se encontraron fotos sin lecturas asociadas:', remainingPhotos);
         // Eliminar fotos sin lecturas asociadas
-        setPendingPhotos(prev => {
-          const updated = prev.filter(photo => 
-            pendingReadings.some(reading => 
-              reading.meterCode === photo.meterCode && 
-              reading.timestamp === photo.timestamp
-            )
-          );
-          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-          return updated;
+        await new Promise<void>(resolve => {
+          setPendingPhotos(prev => {
+            const updated = prev.filter(photo => 
+              pendingReadings.some(reading => 
+                reading.meterCode === photo.meterCode && 
+                reading.timestamp === photo.timestamp
+              )
+            );
+            localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+            resolve();
+            return updated;
+          });
         });
       }
 
       // Verificar estado final después de la limpieza
       const finalPendingItems = pendingPhotos.length + pendingReadings.length + pendingComments.length;
-      if (finalPendingItems > 0) {
+      if (finalPendingItems > 0 && errors > 0) {
         const remainingDetails = [
           pendingPhotos.length > 0 && `${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''}`,
           pendingReadings.length > 0 && `${pendingReadings.length} lectura${pendingReadings.length !== 1 ? 's' : ''}`,
