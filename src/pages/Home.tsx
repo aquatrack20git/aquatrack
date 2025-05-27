@@ -415,20 +415,35 @@ const Home: React.FC = () => {
 
             console.log('URL pública generada para medidor:', pendingPhoto.meterCode);
 
-            // Buscar la lectura asociada
-            const readingToUpdate = pendingReadings.find(r => 
-              r.meterCode === pendingPhoto.meterCode && 
-              r.timestamp === pendingPhoto.timestamp
-            );
+            // Buscar la lectura asociada en la base de datos
+            const { data: existingReading, error: readingError } = await supabase
+              .from('readings')
+              .select('*')
+              .eq('meter_id', pendingPhoto.meterCode)
+              .eq('created_at', new Date(pendingPhoto.timestamp).toISOString())
+              .single();
 
-            if (readingToUpdate) {
-              // Actualizar la lectura en la base de datos con la URL de la foto
+            if (readingError && readingError.code !== 'PGRST116') {
+              console.error('Error al buscar lectura:', readingError);
+              lastError = readingError.message;
+              retryCount++;
+              if (retryCount < 3) {
+                console.log(`Reintentando buscar lectura para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                continue;
+              }
+              errors++;
+              break;
+            }
+
+            // Si la lectura existe, actualizar con la URL de la foto
+            if (existingReading) {
               const { error: updateError } = await supabase
                 .from('readings')
                 .update({ photo_url: publicUrl })
                 .match({ 
-                  meter_id: readingToUpdate.meterCode,
-                  created_at: new Date(readingToUpdate.timestamp).toISOString()
+                  meter_id: pendingPhoto.meterCode,
+                  created_at: new Date(pendingPhoto.timestamp).toISOString()
                 });
 
               if (updateError) {
@@ -443,6 +458,9 @@ const Home: React.FC = () => {
                 errors++;
                 break;
               }
+            } else {
+              console.log('No se encontró la lectura asociada para medidor:', pendingPhoto.meterCode);
+              // Aún así consideramos la foto como sincronizada ya que se subió correctamente
             }
 
             // Si llegamos aquí, la foto se sincronizó correctamente
