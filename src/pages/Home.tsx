@@ -351,6 +351,7 @@ const Home: React.FC = () => {
     let syncedComments = 0;
     let errors = 0;
     let failedPhotos: { meterCode: string; timestamp: number; error: string }[] = [];
+    let successfullySyncedPhotos: { meterCode: string; timestamp: number }[] = [];
 
     try {
       // Sincronizar fotos pendientes primero
@@ -466,18 +467,11 @@ const Home: React.FC = () => {
             // Si llegamos aquí, la foto se sincronizó correctamente
             success = true;
             syncedPhotos++;
-            showSnackbar(`Foto sincronizada exitosamente para medidor ${pendingPhoto.meterCode}`, 'success');
-
-            // Actualizar el estado de las fotos pendientes inmediatamente
-            setPendingPhotos(prev => {
-              const updated = prev.filter(photo => 
-                !(photo.meterCode === pendingPhoto.meterCode && 
-                  photo.timestamp === pendingPhoto.timestamp)
-              );
-              // Actualizar localStorage con el nuevo estado
-              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-              return updated;
+            successfullySyncedPhotos.push({
+              meterCode: pendingPhoto.meterCode,
+              timestamp: pendingPhoto.timestamp
             });
+            showSnackbar(`Foto sincronizada exitosamente para medidor ${pendingPhoto.meterCode}`, 'success');
 
           } catch (error: any) {
             lastError = error.message || 'Error desconocido';
@@ -502,6 +496,22 @@ const Home: React.FC = () => {
           // Mostrar mensaje específico para esta foto
           showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}. Error: ${lastError}`, 'warning');
         }
+      }
+
+      // Actualizar el estado de las fotos pendientes después de procesar todas las fotos
+      if (successfullySyncedPhotos.length > 0) {
+        setPendingPhotos(prev => {
+          const updated = prev.filter(photo => 
+            !successfullySyncedPhotos.some(synced => 
+              synced.meterCode === photo.meterCode && 
+              synced.timestamp === photo.timestamp
+            )
+          );
+          // Actualizar localStorage con el nuevo estado
+          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+          console.log('Fotos pendientes actualizadas:', updated.length);
+          return updated;
+        });
       }
 
       // Sincronizar lecturas pendientes
