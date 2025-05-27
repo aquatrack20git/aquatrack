@@ -207,8 +207,11 @@ const Home: React.FC = () => {
         // Validar tipo de archivo de manera más específica
         const fileType = String(file.type).toLowerCase();
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        
+        // Verificar si el tipo de archivo está en la lista de permitidos
         if (!allowedTypes.includes(fileType)) {
-          showSnackbar(`Formato de archivo no válido. Por favor, usa ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}`, 'warning');
+          const allowedExtensions = allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ');
+          showSnackbar(`Formato de archivo no válido: ${fileType}. Por favor, usa ${allowedExtensions}`, 'warning');
           return;
         }
 
@@ -1175,9 +1178,16 @@ const Home: React.FC = () => {
                 ia[i] = byteString.charCodeAt(i);
               }
               
+              // Asegurar que el tipo de archivo sea válido
               fileType = photo.file.type || 'image/jpeg';
+              const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+              if (!allowedTypes.includes(fileType)) {
+                fileType = 'image/jpeg'; // Usar JPEG como tipo por defecto
+              }
+
               photoBlob = new Blob([ab], { type: fileType });
-              fileName = photo.file.name || `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileType.split('/')[1]}`;
+              const extension = fileType.split('/')[1];
+              fileName = photo.file.name || `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${extension}`;
             } catch (error) {
               console.error('Error al convertir base64 a Blob:', error);
               failedPhotos.push({ 
@@ -1190,28 +1200,66 @@ const Home: React.FC = () => {
           } else if (photo.file instanceof File) {
             // Es un File
             const arrayBuffer = await photo.file.arrayBuffer();
-            fileType = photo.file.type;
+            fileType = photo.file.type || 'image/jpeg';
             photoBlob = new Blob([arrayBuffer], { type: fileType });
             fileName = photo.file.name;
           } else if (photo.file instanceof Blob) {
             // Es un Blob
             photoBlob = photo.file;
             fileType = photo.file.type || 'image/jpeg';
-            fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileType.split('/')[1]}`;
+            const extension = fileType.split('/')[1] || 'jpg';
+            fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${extension}`;
           } else {
-            throw new Error('Formato de archivo no soportado');
+            console.error('Formato de archivo no soportado:', photo.file);
+            failedPhotos.push({ 
+              meterCode: photo.meterCode, 
+              error: 'Formato de archivo no soportado' 
+            });
+            failedCount++;
+            continue;
           }
 
           // Verificar que el tipo de archivo es permitido
           const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
           if (!allowedTypes.includes(fileType)) {
             console.error('Formato de archivo no permitido:', fileType);
-            failedPhotos.push({ 
-              meterCode: photo.meterCode, 
-              error: `Formato de archivo no válido: ${fileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
-            });
-            failedCount++;
-            continue;
+            // Convertir a JPEG si el formato no es permitido
+            fileType = 'image/jpeg';
+            const tempCanvas = document.createElement('canvas');
+            const ctx = tempCanvas.getContext('2d');
+            const img = new Image();
+            
+            try {
+              const imgUrl = URL.createObjectURL(photoBlob);
+              await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = imgUrl;
+              });
+              
+              tempCanvas.width = img.width;
+              tempCanvas.height = img.height;
+              ctx?.drawImage(img, 0, 0);
+              
+              const jpegBlob = await new Promise<Blob>((resolve, reject) => {
+                tempCanvas.toBlob((blob) => {
+                  if (blob) resolve(blob);
+                  else reject(new Error('Error al convertir a JPEG'));
+                }, 'image/jpeg', 0.9);
+              });
+              
+              photoBlob = jpegBlob;
+              fileName = fileName.replace(/\.[^/.]+$/, '.jpg');
+              URL.revokeObjectURL(imgUrl);
+            } catch (error) {
+              console.error('Error al convertir imagen a JPEG:', error);
+              failedPhotos.push({ 
+                meterCode: photo.meterCode, 
+                error: 'Error al convertir la imagen a formato JPEG' 
+              });
+              failedCount++;
+              continue;
+            }
           }
 
           // Crear URL del blob y descargar
