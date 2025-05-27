@@ -350,21 +350,27 @@ const Home: React.FC = () => {
     let syncedPhotos = 0;
     let syncedComments = 0;
     let errors = 0;
+    let failedPhotos: { meterCode: string; timestamp: number; error: string }[] = [];
 
     try {
       // Sincronizar fotos pendientes primero
       const photosToSync = [...pendingPhotos];
       console.log('Fotos pendientes a sincronizar:', photosToSync.length);
 
+      // Ordenar fotos por medidor para mejor seguimiento
+      photosToSync.sort((a, b) => a.meterCode.localeCompare(b.meterCode));
+
       // Intentar sincronizar cada foto hasta 3 veces
       for (const pendingPhoto of photosToSync) {
         let retryCount = 0;
         let success = false;
+        let lastError = '';
 
         while (retryCount < 3 && !success) {
           try {
             // Verificar que el archivo existe y es válido
             if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
+              lastError = 'Archivo de foto inválido';
               console.error('Foto inválida:', pendingPhoto);
               errors++;
               break;
@@ -373,7 +379,7 @@ const Home: React.FC = () => {
             const fileExt = pendingPhoto.file.name.split('.').pop() || 'jpg';
             const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
             
-            console.log(`Intentando subir foto (intento ${retryCount + 1}):`, fileName);
+            console.log(`Intentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, fileName);
             
             // Intentar subir la foto
             const { error: uploadError, data } = await supabase.storage
@@ -384,29 +390,30 @@ const Home: React.FC = () => {
               });
 
             if (uploadError) {
-              console.error(`Error al subir foto (intento ${retryCount + 1}):`, uploadError);
+              lastError = uploadError.message;
+              console.error(`Error al subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, uploadError);
               if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
                 showSnackbar('El bucket de fotos no está disponible. Por favor, contacta al administrador.', 'error');
                 throw uploadError;
               }
               retryCount++;
               if (retryCount < 3) {
-                console.log(`Reintentando subir foto (intento ${retryCount + 1})...`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo antes de reintentar
+                console.log(`Reintentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Aumentar tiempo de espera a 2 segundos
                 continue;
               }
               errors++;
               break;
             }
 
-            console.log('Foto subida exitosamente:', data);
+            console.log('Foto subida exitosamente para medidor:', pendingPhoto.meterCode);
 
             // Obtener URL pública de la foto
             const { data: { publicUrl } } = supabase.storage
               .from('meter-photos')
               .getPublicUrl(fileName);
 
-            console.log('URL pública generada:', publicUrl);
+            console.log('URL pública generada para medidor:', pendingPhoto.meterCode);
 
             // Buscar la lectura asociada
             const readingToUpdate = pendingReadings.find(r => 
@@ -425,11 +432,12 @@ const Home: React.FC = () => {
                 });
 
               if (updateError) {
-                console.error('Error al actualizar lectura con URL de foto:', updateError);
+                lastError = updateError.message;
+                console.error('Error al actualizar lectura con URL de foto para medidor:', pendingPhoto.meterCode, updateError);
                 retryCount++;
                 if (retryCount < 3) {
-                  console.log(`Reintentando actualizar lectura (intento ${retryCount + 1})...`);
-                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  console.log(`Reintentando actualizar lectura para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
                   continue;
                 }
                 errors++;
@@ -440,7 +448,7 @@ const Home: React.FC = () => {
             // Si llegamos aquí, la foto se sincronizó correctamente
             success = true;
             syncedPhotos++;
-            showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+            showSnackbar(`Foto sincronizada exitosamente para medidor ${pendingPhoto.meterCode}`, 'success');
 
             // Actualizar el estado de las fotos pendientes inmediatamente
             setPendingPhotos(prev => {
@@ -453,12 +461,13 @@ const Home: React.FC = () => {
               return updated;
             });
 
-          } catch (error) {
-            console.error(`Error al sincronizar foto (intento ${retryCount + 1}):`, error);
+          } catch (error: any) {
+            lastError = error.message || 'Error desconocido';
+            console.error(`Error al sincronizar foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, error);
             retryCount++;
             if (retryCount < 3) {
-              console.log(`Reintentando sincronización (intento ${retryCount + 1})...`);
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              console.log(`Reintentando sincronización para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
               continue;
             }
             errors++;
@@ -466,9 +475,14 @@ const Home: React.FC = () => {
         }
 
         if (!success) {
-          console.error(`No se pudo sincronizar la foto después de ${retryCount} intentos:`, pendingPhoto);
+          console.error(`No se pudo sincronizar la foto para medidor ${pendingPhoto.meterCode} después de ${retryCount} intentos`);
+          failedPhotos.push({
+            meterCode: pendingPhoto.meterCode,
+            timestamp: pendingPhoto.timestamp,
+            error: lastError
+          });
           // Mostrar mensaje específico para esta foto
-          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}. Se intentará nuevamente más tarde.`, 'warning');
+          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}. Error: ${lastError}`, 'warning');
         }
       }
 
@@ -573,16 +587,42 @@ const Home: React.FC = () => {
       }
 
       if (errors > 0) {
-        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
+        // Agrupar errores por medidor
+        const errorsByMeter = failedPhotos.reduce((acc, photo) => {
+          if (!acc[photo.meterCode]) {
+            acc[photo.meterCode] = [];
+          }
+          acc[photo.meterCode].push(photo.error);
+          return acc;
+        }, {} as Record<string, string[]>);
+
+        // Crear mensaje detallado de errores
+        const errorDetails = Object.entries(errorsByMeter)
+          .map(([meterCode, errors]) => `Medidor ${meterCode}: ${errors.length} error(es)`)
+          .join(', ');
+
+        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. ${errorDetails}`, 'warning');
       }
 
       // Verificar estado final de fotos pendientes
       const remainingPhotos = pendingPhotos.length;
       console.log('Fotos pendientes restantes:', remainingPhotos);
       if (remainingPhotos > 0) {
-        // Mostrar mensaje más específico sobre las fotos pendientes
-        const pendingMeters = [...new Set(pendingPhotos.map(photo => photo.meterCode))].join(', ');
-        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar para los medidores: ${pendingMeters}. Intenta sincronizar nuevamente.`, 'warning');
+        // Agrupar fotos pendientes por medidor
+        const pendingByMeter = pendingPhotos.reduce((acc, photo) => {
+          if (!acc[photo.meterCode]) {
+            acc[photo.meterCode] = 0;
+          }
+          acc[photo.meterCode]++;
+          return acc;
+        }, {} as Record<string, number>);
+
+        // Crear mensaje detallado de fotos pendientes
+        const pendingDetails = Object.entries(pendingByMeter)
+          .map(([meterCode, count]) => `${meterCode} (${count} foto${count !== 1 ? 's' : ''})`)
+          .join(', ');
+
+        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar para los medidores: ${pendingDetails}. Intenta sincronizar nuevamente.`, 'warning');
       }
 
     } catch (error) {
