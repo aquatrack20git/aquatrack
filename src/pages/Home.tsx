@@ -1054,19 +1054,27 @@ const Home: React.FC = () => {
       
       for (const photo of pendingPhotos) {
         try {
-          // Verificar que el archivo existe
-          if (!photo.file) {
-            console.error('Archivo de foto no existe:', photo);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Archivo no encontrado' });
+          // Verificar que el archivo existe y tiene las propiedades necesarias
+          if (!photo.file || typeof photo.file !== 'object') {
+            console.error('Archivo de foto no existe o es inválido:', photo);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Archivo no encontrado o inválido' });
+            failedCount++;
+            continue;
+          }
+
+          // Verificar que el archivo tiene la propiedad type
+          if (!('type' in photo.file)) {
+            console.error('Archivo no tiene tipo definido:', photo.file);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo no válido' });
             failedCount++;
             continue;
           }
 
           // Verificar que el archivo es una imagen
-          const fileType = photo.file.type.toLowerCase();
+          const fileType = String(photo.file.type).toLowerCase();
           const isImage = fileType.startsWith('image/');
           if (!isImage) {
-            console.error('Archivo no es una imagen:', photo.file.type);
+            console.error('Archivo no es una imagen:', fileType);
             failedPhotos.push({ meterCode: photo.meterCode, error: 'El archivo no es una imagen válida' });
             failedCount++;
             continue;
@@ -1080,10 +1088,13 @@ const Home: React.FC = () => {
           try {
             if (photo.file instanceof File) {
               // Si es un File, convertirlo a Blob
-              photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
-            } else {
+              const arrayBuffer = await photo.file.arrayBuffer();
+              photoBlob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+            } else if (photo.file instanceof Blob) {
               // Si ya es un Blob, usarlo directamente
               photoBlob = photo.file;
+            } else {
+              throw new Error('Formato de archivo no soportado');
             }
           } catch (error) {
             console.error('Error al procesar el archivo:', error);
