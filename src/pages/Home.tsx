@@ -154,19 +154,20 @@ const Home: React.FC = () => {
     try {
       // Convertir los archivos a base64 antes de guardar
       const photosToSave = pendingPhotos.map(photo => {
-        if (photo.file instanceof Blob) {
+        if (photo.file instanceof Blob || photo.file instanceof File) {
           return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => {
               resolve({
                 ...photo,
                 file: {
-                  type: photo.file.type || 'image/jpeg',
-                  data: reader.result
+                  type: photo.file instanceof Blob ? photo.file.type : 'image/jpeg',
+                  data: reader.result as string,
+                  name: photo.file instanceof File ? photo.file.name : `${photo.meterCode}_${Date.now()}.jpg`
                 }
               });
             };
-            reader.readAsDataURL(photo.file);
+            reader.readAsDataURL(photo.file as Blob);
           });
         }
         return photo;
@@ -1000,7 +1001,18 @@ const Home: React.FC = () => {
             const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
             txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
             txtContent += `   Nombre archivo: ${fileName}\n`;
-            txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n\n`;
+            
+            // Calcular tamaño según el tipo de archivo
+            let fileSize = 0;
+            if (photo.file instanceof Blob || photo.file instanceof File) {
+              fileSize = photo.file.size;
+            } else if ('data' in photo.file) {
+              // Para archivos en base64, calcular tamaño aproximado
+              const base64Data = photo.file.data.split(',')[1];
+              fileSize = Math.ceil((base64Data.length * 3) / 4);
+            }
+            
+            txtContent += `   Tamaño: ${(fileSize / 1024).toFixed(2)} KB\n\n`;
           });
         }
 
@@ -1038,23 +1050,38 @@ const Home: React.FC = () => {
       // Descargar fotos
       for (const photo of pendingPhotos) {
         try {
+          let photoBlob: Blob;
+          
+          // Convertir el archivo a blob según su tipo
+          if (photo.file instanceof Blob || photo.file instanceof File) {
+            const arrayBuffer = await (photo.file as Blob).arrayBuffer();
+            photoBlob = new Blob([arrayBuffer], { type: photo.file.type || 'image/jpeg' });
+          } else if ('data' in photo.file) {
+            // Convertir base64 a Blob
+            const base64Data = photo.file.data.split(',')[1];
+            const byteString = atob(base64Data);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            
+            for (let i = 0; i < byteString.length; i++) {
+              ia[i] = byteString.charCodeAt(i);
+            }
+            
+            photoBlob = new Blob([ab], { type: photo.file.type || 'image/jpeg' });
+          } else {
+            throw new Error('Formato de archivo no soportado');
+          }
+
           // Crear un nombre de archivo seguro
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
           
-          // Convertir el archivo a blob
-          const photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
-          const photoUrl = URL.createObjectURL(photoBlob);
-          
           // Crear y simular clic en enlace de descarga
           const photoLink = document.createElement('a');
-          photoLink.href = photoUrl;
+          photoLink.href = URL.createObjectURL(photoBlob);
           photoLink.download = fileName;
           document.body.appendChild(photoLink);
           photoLink.click();
           document.body.removeChild(photoLink);
-          
-          // Liberar URL
-          URL.revokeObjectURL(photoUrl);
           
           // Esperar un momento entre descargas para evitar sobrecarga
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -1104,7 +1131,19 @@ const Home: React.FC = () => {
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
           txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
           txtContent += `   Nombre archivo: ${fileName}\n`;
-          txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n`;
+          
+          // Calcular tamaño según el tipo de archivo
+          let fileSize = 0;
+          if (photo.file instanceof Blob || photo.file instanceof File) {
+            fileSize = photo.file.size;
+          } else if ('data' in photo.file) {
+            // Para archivos en base64, calcular tamaño aproximado
+            const base64String = photo.file.data;
+            const base64Data = base64String.split(',')[1] || base64String;
+            fileSize = Math.ceil((base64Data.length * 3) / 4);
+          }
+          
+          txtContent += `   Tamaño: ${(fileSize / 1024).toFixed(2)} KB\n`;
           txtContent += `   Estado: ${isOnline ? 'Pendiente de sincronización' : 'Guardada localmente'}\n\n`;
         });
 
@@ -1126,7 +1165,8 @@ const Home: React.FC = () => {
           if ('data' in photo.file) {
             // Es un archivo en base64
             try {
-              const base64Data = photo.file.data.split(',')[1];
+              const base64String = photo.file.data;
+              const base64Data = base64String.split(',')[1] || base64String;
               const byteString = atob(base64Data);
               const ab = new ArrayBuffer(byteString.length);
               const ia = new Uint8Array(ab);
