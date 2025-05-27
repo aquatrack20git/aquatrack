@@ -1045,18 +1045,7 @@ const Home: React.FC = () => {
         txtContent += '\n=====================================\n\n';
       });
 
-      // Crear y descargar archivo txt
-      const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
-      const txtUrl = URL.createObjectURL(txtBlob);
-      const txtLink = document.createElement('a');
-      txtLink.href = txtUrl;
-      txtLink.download = `fotos_pendientes_${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(txtLink);
-      txtLink.click();
-      document.body.removeChild(txtLink);
-      URL.revokeObjectURL(txtUrl);
-
-      // Descargar fotos
+      // Descargar fotos primero
       let downloadedCount = 0;
       let failedCount = 0;
       
@@ -1098,6 +1087,17 @@ const Home: React.FC = () => {
           failedCount++;
         }
       }
+
+      // Después de descargar las fotos, descargar el archivo TXT
+      const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+      const txtUrl = URL.createObjectURL(txtBlob);
+      const txtLink = document.createElement('a');
+      txtLink.href = txtUrl;
+      txtLink.download = `fotos_pendientes_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(txtLink);
+      txtLink.click();
+      document.body.removeChild(txtLink);
+      URL.revokeObjectURL(txtUrl);
 
       // Mostrar resumen final
       if (failedCount > 0) {
