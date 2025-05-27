@@ -156,14 +156,20 @@ const Home: React.FC = () => {
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
 
-        // Si estamos offline, guardar la foto en pendingPhotos sin mostrar mensaje
+        // Si estamos offline, guardar la foto en pendingPhotos
         if (!isOnline) {
+          // Crear un nombre de archivo seguro
+          const fileName = `${meterCode.trim()}_${Date.now()}.jpg`;
+          const newFile = new File([compressedFile], fileName, { type: 'image/jpeg' });
+          
           const newPendingPhoto: PendingPhoto = {
             meterCode: meterCode.trim(),
-            file: compressedFile,
+            file: newFile,
             timestamp: Date.now()
           };
+          
           setPendingPhotos(prev => [...prev, newPendingPhoto]);
+          showSnackbar('Foto guardada localmente. Se sincronizará cuando vuelvas a tener conexión.', 'info');
         }
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
@@ -1011,6 +1017,7 @@ const Home: React.FC = () => {
       // Crear contenido del archivo txt con solo información de fotos
       let txtContent = 'FOTOS PENDIENTES DE SINCRONIZACIÓN\n';
       txtContent += '=====================================\n\n';
+      txtContent += `Total de fotos pendientes: ${pendingPhotos.length}\n\n`;
 
       // Agrupar fotos por medidor
       const photosByMeter = pendingPhotos.reduce((acc, photo) => {
@@ -1031,7 +1038,8 @@ const Home: React.FC = () => {
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
           txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
           txtContent += `   Nombre archivo: ${fileName}\n`;
-          txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n\n`;
+          txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n`;
+          txtContent += `   Estado: ${isOnline ? 'Pendiente de sincronización' : 'Guardada localmente'}\n\n`;
         });
 
         txtContent += '\n=====================================\n\n';
@@ -1050,8 +1058,17 @@ const Home: React.FC = () => {
 
       // Descargar fotos
       let downloadedCount = 0;
+      let failedCount = 0;
+      
       for (const photo of pendingPhotos) {
         try {
+          // Verificar que el archivo existe y es válido
+          if (!photo.file || !(photo.file instanceof File)) {
+            console.error('Archivo de foto inválido:', photo);
+            failedCount++;
+            continue;
+          }
+
           // Crear un nombre de archivo seguro
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
           
@@ -1078,10 +1095,16 @@ const Home: React.FC = () => {
         } catch (error) {
           console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
           showSnackbar(`Error al descargar foto del medidor ${photo.meterCode}`, 'error');
+          failedCount++;
         }
       }
 
-      showSnackbar(`Se descargaron ${downloadedCount} fotos exitosamente`, 'success');
+      // Mostrar resumen final
+      if (failedCount > 0) {
+        showSnackbar(`Se descargaron ${downloadedCount} fotos, ${failedCount} fallaron`, 'warning');
+      } else {
+        showSnackbar(`Se descargaron ${downloadedCount} fotos exitosamente`, 'success');
+      }
     } catch (error) {
       console.error('Error al descargar fotos:', error);
       showSnackbar('Error al descargar las fotos. Por favor, intenta nuevamente.', 'error');
