@@ -1001,6 +1001,93 @@ const Home: React.FC = () => {
     }
   };
 
+  const downloadPendingPhotos = async () => {
+    try {
+      if (pendingPhotos.length === 0) {
+        showSnackbar('No hay fotos pendientes para descargar', 'info');
+        return;
+      }
+
+      // Crear contenido del archivo txt con solo información de fotos
+      let txtContent = 'FOTOS PENDIENTES DE SINCRONIZACIÓN\n';
+      txtContent += '=====================================\n\n';
+
+      // Agrupar fotos por medidor
+      const photosByMeter = pendingPhotos.reduce((acc, photo) => {
+        if (!acc[photo.meterCode]) {
+          acc[photo.meterCode] = [];
+        }
+        acc[photo.meterCode].push(photo);
+        return acc;
+      }, {} as Record<string, PendingPhoto[]>);
+
+      // Generar contenido detallado por medidor
+      Object.entries(photosByMeter).forEach(([meterCode, photos]) => {
+        txtContent += `Medidor: ${meterCode}\n`;
+        txtContent += '-------------------------------------\n';
+        txtContent += `\nFotos pendientes (${photos.length}):\n`;
+        
+        photos.forEach((photo, index) => {
+          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
+          txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
+          txtContent += `   Nombre archivo: ${fileName}\n`;
+          txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n\n`;
+        });
+
+        txtContent += '\n=====================================\n\n';
+      });
+
+      // Crear y descargar archivo txt
+      const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+      const txtUrl = URL.createObjectURL(txtBlob);
+      const txtLink = document.createElement('a');
+      txtLink.href = txtUrl;
+      txtLink.download = `fotos_pendientes_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(txtLink);
+      txtLink.click();
+      document.body.removeChild(txtLink);
+      URL.revokeObjectURL(txtUrl);
+
+      // Descargar fotos
+      let downloadedCount = 0;
+      for (const photo of pendingPhotos) {
+        try {
+          // Crear un nombre de archivo seguro
+          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
+          
+          // Convertir el archivo a blob
+          const photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
+          const photoUrl = URL.createObjectURL(photoBlob);
+          
+          // Crear y simular clic en enlace de descarga
+          const photoLink = document.createElement('a');
+          photoLink.href = photoUrl;
+          photoLink.download = fileName;
+          document.body.appendChild(photoLink);
+          photoLink.click();
+          document.body.removeChild(photoLink);
+          
+          // Liberar URL
+          URL.revokeObjectURL(photoUrl);
+          
+          downloadedCount++;
+          showSnackbar(`Descargando foto ${downloadedCount} de ${pendingPhotos.length}...`, 'info');
+          
+          // Esperar un momento entre descargas para evitar sobrecarga
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
+          showSnackbar(`Error al descargar foto del medidor ${photo.meterCode}`, 'error');
+        }
+      }
+
+      showSnackbar(`Se descargaron ${downloadedCount} fotos exitosamente`, 'success');
+    } catch (error) {
+      console.error('Error al descargar fotos:', error);
+      showSnackbar('Error al descargar las fotos. Por favor, intenta nuevamente.', 'error');
+    }
+  };
+
   return (
     <Container 
       maxWidth="sm" 
@@ -1166,6 +1253,17 @@ const Home: React.FC = () => {
                 >
                   Descargar registros
                 </Button>
+                {pendingPhotos.length > 0 && (
+                  <Button
+                    startIcon={<PhotoCameraIcon />}
+                    onClick={downloadPendingPhotos}
+                    variant="outlined"
+                    size="small"
+                    color="secondary"
+                  >
+                    Descargar fotos
+                  </Button>
+                )}
               </Box>
             </Box>
           </Alert>
