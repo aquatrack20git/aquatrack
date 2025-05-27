@@ -925,8 +925,9 @@ const Home: React.FC = () => {
         if (records.photos.length > 0) {
           txtContent += `\nFotos pendientes (${records.photos.length}):\n`;
           records.photos.forEach((photo, index) => {
+            const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
             txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
-            txtContent += `   Nombre archivo: ${photo.file.name}\n`;
+            txtContent += `   Nombre archivo: ${fileName}\n`;
             txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n\n`;
           });
         }
@@ -965,19 +966,31 @@ const Home: React.FC = () => {
       // Descargar fotos
       for (const photo of pendingPhotos) {
         try {
-          const photoUrl = URL.createObjectURL(photo.file);
+          // Crear un nombre de archivo seguro
+          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
+          
+          // Convertir el archivo a blob
+          const photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
+          const photoUrl = URL.createObjectURL(photoBlob);
+          
+          // Crear y simular clic en enlace de descarga
           const photoLink = document.createElement('a');
           photoLink.href = photoUrl;
-          photoLink.download = `${photo.meterCode}_${photo.timestamp}.jpg`;
+          photoLink.download = fileName;
           document.body.appendChild(photoLink);
           photoLink.click();
           document.body.removeChild(photoLink);
+          
+          // Liberar URL
           URL.revokeObjectURL(photoUrl);
           
           // Esperar un momento entre descargas para evitar sobrecarga
           await new Promise(resolve => setTimeout(resolve, 500));
+          
+          console.log(`Foto descargada: ${fileName}`);
         } catch (error) {
           console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
+          showSnackbar(`Error al descargar foto del medidor ${photo.meterCode}`, 'error');
         }
       }
 
