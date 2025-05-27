@@ -35,7 +35,7 @@ import sello from '../assets/images/sello.png';
 
 interface PendingPhoto {
   meterCode: string;
-  file: File;
+  file: File | Blob;
   timestamp: number;
 }
 
@@ -1081,11 +1081,9 @@ const Home: React.FC = () => {
             if (photo.file instanceof File) {
               // Si es un File, convertirlo a Blob
               photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
-            } else if (photo.file instanceof Blob) {
+            } else {
               // Si ya es un Blob, usarlo directamente
               photoBlob = photo.file;
-            } else {
-              throw new Error('Formato de archivo no soportado');
             }
           } catch (error) {
             console.error('Error al procesar el archivo:', error);
