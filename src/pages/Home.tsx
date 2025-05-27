@@ -442,18 +442,16 @@ const Home: React.FC = () => {
             syncedPhotos++;
             showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
 
-            // Actualizar el estado de las fotos pendientes
-            setPendingPhotos(prev => prev.filter(photo => 
-              !(photo.meterCode === pendingPhoto.meterCode && 
-                photo.timestamp === pendingPhoto.timestamp)
-            ));
-
-            // Actualizar localStorage
-            const updatedPhotos = pendingPhotos.filter(photo => 
-              !(photo.meterCode === pendingPhoto.meterCode && 
-                photo.timestamp === pendingPhoto.timestamp)
-            );
-            localStorage.setItem('pendingPhotos', JSON.stringify(updatedPhotos));
+            // Actualizar el estado de las fotos pendientes inmediatamente
+            setPendingPhotos(prev => {
+              const updated = prev.filter(photo => 
+                !(photo.meterCode === pendingPhoto.meterCode && 
+                  photo.timestamp === pendingPhoto.timestamp)
+              );
+              // Actualizar localStorage con el nuevo estado
+              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+              return updated;
+            });
 
           } catch (error) {
             console.error(`Error al sincronizar foto (intento ${retryCount + 1}):`, error);
@@ -469,6 +467,8 @@ const Home: React.FC = () => {
 
         if (!success) {
           console.error(`No se pudo sincronizar la foto después de ${retryCount} intentos:`, pendingPhoto);
+          // Mostrar mensaje específico para esta foto
+          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}. Se intentará nuevamente más tarde.`, 'warning');
         }
       }
 
@@ -576,11 +576,13 @@ const Home: React.FC = () => {
         showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
       }
 
-      // Mostrar estado final de fotos pendientes
+      // Verificar estado final de fotos pendientes
       const remainingPhotos = pendingPhotos.length;
       console.log('Fotos pendientes restantes:', remainingPhotos);
       if (remainingPhotos > 0) {
-        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar. Intenta sincronizar nuevamente.`, 'warning');
+        // Mostrar mensaje más específico sobre las fotos pendientes
+        const pendingMeters = [...new Set(pendingPhotos.map(photo => photo.meterCode))].join(', ');
+        showSnackbar(`Quedan ${remainingPhotos} foto${remainingPhotos !== 1 ? 's' : ''} pendientes de sincronizar para los medidores: ${pendingMeters}. Intenta sincronizar nuevamente.`, 'warning');
       }
 
     } catch (error) {
