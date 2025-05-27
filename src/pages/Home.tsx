@@ -35,7 +35,11 @@ import sello from '../assets/images/sello.png';
 
 interface PendingPhoto {
   meterCode: string;
-  file: File | Blob;
+  file: {
+    type: string;
+    data: string; // base64
+    name: string;
+  } | File | Blob;
   timestamp: number;
 }
 
@@ -213,14 +217,20 @@ const Home: React.FC = () => {
 
         // Si estamos offline, guardar la foto en pendingPhotos
         if (!isOnline) {
-          // Crear un nombre de archivo seguro con extensión correcta
-          const fileExt = fileType.split('/')[1];
-          const fileName = `${meterCode.trim()}_${Date.now()}.${fileExt}`;
-          const newFile = new File([compressedFile], fileName, { type: fileType });
-          
+          // Convertir el archivo a base64 para almacenamiento
+          const base64File = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(compressedFile);
+          });
+
           const newPendingPhoto: PendingPhoto = {
             meterCode: meterCode.trim(),
-            file: newFile,
+            file: {
+              type: fileType,
+              data: base64File,
+              name: `${meterCode.trim()}_${Date.now()}.${fileType.split('/')[1]}`
+            },
             timestamp: Date.now()
           };
           
@@ -1101,72 +1111,76 @@ const Home: React.FC = () => {
         txtContent += '\n=====================================\n\n';
       });
 
-      // Descargar fotos primero
+      // Descargar fotos
       let downloadedCount = 0;
       let failedCount = 0;
       let failedPhotos: { meterCode: string; error: string }[] = [];
       
       for (const photo of pendingPhotos) {
         try {
-          // Verificar que el archivo existe y tiene las propiedades necesarias
-          if (!photo.file || typeof photo.file !== 'object') {
-            console.error('Archivo de foto no existe o es inválido:', photo);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Archivo no encontrado o inválido' });
-            failedCount++;
-            continue;
-          }
-
-          // Asegurar que el archivo tenga un tipo válido
-          const fileType = photo.file instanceof Blob ? photo.file.type : 'image/jpeg';
-          const safeFileType = fileType || 'image/jpeg';
-          const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-          
-          // Verificar que el tipo de archivo es permitido
-          if (!allowedTypes.includes(safeFileType)) {
-            console.error('Formato de archivo no permitido:', safeFileType);
-            failedPhotos.push({ 
-              meterCode: photo.meterCode, 
-              error: `Formato de archivo no válido: ${safeFileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
-            });
-            failedCount++;
-            continue;
-          }
-
-          // Crear un nombre de archivo seguro con la extensión correcta
-          const fileExt = safeFileType.split('/')[1];
-          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileExt}`;
-          
-          // Convertir el archivo a blob si no lo es ya
           let photoBlob: Blob;
-          try {
-            if (photo.file instanceof File) {
-              const arrayBuffer = await photo.file.arrayBuffer();
-              photoBlob = new Blob([arrayBuffer], { type: safeFileType });
-            } else if (photo.file instanceof Blob) {
-              photoBlob = photo.file;
-            } else {
-              throw new Error(`Formato de archivo no soportado: ${typeof photo.file}`);
+          let fileType: string;
+          let fileName: string;
+
+          // Determinar el tipo de archivo y convertirlo a Blob
+          if ('data' in photo.file) {
+            // Es un archivo en base64
+            try {
+              const base64Data = photo.file.data.split(',')[1];
+              const byteString = atob(base64Data);
+              const ab = new ArrayBuffer(byteString.length);
+              const ia = new Uint8Array(ab);
+              
+              for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+              }
+              
+              fileType = photo.file.type || 'image/jpeg';
+              photoBlob = new Blob([ab], { type: fileType });
+              fileName = photo.file.name || `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileType.split('/')[1]}`;
+            } catch (error) {
+              console.error('Error al convertir base64 a Blob:', error);
+              failedPhotos.push({ 
+                meterCode: photo.meterCode, 
+                error: 'Error al procesar la foto: formato inválido' 
+              });
+              failedCount++;
+              continue;
             }
-          } catch (error) {
-            console.error('Error al procesar el archivo:', error);
+          } else if (photo.file instanceof File) {
+            // Es un File
+            const arrayBuffer = await photo.file.arrayBuffer();
+            fileType = photo.file.type;
+            photoBlob = new Blob([arrayBuffer], { type: fileType });
+            fileName = photo.file.name;
+          } else if (photo.file instanceof Blob) {
+            // Es un Blob
+            photoBlob = photo.file;
+            fileType = photo.file.type || 'image/jpeg';
+            fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileType.split('/')[1]}`;
+          } else {
+            throw new Error('Formato de archivo no soportado');
+          }
+
+          // Verificar que el tipo de archivo es permitido
+          const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+          if (!allowedTypes.includes(fileType)) {
+            console.error('Formato de archivo no permitido:', fileType);
             failedPhotos.push({ 
               meterCode: photo.meterCode, 
-              error: `Error al procesar el archivo: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+              error: `Formato de archivo no válido: ${fileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
             });
             failedCount++;
             continue;
           }
 
-          // Crear URL del blob
+          // Crear URL del blob y descargar
           const photoUrl = URL.createObjectURL(photoBlob);
-          
-          // Crear y simular clic en enlace de descarga
           const photoLink = document.createElement('a');
           photoLink.href = photoUrl;
           photoLink.download = fileName;
           document.body.appendChild(photoLink);
           
-          // Intentar descargar
           try {
             photoLink.click();
             downloadedCount++;
@@ -1179,12 +1193,11 @@ const Home: React.FC = () => {
             });
             failedCount++;
           } finally {
-            // Limpiar
             document.body.removeChild(photoLink);
             URL.revokeObjectURL(photoUrl);
           }
           
-          // Esperar un momento entre descargas para evitar sobrecarga
+          // Esperar un momento entre descargas
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
           console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
