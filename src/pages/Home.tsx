@@ -883,121 +883,105 @@ const Home: React.FC = () => {
     });
   };
 
-  const syncPendingData = async () => {
-    if (!isOnline || pendingReadings.length === 0 && pendingPhotos.length === 0) return;
-
-    setIsSyncing(true);
-    let syncedReadings = 0;
-    let syncedPhotos = 0;
-    let syncedComments = 0;
-    let errors = 0;
-
+  const downloadPendingRecords = async () => {
     try {
-      // Primero sincronizar fotos pendientes
-      for (const pendingPhoto of pendingPhotos) {
-        try {
-          const formData = new FormData();
-          formData.append('photo', pendingPhoto.file);
-          formData.append('meterCode', pendingPhoto.meterCode);
-          formData.append('timestamp', pendingPhoto.timestamp.toString());
+      // Crear contenido del archivo txt
+      let txtContent = 'REGISTROS PENDIENTES DE SINCRONIZACIÓN\n';
+      txtContent += '=====================================\n\n';
 
-          const response = await fetch(`${API_URL}/photos`, {
-            method: 'POST',
-            body: formData
+      // Agrupar registros por medidor
+      const recordsByMeter = pendingPhotos.reduce((acc, photo) => {
+        if (!acc[photo.meterCode]) {
+          acc[photo.meterCode] = { photos: [], readings: [], comments: [] };
+        }
+        acc[photo.meterCode].photos.push(photo);
+        return acc;
+      }, {} as Record<string, { photos: PendingPhoto[]; readings: PendingReading[]; comments: PendingComment[] }>);
+
+      // Agregar lecturas pendientes
+      pendingReadings.forEach(reading => {
+        if (!recordsByMeter[reading.meterCode]) {
+          recordsByMeter[reading.meterCode] = { photos: [], readings: [], comments: [] };
+        }
+        recordsByMeter[reading.meterCode].readings.push(reading);
+      });
+
+      // Agregar comentarios pendientes
+      pendingComments.forEach(comment => {
+        if (!recordsByMeter[comment.meterCode]) {
+          recordsByMeter[comment.meterCode] = { photos: [], readings: [], comments: [] };
+        }
+        recordsByMeter[comment.meterCode].comments.push(comment);
+      });
+
+      // Generar contenido detallado por medidor
+      Object.entries(recordsByMeter).forEach(([meterCode, records]) => {
+        txtContent += `Medidor: ${meterCode}\n`;
+        txtContent += '-------------------------------------\n';
+
+        if (records.photos.length > 0) {
+          txtContent += `\nFotos pendientes (${records.photos.length}):\n`;
+          records.photos.forEach((photo, index) => {
+            txtContent += `${index + 1}. Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
+            txtContent += `   Nombre archivo: ${photo.file.name}\n`;
+            txtContent += `   Tamaño: ${(photo.file.size / 1024).toFixed(2)} KB\n\n`;
           });
+        }
 
-          if (!response.ok) {
-            throw new Error(`Error al sincronizar foto: ${response.statusText}`);
-          }
+        if (records.readings.length > 0) {
+          txtContent += `\nLecturas pendientes (${records.readings.length}):\n`;
+          records.readings.forEach((reading, index) => {
+            txtContent += `${index + 1}. Fecha: ${new Date(reading.timestamp).toLocaleString()}\n`;
+            txtContent += `   Valor: ${reading.value}\n`;
+            txtContent += `   Período: ${reading.period}\n\n`;
+          });
+        }
 
-          syncedPhotos++;
-          showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+        if (records.comments.length > 0) {
+          txtContent += `\nComentarios pendientes (${records.comments.length}):\n`;
+          records.comments.forEach((comment, index) => {
+            txtContent += `${index + 1}. Fecha: ${new Date(comment.timestamp).toLocaleString()}\n`;
+            txtContent += `   Notas: ${comment.notes}\n\n`;
+          });
+        }
+
+        txtContent += '\n=====================================\n\n';
+      });
+
+      // Crear y descargar archivo txt
+      const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+      const txtUrl = URL.createObjectURL(txtBlob);
+      const txtLink = document.createElement('a');
+      txtLink.href = txtUrl;
+      txtLink.download = `registros_pendientes_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(txtLink);
+      txtLink.click();
+      document.body.removeChild(txtLink);
+      URL.revokeObjectURL(txtUrl);
+
+      // Descargar fotos
+      for (const photo of pendingPhotos) {
+        try {
+          const photoUrl = URL.createObjectURL(photo.file);
+          const photoLink = document.createElement('a');
+          photoLink.href = photoUrl;
+          photoLink.download = `${photo.meterCode}_${photo.timestamp}.jpg`;
+          document.body.appendChild(photoLink);
+          photoLink.click();
+          document.body.removeChild(photoLink);
+          URL.revokeObjectURL(photoUrl);
+          
+          // Esperar un momento entre descargas para evitar sobrecarga
+          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
-          console.error('Error al sincronizar foto:', error);
-          errors++;
-          // No removemos la foto del array para intentar sincronizarla después
+          console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
         }
       }
 
-      // Luego sincronizar lecturas pendientes
-      for (const pendingReading of pendingReadings) {
-        try {
-          // Validar que la lectura tenga todos los campos necesarios
-          if (!pendingReading.meterCode || !pendingReading.value || !pendingReading.period) {
-            console.error('Lectura pendiente inválida:', pendingReading);
-            errors++;
-            continue;
-          }
-
-          const response = await fetch(`${API_URL}/readings`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              meterCode: pendingReading.meterCode.trim(),
-              value: parseInt(pendingReading.value),
-              period: pendingReading.period,
-              timestamp: pendingReading.timestamp,
-              comment: pendingReading.comment || ''
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Error al sincronizar lectura: ${response.statusText}`);
-          }
-
-          syncedReadings++;
-          if (pendingReading.comment) syncedComments++;
-          showSnackbar(`Lectura sincronizada: ${pendingReading.meterCode}`, 'success');
-        } catch (error) {
-          console.error('Error al sincronizar lectura:', error);
-          errors++;
-          // No removemos la lectura del array para intentar sincronizarla después
-        }
-      }
-
-      // Solo limpiar los datos que se sincronizaron exitosamente
-      if (syncedPhotos > 0) {
-        setPendingPhotos(prev => prev.filter(photo => 
-          !pendingPhotos.slice(0, syncedPhotos).some(synced => 
-            synced.meterCode === photo.meterCode && 
-            synced.timestamp === photo.timestamp
-          )
-        ));
-      }
-
-      if (syncedReadings > 0) {
-        setPendingReadings(prev => prev.filter(reading => 
-          !pendingReadings.slice(0, syncedReadings).some(synced => 
-            synced.meterCode === reading.meterCode && 
-            synced.period === reading.period &&
-            synced.timestamp === reading.timestamp
-          )
-        ));
-      }
-
-      // Mostrar resumen de sincronización
-      const totalSynced = syncedReadings + syncedPhotos + syncedComments;
-      if (totalSynced > 0) {
-        const message = [
-          syncedReadings > 0 && `${syncedReadings} lectura${syncedReadings !== 1 ? 's' : ''}`,
-          syncedPhotos > 0 && `${syncedPhotos} foto${syncedPhotos !== 1 ? 's' : ''}`,
-          syncedComments > 0 && `${syncedComments} comentario${syncedComments !== 1 ? 's' : ''}`
-        ].filter(Boolean).join(', ');
-
-        showSnackbar(`¡Sincronización exitosa! Se sincronizaron ${message}`, 'success');
-      }
-
-      if (errors > 0) {
-        showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
-      }
-
+      showSnackbar('Registros y fotos descargados exitosamente', 'success');
     } catch (error) {
-      console.error('Error durante la sincronización:', error);
-      showSnackbar('Ups, hubo un problema durante la sincronización. Los datos se mantendrán guardados para intentarlo más tarde.', 'error');
-    } finally {
-      setIsSyncing(false);
+      console.error('Error al descargar registros:', error);
+      showSnackbar('Error al descargar los registros. Por favor, intenta nuevamente.', 'error');
     }
   };
 
@@ -1141,17 +1125,33 @@ const Home: React.FC = () => {
               }
             }}
           >
-            Tienes {pendingReadings.length} lectura{pendingReadings.length !== 1 ? 's' : ''}, {pendingPhotos.length} foto{pendingPhotos.length !== 1 ? 's' : ''} y {pendingComments.length} comentario{pendingComments.length !== 1 ? 's' : ''} pendientes de sincronizar.
-            {isOnline && (
-              <Button
-                startIcon={<SyncIcon />}
-                onClick={handleSync}
-                disabled={syncStatus === 'syncing'}
-                sx={{ ml: 2 }}
-              >
-                {syncStatus === 'syncing' ? 'Sincronizando...' : 'Sincronizar ahora'}
-              </Button>
-            )}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Typography>
+                Tienes {pendingReadings.length} lectura{pendingReadings.length !== 1 ? 's' : ''}, {pendingPhotos.length} foto{pendingPhotos.length !== 1 ? 's' : ''} y {pendingComments.length} comentario{pendingComments.length !== 1 ? 's' : ''} pendientes de sincronizar.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {isOnline && (
+                  <Button
+                    startIcon={<SyncIcon />}
+                    onClick={handleSync}
+                    disabled={syncStatus === 'syncing'}
+                    variant="contained"
+                    size="small"
+                  >
+                    {syncStatus === 'syncing' ? 'Sincronizando...' : 'Sincronizar ahora'}
+                  </Button>
+                )}
+                <Button
+                  startIcon={<SaveIcon />}
+                  onClick={downloadPendingRecords}
+                  variant="outlined"
+                  size="small"
+                  color="primary"
+                >
+                  Descargar registros
+                </Button>
+              </Box>
+            </Box>
           </Alert>
         )}
 
