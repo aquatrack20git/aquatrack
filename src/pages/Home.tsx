@@ -1746,8 +1746,11 @@ const Home: React.FC = () => {
                 fullWidth
                 label="Código del medidor"
                 value={meterCode}
-                onChange={(e) => setMeterCode(e.target.value)}
+                onChange={(e) => setMeterCode(e.target.value.toUpperCase())}
                 required
+                inputProps={{
+                  style: { textTransform: 'uppercase' }
+                }}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -1937,9 +1940,12 @@ const Home: React.FC = () => {
             fullWidth
             label="Código del medidor"
             value={meterCode}
-            onChange={(e) => setMeterCode(e.target.value)}
+            onChange={(e) => setMeterCode(e.target.value.toUpperCase())}
             margin="normal"
             required
+            inputProps={{
+              style: { textTransform: 'uppercase' }
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
