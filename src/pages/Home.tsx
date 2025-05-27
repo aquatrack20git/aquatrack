@@ -220,28 +220,8 @@ const Home: React.FC = () => {
         const compressedFile = await compressImage(file);
         setPhoto(compressedFile);
 
-        // Si estamos offline, guardar la foto en pendingPhotos
-        if (!isOnline) {
-          // Convertir el archivo a base64 para almacenamiento
-          const base64File = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(compressedFile);
-          });
-
-          const newPendingPhoto: PendingPhoto = {
-            meterCode: meterCode.trim(),
-            file: {
-              type: fileType,
-              data: base64File,
-              name: `${meterCode.trim()}_${Date.now()}.${fileType.split('/')[1]}`
-            },
-            timestamp: Date.now()
-          };
-          
-          setPendingPhotos(prev => [...prev, newPendingPhoto]);
-          showSnackbar('Foto guardada localmente. Se sincronizará cuando vuelvas a tener conexión.', 'info');
-        }
+        // Ya no guardamos la foto aquí, solo la mostramos como seleccionada
+        showSnackbar('Foto seleccionada. Presiona "Guardar lectura" para guardarla.', 'info');
       } catch (error) {
         console.error('Error al procesar la imagen:', error);
         showSnackbar('Ups, hubo un problema al procesar la foto. ¿Podrías intentarlo de nuevo?', 'warning');
