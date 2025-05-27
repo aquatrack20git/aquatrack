@@ -255,6 +255,7 @@ const Home: React.FC = () => {
 
     try {
       const period = getCurrentPeriod();
+      const timestamp = Date.now(); // Usar el mismo timestamp para foto y lectura
       
       // Validar que el valor sea un número entero
       const value = parseInt(readingValue);
@@ -363,25 +364,40 @@ const Home: React.FC = () => {
         setPhoto(null);
         showSnackbar('¡Listo! Tu lectura se guardó correctamente');
       } else {
+        // Guardar foto localmente primero
+        const base64File = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(photo);
+        });
+
+        const newPendingPhoto: PendingPhoto = {
+          meterCode: meterCode.trim(),
+          file: {
+            type: photo.type,
+            data: base64File,
+            name: `${meterCode.trim()}_${timestamp}.${photo.type.split('/')[1]}`
+          },
+          timestamp: timestamp // Usar el mismo timestamp
+        };
+        
         // Guardar lectura localmente
         const newReading: PendingReading = {
           meterCode: meterCode.trim(),
           value,
           period,
-          timestamp: Date.now(),
-          photo: photo || undefined,
-          photoUrl: photo ? URL.createObjectURL(photo) : undefined
+          timestamp: timestamp, // Usar el mismo timestamp
+          photo: photo,
+          photoUrl: URL.createObjectURL(photo)
         };
 
+        setPendingPhotos(prev => [...prev, newPendingPhoto]);
         setPendingReadings(prev => [...prev, newReading]);
-        
-        // Si hay una foto, ya la guardamos en handlePhotoCapture
-        // No necesitamos duplicarla aquí
         
         setMeterCode('');
         setReadingValue('');
         setPhoto(null);
-        showSnackbar('¡Listo! Tu lectura se guardó y se sincronizará cuando vuelvas a tener conexión');
+        showSnackbar('¡Listo! Tu lectura y foto se guardaron y se sincronizarán cuando vuelvas a tener conexión');
       }
     } catch (error: any) {
       console.error('Error al guardar la lectura:', error);
@@ -446,15 +462,10 @@ const Home: React.FC = () => {
         throw new Error('Error de conexión con la base de datos. Por favor, intenta nuevamente más tarde.');
       }
 
-      // Sincronizar fotos pendientes primero
-      const photosToSync = [...pendingPhotos];
-      console.log('Fotos pendientes a sincronizar:', photosToSync.length);
+      // Primero sincronizar todas las fotos y guardar sus URLs
+      const photoUrls = new Map<string, string>(); // Map para almacenar URLs de fotos por medidor_timestamp
 
-      // Ordenar fotos por medidor para mejor seguimiento
-      photosToSync.sort((a, b) => a.meterCode.localeCompare(b.meterCode));
-
-      // Intentar sincronizar cada foto hasta 3 veces
-      for (const pendingPhoto of photosToSync) {
+      for (const pendingPhoto of [...pendingPhotos]) {
         let retryCount = 0;
         let success = false;
         let lastError = '';
@@ -568,56 +579,8 @@ const Home: React.FC = () => {
               .from('meter-photos')
               .getPublicUrl(fileName);
 
-            // Buscar o crear la lectura asociada
-            const { data: existingReading, error: readingError } = await supabase
-              .from('readings')
-              .select('*')
-              .eq('meter_id', pendingPhoto.meterCode)
-              .eq('created_at', new Date(pendingPhoto.timestamp).toISOString())
-              .single();
-
-            if (readingError && readingError.code !== 'PGRST116') {
-              console.error('Error al buscar lectura:', readingError);
-              lastError = readingError.message;
-              retryCount++;
-              continue;
-            }
-
-            if (existingReading) {
-              // Actualizar lectura existente
-              const { error: updateError } = await supabase
-                .from('readings')
-                .update({ photo_url: publicUrl })
-                .match({ 
-                  meter_id: pendingPhoto.meterCode,
-                  created_at: new Date(pendingPhoto.timestamp).toISOString()
-                });
-
-              if (updateError) {
-                lastError = updateError.message;
-                console.error('Error al actualizar lectura:', updateError);
-                retryCount++;
-                continue;
-              }
-            } else {
-              // Crear nueva lectura
-              const { error: insertError } = await supabase
-                .from('readings')
-                .insert([{
-                  meter_id: pendingPhoto.meterCode,
-                  value: 0,
-                  period: getCurrentPeriod(),
-                  photo_url: publicUrl,
-                  created_at: new Date(pendingPhoto.timestamp).toISOString()
-                }]);
-
-              if (insertError) {
-                lastError = insertError.message;
-                console.error('Error al crear lectura:', insertError);
-                retryCount++;
-                continue;
-              }
-            }
+            // Guardar la URL de la foto para usarla después
+            photoUrls.set(`${pendingPhoto.meterCode}_${pendingPhoto.timestamp}`, publicUrl);
 
             success = true;
             syncedPhotos++;
@@ -663,7 +626,7 @@ const Home: React.FC = () => {
         });
       }
 
-      // Sincronizar lecturas pendientes
+      // Luego sincronizar las lecturas usando las URLs de fotos guardadas
       for (const reading of [...pendingReadings]) {
         let retryCount = 0;
         let success = false;
@@ -723,6 +686,9 @@ const Home: React.FC = () => {
               continue;
             }
 
+            // Obtener la URL de la foto si existe
+            const photoUrl = photoUrls.get(`${reading.meterCode}_${reading.timestamp}`) || reading.photoUrl || '';
+
             if (existingReading) {
               // Actualizar lectura existente
               const { error: updateError } = await supabase
@@ -730,7 +696,7 @@ const Home: React.FC = () => {
                 .update({
                   value: reading.value,
                   period: reading.period,
-                  photo_url: reading.photoUrl || existingReading.photo_url
+                  photo_url: photoUrl || existingReading.photo_url
                 })
                 .match({
                   meter_id: reading.meterCode,
@@ -751,7 +717,7 @@ const Home: React.FC = () => {
                   meter_id: reading.meterCode,
                   value: reading.value,
                   period: reading.period,
-                  photo_url: reading.photoUrl || '',
+                  photo_url: photoUrl,
                   created_at: new Date(reading.timestamp).toISOString()
                 }]);
 
