@@ -353,7 +353,10 @@ const Home: React.FC = () => {
 
     try {
       // Sincronizar fotos pendientes primero
-      for (const pendingPhoto of [...pendingPhotos]) {
+      const photosToSync = [...pendingPhotos];
+      console.log('Fotos pendientes a sincronizar:', photosToSync.length);
+
+      for (const pendingPhoto of photosToSync) {
         try {
           // Verificar que el archivo existe y es válido
           if (!pendingPhoto.file || !(pendingPhoto.file instanceof File)) {
@@ -394,7 +397,7 @@ const Home: React.FC = () => {
 
           console.log('URL pública generada:', publicUrl);
 
-          // Actualizar la lectura asociada con la URL de la foto
+          // Buscar la lectura asociada
           const readingToUpdate = pendingReadings.find(r => 
             r.meterCode === pendingPhoto.meterCode && 
             r.timestamp === pendingPhoto.timestamp
@@ -412,16 +415,33 @@ const Home: React.FC = () => {
 
             if (updateError) {
               console.error('Error al actualizar lectura con URL de foto:', updateError);
-              errors++;
+              // No incrementamos errors aquí para no marcar la foto como fallida
+              // ya que la foto se subió correctamente
               continue;
             }
           }
 
+          // Solo si todo salió bien, marcamos la foto como sincronizada
           syncedPhotos++;
           showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
+
+          // Actualizar el estado de las fotos pendientes
+          setPendingPhotos(prev => prev.filter(photo => 
+            !(photo.meterCode === pendingPhoto.meterCode && 
+              photo.timestamp === pendingPhoto.timestamp)
+          ));
+
+          // Actualizar localStorage
+          const updatedPhotos = pendingPhotos.filter(photo => 
+            !(photo.meterCode === pendingPhoto.meterCode && 
+              photo.timestamp === pendingPhoto.timestamp)
+          );
+          localStorage.setItem('pendingPhotos', JSON.stringify(updatedPhotos));
+
         } catch (error) {
           console.error('Error al sincronizar foto:', error);
           errors++;
+          // No removemos la foto del array para intentar sincronizarla después
         }
       }
 
@@ -484,6 +504,7 @@ const Home: React.FC = () => {
         } catch (error) {
           console.error('Error al sincronizar lectura:', error);
           errors++;
+          // No removemos la lectura del array para intentar sincronizarla después
         }
       }
 
@@ -512,44 +533,6 @@ const Home: React.FC = () => {
         }
       }
 
-      // Solo eliminar las fotos que se sincronizaron exitosamente
-      if (syncedPhotos > 0) {
-        setPendingPhotos(prev => prev.filter(photo => 
-          !pendingPhotos.slice(0, syncedPhotos).some(synced => 
-            synced.meterCode === photo.meterCode && 
-            synced.timestamp === photo.timestamp
-          )
-        ));
-        // Guardar en localStorage
-        localStorage.setItem('pendingPhotos', JSON.stringify(
-          pendingPhotos.filter(photo => 
-            !pendingPhotos.slice(0, syncedPhotos).some(synced => 
-              synced.meterCode === photo.meterCode && 
-              synced.timestamp === photo.timestamp
-            )
-          )
-        ));
-      }
-
-      if (syncedReadings > 0) {
-        setPendingReadings(prev => prev.filter(reading => 
-          !pendingReadings.slice(0, syncedReadings).some(synced => 
-            synced.meterCode === reading.meterCode && 
-            synced.period === reading.period &&
-            synced.timestamp === reading.timestamp
-          )
-        ));
-      }
-
-      if (syncedComments > 0) {
-        setPendingComments(prev => prev.filter(comment => 
-          !pendingComments.slice(0, syncedComments).some(synced => 
-            synced.meterCode === comment.meterCode && 
-            synced.timestamp === comment.timestamp
-          )
-        ));
-      }
-
       // Mostrar resumen de sincronización
       const totalSynced = syncedReadings + syncedPhotos + syncedComments;
       if (totalSynced > 0) {
@@ -564,6 +547,12 @@ const Home: React.FC = () => {
 
       if (errors > 0) {
         showSnackbar(`Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. Los datos se intentarán sincronizar nuevamente.`, 'warning');
+      }
+
+      // Mostrar estado final de fotos pendientes
+      console.log('Fotos pendientes restantes:', pendingPhotos.length);
+      if (pendingPhotos.length > 0) {
+        showSnackbar(`Quedan ${pendingPhotos.length} foto${pendingPhotos.length !== 1 ? 's' : ''} pendientes de sincronizar`, 'info');
       }
 
     } catch (error) {
