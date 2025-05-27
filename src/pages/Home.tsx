@@ -1048,12 +1048,22 @@ const Home: React.FC = () => {
       // Descargar fotos primero
       let downloadedCount = 0;
       let failedCount = 0;
+      let failedPhotos: { meterCode: string; error: string }[] = [];
       
       for (const photo of pendingPhotos) {
         try {
           // Verificar que el archivo existe y es válido
-          if (!photo.file || !(photo.file instanceof File)) {
-            console.error('Archivo de foto inválido:', photo);
+          if (!photo.file) {
+            console.error('Archivo de foto no existe:', photo);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Archivo no encontrado' });
+            failedCount++;
+            continue;
+          }
+
+          // Verificar que el archivo es un Blob o File
+          if (!(photo.file instanceof Blob)) {
+            console.error('Archivo de foto no es un Blob:', photo);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo inválido' });
             failedCount++;
             continue;
           }
@@ -1061,8 +1071,22 @@ const Home: React.FC = () => {
           // Crear un nombre de archivo seguro
           const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
           
-          // Convertir el archivo a blob
-          const photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
+          // Convertir el archivo a blob si no lo es ya
+          let photoBlob: Blob;
+          try {
+            if (photo.file instanceof File) {
+              photoBlob = new Blob([await photo.file.arrayBuffer()], { type: 'image/jpeg' });
+            } else {
+              photoBlob = photo.file;
+            }
+          } catch (error) {
+            console.error('Error al procesar el archivo:', error);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Error al procesar el archivo' });
+            failedCount++;
+            continue;
+          }
+
+          // Crear URL del blob
           const photoUrl = URL.createObjectURL(photoBlob);
           
           // Crear y simular clic en enlace de descarga
@@ -1070,20 +1094,30 @@ const Home: React.FC = () => {
           photoLink.href = photoUrl;
           photoLink.download = fileName;
           document.body.appendChild(photoLink);
-          photoLink.click();
-          document.body.removeChild(photoLink);
           
-          // Liberar URL
-          URL.revokeObjectURL(photoUrl);
-          
-          downloadedCount++;
-          showSnackbar(`Descargando foto ${downloadedCount} de ${pendingPhotos.length}...`, 'info');
+          // Intentar descargar
+          try {
+            photoLink.click();
+            downloadedCount++;
+            showSnackbar(`Descargando foto ${downloadedCount} de ${pendingPhotos.length}...`, 'info');
+          } catch (error) {
+            console.error('Error al hacer clic en el enlace:', error);
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Error al iniciar la descarga' });
+            failedCount++;
+          } finally {
+            // Limpiar
+            document.body.removeChild(photoLink);
+            URL.revokeObjectURL(photoUrl);
+          }
           
           // Esperar un momento entre descargas para evitar sobrecarga
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
           console.error(`Error al descargar foto para medidor ${photo.meterCode}:`, error);
-          showSnackbar(`Error al descargar foto del medidor ${photo.meterCode}`, 'error');
+          failedPhotos.push({ 
+            meterCode: photo.meterCode, 
+            error: error instanceof Error ? error.message : 'Error desconocido' 
+          });
           failedCount++;
         }
       }
@@ -1099,15 +1133,24 @@ const Home: React.FC = () => {
       document.body.removeChild(txtLink);
       URL.revokeObjectURL(txtUrl);
 
-      // Mostrar resumen final
+      // Mostrar resumen final con detalles de errores
       if (failedCount > 0) {
-        showSnackbar(`Se descargaron ${downloadedCount} fotos, ${failedCount} fallaron`, 'warning');
+        const errorDetails = failedPhotos
+          .map(f => `Medidor ${f.meterCode}: ${f.error}`)
+          .join('\n');
+        showSnackbar(
+          `Se descargaron ${downloadedCount} fotos, ${failedCount} fallaron.\nDetalles:\n${errorDetails}`, 
+          'warning'
+        );
       } else {
         showSnackbar(`Se descargaron ${downloadedCount} fotos exitosamente`, 'success');
       }
     } catch (error) {
       console.error('Error al descargar fotos:', error);
-      showSnackbar('Error al descargar las fotos. Por favor, intenta nuevamente.', 'error');
+      showSnackbar(
+        `Error al descargar las fotos: ${error instanceof Error ? error.message : 'Error desconocido'}`, 
+        'error'
+      );
     }
   };
 
