@@ -567,6 +567,16 @@ const Home: React.FC = () => {
                   timestamp: reading.timestamp
                 });
 
+                // Eliminar la foto pendiente inmediatamente después de subirla exitosamente
+                setPendingPhotos(prev => {
+                  const updated = prev.filter(p => 
+                    p.meterCode !== reading.meterCode || 
+                    p.timestamp !== reading.timestamp
+                  );
+                  localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+                  return updated;
+                });
+
               } catch (error: any) {
                 console.error('Error al subir foto:', error);
                 // Continuar con la sincronización de la lectura incluso si falla la foto
@@ -653,7 +663,7 @@ const Home: React.FC = () => {
           });
           showSnackbar(`No se pudo sincronizar la lectura del medidor ${reading.meterCode}: ${lastError}`, 'warning');
         } else {
-          // Remover lectura y foto sincronizadas exitosamente
+          // Remover solo la lectura sincronizada exitosamente
           setPendingReadings(prev => {
             const updated = prev.filter(r => 
               r.meterCode !== reading.meterCode || 
@@ -662,17 +672,6 @@ const Home: React.FC = () => {
             localStorage.setItem('pendingReadings', JSON.stringify(updated));
             return updated;
           });
-
-          if (pendingPhoto) {
-            setPendingPhotos(prev => {
-              const updated = prev.filter(p => 
-                p.meterCode !== reading.meterCode || 
-                p.timestamp !== reading.timestamp
-              );
-              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-              return updated;
-            });
-          }
         }
       }
 
@@ -822,6 +821,31 @@ const Home: React.FC = () => {
           `Quedan ${remainingItems} registro${remainingItems !== 1 ? 's' : ''} pendientes: ${remainingDetails}. Intenta sincronizar nuevamente.`,
           'warning'
         );
+      }
+
+      // Al final de la sincronización, verificar si quedan fotos sin lecturas asociadas
+      const remainingPhotos = pendingPhotos.filter(photo => {
+        // Buscar si existe una lectura pendiente asociada a esta foto
+        const hasPendingReading = pendingReadings.some(reading => 
+          reading.meterCode === photo.meterCode && 
+          reading.timestamp === photo.timestamp
+        );
+        return !hasPendingReading;
+      });
+
+      if (remainingPhotos.length > 0) {
+        console.warn('Se encontraron fotos sin lecturas asociadas:', remainingPhotos);
+        // Eliminar fotos sin lecturas asociadas
+        setPendingPhotos(prev => {
+          const updated = prev.filter(photo => 
+            pendingReadings.some(reading => 
+              reading.meterCode === photo.meterCode && 
+              reading.timestamp === photo.timestamp
+            )
+          );
+          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+          return updated;
+        });
       }
 
     } catch (error: any) {
