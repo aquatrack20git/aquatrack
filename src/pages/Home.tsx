@@ -146,11 +146,11 @@ const Home: React.FC = () => {
           return;
         }
 
-        // Validar tipo de archivo de manera más flexible
-        const fileType = file.type.toLowerCase();
-        const isImage = fileType.startsWith('image/');
-        if (!isImage) {
-          showSnackbar('Por favor, elige una imagen válida (JPG, PNG, WebP)', 'warning');
+        // Validar tipo de archivo de manera más específica
+        const fileType = String(file.type).toLowerCase();
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(fileType)) {
+          showSnackbar(`Formato de archivo no válido. Por favor, usa ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}`, 'warning');
           return;
         }
 
@@ -160,9 +160,10 @@ const Home: React.FC = () => {
 
         // Si estamos offline, guardar la foto en pendingPhotos
         if (!isOnline) {
-          // Crear un nombre de archivo seguro
-          const fileName = `${meterCode.trim()}_${Date.now()}.jpg`;
-          const newFile = new File([compressedFile], fileName, { type: 'image/jpeg' });
+          // Crear un nombre de archivo seguro con extensión correcta
+          const fileExt = fileType.split('/')[1];
+          const fileName = `${meterCode.trim()}_${Date.now()}.${fileExt}`;
+          const newFile = new File([compressedFile], fileName, { type: fileType });
           
           const newPendingPhoto: PendingPhoto = {
             meterCode: meterCode.trim(),
@@ -1065,36 +1066,42 @@ const Home: React.FC = () => {
           // Verificar que el archivo tiene la propiedad type
           if (!('type' in photo.file)) {
             console.error('Archivo no tiene tipo definido:', photo.file);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo no válido' });
+            failedPhotos.push({ meterCode: photo.meterCode, error: 'Formato de archivo no válido: tipo no definido' });
             failedCount++;
             continue;
           }
 
-          // Verificar que el archivo es una imagen
+          // Verificar que el archivo es una imagen y tiene un formato permitido
           const fileType = String(photo.file.type).toLowerCase();
-          const isImage = fileType.startsWith('image/');
-          if (!isImage) {
-            console.error('Archivo no es una imagen:', fileType);
-            failedPhotos.push({ meterCode: photo.meterCode, error: 'El archivo no es una imagen válida' });
+          const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+          const isAllowedType = allowedTypes.includes(fileType);
+          
+          if (!isAllowedType) {
+            console.error('Formato de archivo no permitido:', fileType);
+            failedPhotos.push({ 
+              meterCode: photo.meterCode, 
+              error: `Formato de archivo no válido: ${fileType}. Formatos permitidos: ${allowedTypes.map(t => t.split('/')[1].toUpperCase()).join(', ')}` 
+            });
             failedCount++;
             continue;
           }
 
-          // Crear un nombre de archivo seguro
-          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
+          // Crear un nombre de archivo seguro con la extensión correcta
+          const fileExt = fileType.split('/')[1];
+          const fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileExt}`;
           
           // Convertir el archivo a blob si no lo es ya
           let photoBlob: Blob;
           try {
             if (photo.file instanceof File) {
-              // Si es un File, convertirlo a Blob
+              // Si es un File, convertirlo a Blob manteniendo el tipo original
               const arrayBuffer = await photo.file.arrayBuffer();
-              photoBlob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+              photoBlob = new Blob([arrayBuffer], { type: fileType });
             } else if (photo.file instanceof Blob) {
               // Si ya es un Blob, usarlo directamente
               photoBlob = photo.file;
             } else {
-              throw new Error('Formato de archivo no soportado');
+              throw new Error(`Formato de archivo no soportado: ${typeof photo.file}`);
             }
           } catch (error) {
             console.error('Error al procesar el archivo:', error);
