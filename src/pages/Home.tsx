@@ -1754,26 +1754,6 @@ const Home: React.FC = () => {
                 >
                   Descargar todo en ZIP
                 </Button>
-                <Button
-                  startIcon={<SaveIcon />}
-                  onClick={downloadPendingRecords}
-                  variant="outlined"
-                  size="small"
-                  color="primary"
-                >
-                  Descargar registros
-                </Button>
-                {pendingPhotos.length > 0 && (
-                  <Button
-                    startIcon={<PhotoCameraIcon />}
-                    onClick={downloadPendingPhotos}
-                    variant="outlined"
-                    size="small"
-                    color="secondary"
-                  >
-                    Descargar fotos
-                  </Button>
-                )}
               </Box>
             </Box>
           </Alert>
