@@ -32,6 +32,7 @@ import { supabase } from '../config/supabase';
 import { getCurrentPeriod } from '../utils/periodUtils';
 import banner from '../assets/images/banner.png';
 import sello from '../assets/images/sello.png';
+import JSZip from 'jszip';
 
 interface PendingPhoto {
   meterCode: string;
@@ -1329,6 +1330,174 @@ const Home: React.FC = () => {
     }
   };
 
+  const downloadAllPendingData = async () => {
+    try {
+      if (pendingPhotos.length === 0 && pendingReadings.length === 0 && pendingComments.length === 0) {
+        showSnackbar('No hay datos pendientes para descargar', 'info');
+        return;
+      }
+
+      showSnackbar('Preparando archivo ZIP con todos los datos pendientes...', 'info');
+      const zip = new JSZip();
+
+      // Crear archivo de resumen
+      let summaryContent = 'RESUMEN DE DATOS PENDIENTES\n';
+      summaryContent += '===========================\n\n';
+      summaryContent += `Fecha de generación: ${new Date().toLocaleString()}\n\n`;
+      summaryContent += `Total de fotos pendientes: ${pendingPhotos.length}\n`;
+      summaryContent += `Total de lecturas pendientes: ${pendingReadings.length}\n`;
+      summaryContent += `Total de comentarios pendientes: ${pendingComments.length}\n\n`;
+
+      // Agregar fotos al ZIP
+      if (pendingPhotos.length > 0) {
+        const photosFolder = zip.folder('fotos');
+        if (photosFolder) {
+          let photosSummary = 'FOTOS PENDIENTES\n';
+          photosSummary += '===============\n\n';
+
+          for (const photo of pendingPhotos) {
+            try {
+              let photoBlob: Blob;
+              let fileName: string;
+
+              // Convertir la foto a Blob según su tipo
+              if ('data' in photo.file) {
+                const base64String = photo.file.data;
+                const base64Data = base64String.split(',')[1] || base64String;
+                const byteString = atob(base64Data);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                
+                for (let i = 0; i < byteString.length; i++) {
+                  ia[i] = byteString.charCodeAt(i);
+                }
+                
+                const fileType = photo.file.type || 'image/jpeg';
+                photoBlob = new Blob([ab], { type: fileType });
+                fileName = `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.${fileType.split('/')[1]}`;
+              } else if (photo.file instanceof File || photo.file instanceof Blob) {
+                photoBlob = photo.file;
+                fileName = photo.file instanceof File ? photo.file.name : 
+                  `${photo.meterCode}_${new Date(photo.timestamp).toISOString().replace(/[:.]/g, '-')}.jpg`;
+              } else {
+                continue;
+              }
+
+              // Agregar foto al ZIP
+              photosFolder.file(fileName, photoBlob);
+
+              // Agregar información al resumen
+              photosSummary += `Medidor: ${photo.meterCode}\n`;
+              photosSummary += `Fecha: ${new Date(photo.timestamp).toLocaleString()}\n`;
+              photosSummary += `Archivo: ${fileName}\n`;
+              photosSummary += `Tamaño: ${(photoBlob.size / 1024).toFixed(2)} KB\n\n`;
+            } catch (error) {
+              console.error(`Error al procesar foto para medidor ${photo.meterCode}:`, error);
+              photosSummary += `Error al procesar foto del medidor ${photo.meterCode}: ${error instanceof Error ? error.message : 'Error desconocido'}\n\n`;
+            }
+          }
+
+          // Agregar resumen de fotos al ZIP
+          photosFolder.file('resumen_fotos.txt', photosSummary);
+          summaryContent += 'Ver carpeta "fotos" para las imágenes y su resumen detallado.\n\n';
+        }
+      }
+
+      // Agregar lecturas al ZIP
+      if (pendingReadings.length > 0) {
+        let readingsContent = 'LECTURAS PENDIENTES\n';
+        readingsContent += '==================\n\n';
+
+        // Agrupar lecturas por medidor
+        const readingsByMeter = pendingReadings.reduce((acc, reading) => {
+          if (!acc[reading.meterCode]) {
+            acc[reading.meterCode] = [];
+          }
+          acc[reading.meterCode].push(reading);
+          return acc;
+        }, {} as Record<string, PendingReading[]>);
+
+        // Generar contenido detallado por medidor
+        Object.entries(readingsByMeter).forEach(([meterCode, readings]) => {
+          readingsContent += `Medidor: ${meterCode}\n`;
+          readingsContent += '-------------------------------------\n';
+          readingsContent += `Total lecturas: ${readings.length}\n\n`;
+
+          readings.forEach((reading, index) => {
+            readingsContent += `${index + 1}. Fecha: ${new Date(reading.timestamp).toLocaleString()}\n`;
+            readingsContent += `   Valor: ${reading.value}\n`;
+            readingsContent += `   Período: ${reading.period}\n`;
+            if (reading.photoUrl) {
+              readingsContent += `   Foto: Sí (URL: ${reading.photoUrl})\n`;
+            }
+            readingsContent += '\n';
+          });
+
+          readingsContent += '=====================================\n\n';
+        });
+
+        // Agregar archivo de lecturas al ZIP
+        zip.file('lecturas_pendientes.txt', readingsContent);
+        summaryContent += 'Ver archivo "lecturas_pendientes.txt" para el detalle de lecturas.\n\n';
+      }
+
+      // Agregar comentarios al ZIP
+      if (pendingComments.length > 0) {
+        let commentsContent = 'COMENTARIOS PENDIENTES\n';
+        commentsContent += '=====================\n\n';
+
+        // Agrupar comentarios por medidor
+        const commentsByMeter = pendingComments.reduce((acc, comment) => {
+          if (!acc[comment.meterCode]) {
+            acc[comment.meterCode] = [];
+          }
+          acc[comment.meterCode].push(comment);
+          return acc;
+        }, {} as Record<string, PendingComment[]>);
+
+        // Generar contenido detallado por medidor
+        Object.entries(commentsByMeter).forEach(([meterCode, comments]) => {
+          commentsContent += `Medidor: ${meterCode}\n`;
+          commentsContent += '-------------------------------------\n';
+          commentsContent += `Total comentarios: ${comments.length}\n\n`;
+
+          comments.forEach((comment, index) => {
+            commentsContent += `${index + 1}. Fecha: ${new Date(comment.timestamp).toLocaleString()}\n`;
+            commentsContent += `   Notas: ${comment.notes}\n\n`;
+          });
+
+          commentsContent += '=====================================\n\n';
+        });
+
+        // Agregar archivo de comentarios al ZIP
+        zip.file('comentarios_pendientes.txt', commentsContent);
+        summaryContent += 'Ver archivo "comentarios_pendientes.txt" para el detalle de comentarios.\n\n';
+      }
+
+      // Agregar archivo de resumen al ZIP
+      zip.file('resumen_general.txt', summaryContent);
+
+      // Generar y descargar el ZIP
+      const content = await zip.generateAsync({ type: 'blob' });
+      const zipUrl = URL.createObjectURL(content);
+      const zipLink = document.createElement('a');
+      zipLink.href = zipUrl;
+      zipLink.download = `datos_pendientes_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(zipLink);
+      zipLink.click();
+      document.body.removeChild(zipLink);
+      URL.revokeObjectURL(zipUrl);
+
+      showSnackbar('Archivo ZIP con todos los datos pendientes descargado exitosamente', 'success');
+    } catch (error) {
+      console.error('Error al generar archivo ZIP:', error);
+      showSnackbar(
+        `Error al generar el archivo ZIP: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+        'error'
+      );
+    }
+  };
+
   return (
     <Container 
       maxWidth="sm" 
@@ -1485,6 +1654,15 @@ const Home: React.FC = () => {
                     {syncStatus === 'syncing' ? 'Sincronizando...' : 'Sincronizar ahora'}
                   </Button>
                 )}
+                <Button
+                  startIcon={<SaveIcon />}
+                  onClick={downloadAllPendingData}
+                  variant="contained"
+                  size="small"
+                  color="primary"
+                >
+                  Descargar todo en ZIP
+                </Button>
                 <Button
                   startIcon={<SaveIcon />}
                   onClick={downloadPendingRecords}
