@@ -45,6 +45,7 @@ interface PendingReading {
   period: string;
   timestamp: number;
   photo?: File;
+  photoUrl?: string;
 }
 
 interface PendingComment {
@@ -291,7 +292,8 @@ const Home: React.FC = () => {
           value,
           period,
           timestamp: Date.now(),
-          photo: photo || undefined
+          photo: photo || undefined,
+          photoUrl: photo ? URL.createObjectURL(photo) : undefined
         };
 
         setPendingReadings(prev => [...prev, newReading]);
@@ -329,7 +331,8 @@ const Home: React.FC = () => {
       value,
       period: getCurrentPeriod(),
       timestamp: Date.now(),
-      photo: photo || undefined
+      photo: photo || undefined,
+      photoUrl: photo ? URL.createObjectURL(photo) : undefined
     };
 
     setPendingReadings(prev => [...prev, newReading]);
