@@ -462,175 +462,15 @@ const Home: React.FC = () => {
         throw new Error('Error de conexión con la base de datos. Por favor, intenta nuevamente más tarde.');
       }
 
-      // Primero sincronizar todas las fotos y guardar sus URLs
-      const photoUrls = new Map<string, string>(); // Map para almacenar URLs de fotos por medidor_timestamp
-
-      for (const pendingPhoto of [...pendingPhotos]) {
-        let retryCount = 0;
-        let success = false;
-        let lastError = '';
-
-        while (retryCount < 3 && !success) {
-          try {
-            // Verificar que el archivo existe y es válido
-            if (!pendingPhoto.file) {
-              lastError = 'Archivo de foto inválido o vacío';
-              console.error('Foto inválida:', pendingPhoto);
-              errors++;
-              break;
-            }
-
-            let photoBlob: Blob;
-            let fileType: string;
-
-            // Convertir el archivo a Blob según su tipo
-            if ('data' in pendingPhoto.file) {
-              try {
-                const base64String = pendingPhoto.file.data;
-                const base64Data = base64String.split(',')[1] || base64String;
-                const byteString = atob(base64Data);
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                
-                for (let i = 0; i < byteString.length; i++) {
-                  ia[i] = byteString.charCodeAt(i);
-                }
-                
-                fileType = pendingPhoto.file.type || 'image/jpeg';
-                photoBlob = new Blob([ab], { type: fileType });
-              } catch (error) {
-                lastError = 'Error al procesar la foto: formato inválido';
-                console.error('Error al procesar foto base64:', error);
-                retryCount++;
-                continue;
-              }
-            } else if (pendingPhoto.file instanceof File || pendingPhoto.file instanceof Blob) {
-              photoBlob = pendingPhoto.file;
-              fileType = pendingPhoto.file.type || 'image/jpeg';
-            } else {
-              lastError = 'Formato de archivo no soportado';
-              console.error('Formato de archivo no soportado:', pendingPhoto.file);
-              retryCount++;
-              continue;
-            }
-
-            // Verificar tamaño del archivo
-            if (photoBlob.size > MAX_FILE_SIZE) {
-              lastError = 'La foto excede el tamaño máximo permitido (5MB)';
-              console.error('Foto demasiado grande:', photoBlob.size);
-              retryCount++;
-              continue;
-            }
-
-            const fileExt = fileType.split('/')[1] || 'jpg';
-            const fileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}.${fileExt}`;
-            
-            console.log(`Intentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, fileName);
-            
-            // Intentar subir la foto con upsert forzado
-            const { error: uploadError, data } = await supabase.storage
-              .from('meter-photos')
-              .upload(fileName, photoBlob, {
-                cacheControl: '3600',
-                upsert: true,
-                duplex: 'half'
-              });
-
-            if (uploadError) {
-              lastError = uploadError.message;
-              console.error(`Error al subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1}):`, uploadError);
-              
-              // Manejar errores específicos
-              if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
-                throw new Error('El bucket de fotos no está disponible. Por favor, contacta al administrador.');
-              }
-              if (uploadError.message.includes('security policy')) {
-                throw new Error('No tienes permisos para subir fotos. Por favor, contacta al administrador.');
-              }
-              if (uploadError.message.includes('duplicate')) {
-                // Si es un error de duplicado, intentar con un nombre diferente
-                const newFileName = `${pendingPhoto.meterCode}_${pendingPhoto.timestamp}_${Date.now()}.${fileExt}`;
-                const { error: retryError } = await supabase.storage
-                  .from('meter-photos')
-                  .upload(newFileName, photoBlob, {
-                    cacheControl: '3600',
-                    upsert: true
-                  });
-                
-                if (retryError) {
-                  lastError = retryError.message;
-                  retryCount++;
-                  continue;
-                }
-              } else {
-                retryCount++;
-                if (retryCount < 3) {
-                  console.log(`Reintentando subir foto para medidor ${pendingPhoto.meterCode} (intento ${retryCount + 1})...`);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  continue;
-                }
-                errors++;
-                break;
-              }
-            }
-
-            // Obtener URL pública de la foto
-            const { data: { publicUrl } } = supabase.storage
-              .from('meter-photos')
-              .getPublicUrl(fileName);
-
-            // Guardar la URL de la foto para usarla después
-            photoUrls.set(`${pendingPhoto.meterCode}_${pendingPhoto.timestamp}`, publicUrl);
-
-            success = true;
-            syncedPhotos++;
-            successfullySyncedPhotos.push({
-              meterCode: pendingPhoto.meterCode,
-              timestamp: pendingPhoto.timestamp
-            });
-            showSnackbar(`Foto sincronizada: ${pendingPhoto.meterCode}`, 'success');
-
-          } catch (error: any) {
-            lastError = error.message || 'Error desconocido';
-            console.error(`Error al sincronizar foto para medidor ${pendingPhoto.meterCode}:`, error);
-            retryCount++;
-            if (retryCount < 3) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            }
-            errors++;
-          }
-        }
-
-        if (!success) {
-          failedPhotos.push({
-            meterCode: pendingPhoto.meterCode,
-            timestamp: pendingPhoto.timestamp,
-            error: lastError
-          });
-          showSnackbar(`No se pudo sincronizar la foto del medidor ${pendingPhoto.meterCode}: ${lastError}`, 'warning');
-        }
-      }
-
-      // Actualizar estado de fotos pendientes
-      if (successfullySyncedPhotos.length > 0) {
-        setPendingPhotos(prev => {
-          const updated = prev.filter(photo => 
-            !successfullySyncedPhotos.some(synced => 
-              synced.meterCode === photo.meterCode && 
-              synced.timestamp === photo.timestamp
-            )
-          );
-          localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-          return updated;
-        });
-      }
-
-      // Luego sincronizar las lecturas usando las URLs de fotos guardadas
+      // Procesar cada lectura pendiente
       for (const reading of [...pendingReadings]) {
         let retryCount = 0;
         let success = false;
         let lastError = '';
+        let pendingPhoto = pendingPhotos.find(p => 
+          p.meterCode === reading.meterCode && 
+          p.timestamp === reading.timestamp
+        );
 
         while (retryCount < 3 && !success) {
           try {
@@ -642,7 +482,7 @@ const Home: React.FC = () => {
               break;
             }
 
-            // Verificar si el medidor existe
+            // 1. Verificar si el medidor existe
             const { data: existingMeter, error: meterCheckError } = await supabase
               .from('meters')
               .select('*')
@@ -655,7 +495,7 @@ const Home: React.FC = () => {
               continue;
             }
 
-            // Crear medidor si no existe
+            // 2. Crear medidor si no existe
             if (!existingMeter) {
               const { error: meterError } = await supabase
                 .from('meters')
@@ -672,7 +512,69 @@ const Home: React.FC = () => {
               }
             }
 
-            // Verificar si la lectura ya existe
+            // 3. Subir la foto si existe
+            let photoUrl = '';
+            if (pendingPhoto) {
+              try {
+                let photoBlob: Blob;
+                let fileType: string;
+
+                // Convertir el archivo a Blob según su tipo
+                if ('data' in pendingPhoto.file) {
+                  const base64String = pendingPhoto.file.data;
+                  const base64Data = base64String.split(',')[1] || base64String;
+                  const byteString = atob(base64Data);
+                  const ab = new ArrayBuffer(byteString.length);
+                  const ia = new Uint8Array(ab);
+                  
+                  for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                  }
+                  
+                  fileType = pendingPhoto.file.type || 'image/jpeg';
+                  photoBlob = new Blob([ab], { type: fileType });
+                } else if (pendingPhoto.file instanceof File || pendingPhoto.file instanceof Blob) {
+                  photoBlob = pendingPhoto.file;
+                  fileType = pendingPhoto.file.type || 'image/jpeg';
+                } else {
+                  throw new Error('Formato de archivo no soportado');
+                }
+
+                const fileExt = fileType.split('/')[1] || 'jpg';
+                const fileName = `${reading.meterCode}_${reading.timestamp}.${fileExt}`;
+
+                // Subir la foto
+                const { error: uploadError } = await supabase.storage
+                  .from('meter-photos')
+                  .upload(fileName, photoBlob, {
+                    cacheControl: '3600',
+                    upsert: true
+                  });
+
+                if (uploadError) {
+                  throw uploadError;
+                }
+
+                // Obtener URL pública de la foto
+                const { data: { publicUrl } } = supabase.storage
+                  .from('meter-photos')
+                  .getPublicUrl(fileName);
+
+                photoUrl = publicUrl;
+                syncedPhotos++;
+                successfullySyncedPhotos.push({
+                  meterCode: reading.meterCode,
+                  timestamp: reading.timestamp
+                });
+
+              } catch (error: any) {
+                console.error('Error al subir foto:', error);
+                // Continuar con la sincronización de la lectura incluso si falla la foto
+                photoUrl = reading.photoUrl || '';
+              }
+            }
+
+            // 4. Verificar si la lectura ya existe
             const { data: existingReading, error: readingCheckError } = await supabase
               .from('readings')
               .select('*')
@@ -686,9 +588,7 @@ const Home: React.FC = () => {
               continue;
             }
 
-            // Obtener la URL de la foto si existe
-            const photoUrl = photoUrls.get(`${reading.meterCode}_${reading.timestamp}`) || reading.photoUrl || '';
-
+            // 5. Insertar o actualizar la lectura
             if (existingReading) {
               // Actualizar lectura existente
               const { error: updateError } = await supabase
@@ -753,7 +653,7 @@ const Home: React.FC = () => {
           });
           showSnackbar(`No se pudo sincronizar la lectura del medidor ${reading.meterCode}: ${lastError}`, 'warning');
         } else {
-          // Remover lectura sincronizada exitosamente
+          // Remover lectura y foto sincronizadas exitosamente
           setPendingReadings(prev => {
             const updated = prev.filter(r => 
               r.meterCode !== reading.meterCode || 
@@ -762,6 +662,17 @@ const Home: React.FC = () => {
             localStorage.setItem('pendingReadings', JSON.stringify(updated));
             return updated;
           });
+
+          if (pendingPhoto) {
+            setPendingPhotos(prev => {
+              const updated = prev.filter(p => 
+                p.meterCode !== reading.meterCode || 
+                p.timestamp !== reading.timestamp
+              );
+              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
+              return updated;
+            });
+          }
         }
       }
 
