@@ -31,28 +31,81 @@ const Login: React.FC = () => {
     try {
       console.log('Intentando iniciar sesión con:', { email });
       
-      // Primero verificar si el usuario existe y su estado
-      const { data: userData, error: userCheckError } = await supabase
+      // Primero verificar si el usuario existe en auth.users
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (authError) {
+        console.log('Error de autenticación:', authError);
+        
+        // Si las credenciales son inválidas, verificar si el usuario existe en la tabla users
+        if (authError.message?.includes('Invalid login credentials')) {
+          const { data: userData, error: userCheckError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+
+          console.log('Verificación de usuario en tabla users:', { userData, userCheckError });
+
+          if (userCheckError) {
+            console.error('Error al verificar usuario:', userCheckError);
+            throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
+          }
+
+          if (!userData) {
+            setError('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
+            return;
+          }
+
+          if (userData.status === 'pending') {
+            setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
+            return;
+          }
+
+          if (userData.status === 'inactive') {
+            setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
+            return;
+          }
+
+          setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
+          return;
+        }
+
+        if (authError.message?.includes('Email not confirmed')) {
+          setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+          return;
+        }
+
+        throw authError;
+      }
+
+      if (!authData.user) {
+        throw new Error('Error al obtener la información del usuario');
+      }
+
+      // Verificar el estado del usuario en la tabla users
+      const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
-        .maybeSingle();
+        .eq('id', authData.user.id)
+        .single();
 
-      console.log('Verificación inicial del usuario:', { userData, userCheckError });
+      console.log('Estado del usuario en tabla users:', { userData, userError });
 
-      if (userCheckError) {
-        console.error('Error al verificar usuario:', userCheckError);
-        throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
+      if (userError) {
+        console.error('Error al verificar estado del usuario:', userError);
+        throw new Error('Error al verificar el estado de tu cuenta. Por favor, contacta al administrador.');
       }
 
       if (!userData) {
-        setError('No existe una cuenta con este correo electrónico.');
-        return;
+        console.error('Usuario no encontrado en tabla users');
+        throw new Error('Error: Usuario no encontrado en el sistema. Por favor, contacta al administrador.');
       }
 
-      // Si el usuario está pendiente, no intentar login
       if (userData.status === 'pending') {
-        console.log('Usuario en estado pending, solicitando verificación');
         setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
         return;
       }
@@ -62,91 +115,22 @@ const Login: React.FC = () => {
         return;
       }
 
-      // Si el usuario existe y no está pendiente, intentar login
-      console.log('Usuario verificado, intentando login');
-      await login(email, password);
-
-      // Verificar el estado del usuario después del login
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) {
-        console.error('Error al obtener usuario después del login:', userError);
-        throw userError;
-      }
-
-      if (!user) {
-        console.error('No se pudo obtener la información del usuario después del login');
-        throw new Error('Error al obtener la información del usuario');
-      }
-
-      console.log('Usuario autenticado:', { 
-        userId: user.id, 
-        email: user.email,
-        emailConfirmed: user.email_confirmed_at 
-      });
-
-      // Verificar el estado final del usuario
-      const { data: finalUserData, error: statusError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      console.log('Estado final del usuario:', { 
-        finalUserData, 
-        statusError 
-      });
-
-      if (statusError) {
-        console.error('Error al verificar estado final del usuario:', statusError);
-        throw new Error('Error al verificar el estado de tu cuenta. Por favor, intenta nuevamente.');
-      }
-
-      if (!finalUserData) {
-        console.error('No se encontraron datos finales del usuario');
-        throw new Error('Error: No se encontraron los datos de tu cuenta. Por favor, contacta al administrador.');
-      }
-
-      if (!finalUserData.email_confirmed_at && !user.email_confirmed_at) {
-        console.log('Email no confirmado después del login');
+      if (!userData.email_confirmed_at && !authData.user.email_confirmed_at) {
         setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
         return;
       }
 
       console.log('Login completado exitosamente:', {
-        userId: user.id,
-        status: finalUserData.status,
-        emailConfirmed: finalUserData.email_confirmed_at
+        userId: authData.user.id,
+        status: userData.status,
+        emailConfirmed: userData.email_confirmed_at
       });
 
       // Si todo está bien, navegar al dashboard
       navigate('/admin');
     } catch (error: any) {
-      console.error('Error completo en login:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      });
-
-      if (error.message?.includes('Invalid login credentials')) {
-        // Si el usuario está pendiente, mostrar mensaje específico
-        const { data: pendingUser } = await supabase
-          .from('users')
-          .select('status')
-          .eq('email', email)
-          .maybeSingle();
-
-        if (pendingUser?.status === 'pending') {
-          setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
-        } else {
-          setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
-        }
-      } else if (error.message?.includes('Email not confirmed')) {
-        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
-      } else {
-        setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
-      }
+      console.error('Error completo en login:', error);
+      setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
     } finally {
       setLoading(false);
     }
@@ -254,26 +238,34 @@ const Login: React.FC = () => {
     try {
       console.log('Reenviando confirmación a:', email);
       
-      // Verificar el estado actual del usuario
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('status')
-        .eq('email', email)
-        .maybeSingle();
+      // Verificar si el usuario existe en auth.users
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'Temporal123!' // Intentar con la contraseña temporal
+      });
 
-      if (userError) {
-        console.error('Error al verificar usuario para reenvío:', userError);
-        throw new Error('Error al verificar el estado de tu cuenta');
-      }
+      if (authError && !authError.message?.includes('Email not confirmed')) {
+        // Si el error no es por email no confirmado, verificar en la tabla users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('status')
+          .eq('email', email)
+          .maybeSingle();
 
-      if (!userData) {
-        setError('No existe una cuenta con este correo electrónico.');
-        return;
-      }
+        if (userError) {
+          console.error('Error al verificar usuario para reenvío:', userError);
+          throw new Error('Error al verificar el estado de tu cuenta');
+        }
 
-      if (userData.status !== 'pending') {
-        setError('Tu cuenta ya está activa. Por favor, intenta iniciar sesión.');
-        return;
+        if (!userData) {
+          setError('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
+          return;
+        }
+
+        if (userData.status !== 'pending') {
+          setError('Tu cuenta ya está activa. Por favor, intenta iniciar sesión.');
+          return;
+        }
       }
 
       const { error: resendError } = await supabase.auth.resend({
@@ -362,9 +354,16 @@ const Login: React.FC = () => {
               severity="error" 
               sx={{ width: '100%', mb: 2 }}
               action={
-                error.includes('confirmado') && (
-                  <Button color="inherit" size="small" onClick={handleResendConfirmation}>
-                    Reenviar confirmación
+                (error.includes('pendiente') || 
+                 error.includes('confirmado') || 
+                 error.includes('no existe')) && (
+                  <Button 
+                    color="inherit" 
+                    size="small" 
+                    onClick={handleResendConfirmation}
+                    disabled={loading}
+                  >
+                    {loading ? 'Enviando...' : 'Reenviar confirmación'}
                   </Button>
                 )
               }
