@@ -217,11 +217,11 @@ const MetersManagement: React.FC = () => {
           <TableHead>
             <TableRow>
               <TableCell>Código</TableCell>
+              <TableCell>Contacto</TableCell>
               <TableCell>Ubicación</TableCell>
               <TableCell>Apellidos y Nombres</TableCell>
               <TableCell>Identificación</TableCell>
               <TableCell>Correo</TableCell>
-              <TableCell>Contacto</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
               <TableCell>Acciones</TableCell>
@@ -231,11 +231,11 @@ const MetersManagement: React.FC = () => {
             {meters.map((meter) => (
               <TableRow key={meter.code_meter}>
                 <TableCell>{meter.code_meter}</TableCell>
+                <TableCell>{meter.contact_number || '-'}</TableCell>
                 <TableCell>{meter.location}</TableCell>
                 <TableCell>{meter.description}</TableCell>
                 <TableCell>{meter.identification || '-'}</TableCell>
                 <TableCell>{meter.email || '-'}</TableCell>
-                <TableCell>{meter.contact_number || '-'}</TableCell>
                 <TableCell>{meter.status}</TableCell>
                 <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>
