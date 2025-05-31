@@ -126,6 +126,22 @@ const UsersManagement: React.FC = () => {
         if (error) throw error;
         showSnackbar('Usuario actualizado exitosamente');
       } else {
+        console.log('Iniciando creación de usuario...');
+        console.log('Datos del formulario:', formData);
+
+        // Verificar si el usuario ya existe en auth.users
+        const { data: existingAuthUser, error: checkError } = await supabase.auth.admin.getUserByEmail(formData.email);
+        if (checkError && checkError.code !== 'PGRST116') {
+          console.error('Error al verificar usuario existente en auth:', checkError);
+          throw checkError;
+        }
+
+        if (existingAuthUser) {
+          console.log('Usuario ya existe en auth.users:', existingAuthUser);
+          throw new Error('Este correo electrónico ya está registrado en el sistema');
+        }
+
+        console.log('Creando usuario en auth.users...');
         // Primero crear el usuario en auth.users
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: formData.email,
@@ -134,19 +150,27 @@ const UsersManagement: React.FC = () => {
             data: {
               full_name: formData.full_name,
               role: formData.role,
-            }
+            },
+            emailRedirectTo: `${window.location.origin}/admin/login`
           }
         });
 
         if (authError) {
-          console.error('Error creating auth user:', authError);
-          throw authError;
+          console.error('Error detallado al crear usuario en auth:', authError);
+          throw new Error(`Error al crear usuario de autenticación: ${authError.message}`);
         }
 
         if (!authData.user) {
-          throw new Error('No se pudo crear el usuario de autenticación');
+          console.error('No se recibió el usuario en la respuesta de signUp');
+          throw new Error('No se pudo crear el usuario de autenticación - respuesta vacía');
         }
 
+        console.log('Usuario creado exitosamente en auth.users:', authData.user.id);
+
+        // Esperar un momento para asegurar que el usuario se haya propagado en auth.users
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        console.log('Intentando crear registro en la tabla users...');
         // Luego crear el registro en la tabla users
         const { error: dbError } = await supabase
           .from('users')
@@ -160,16 +184,24 @@ const UsersManagement: React.FC = () => {
           }]);
 
         if (dbError) {
-          console.error('Error creating user record:', dbError);
-          throw dbError;
+          console.error('Error detallado al crear usuario en la tabla:', dbError);
+          // Si falla la inserción en la tabla users, intentar eliminar el usuario de auth
+          try {
+            await supabase.auth.admin.deleteUser(authData.user.id);
+            console.log('Usuario eliminado de auth.users después del error');
+          } catch (deleteError) {
+            console.error('Error al intentar limpiar el usuario de auth:', deleteError);
+          }
+          throw new Error(`Error al crear usuario en la base de datos: ${dbError.message}`);
         }
 
+        console.log('Usuario creado exitosamente en la tabla users');
         showSnackbar('Usuario creado exitosamente. Se ha enviado un correo para confirmar la cuenta.');
       }
       handleClose();
       fetchUsers();
     } catch (error: any) {
-      console.error('Error saving user:', error);
+      console.error('Error completo en handleSubmit:', error);
       showSnackbar(error.message || 'Error al guardar el usuario', 'error');
     }
   };
