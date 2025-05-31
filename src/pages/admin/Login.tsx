@@ -245,11 +245,57 @@ const Login: React.FC = () => {
 
           if (verifyError) {
             console.error('Error al verificar email:', verifyError);
-            if (verifyError.message?.includes('expired')) {
-              setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
-            } else {
-              setError('Error al verificar el email. Por favor, intenta nuevamente.');
+            
+            // Manejar errores específicos
+            if (verifyError.message?.includes('expired') || verifyError.message?.includes('invalid')) {
+              setError('El enlace de confirmación ha expirado o no es válido. Por favor, solicita un nuevo enlace de confirmación.');
+              // Mostrar el botón de reenvío
+              return (
+                <Container component="main" maxWidth="xs">
+                  <Box
+                    sx={{
+                      marginTop: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Paper
+                      elevation={3}
+                      sx={{
+                        padding: 4,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        width: '100%',
+                        backgroundColor: '#fff3e0',
+                      }}
+                    >
+                      <Typography variant="h6" color="warning.main" gutterBottom>
+                        Enlace expirado o inválido
+                      </Typography>
+                      <Typography variant="body1" align="center" gutterBottom>
+                        El enlace de confirmación ha expirado o no es válido.
+                      </Typography>
+                      <Typography variant="body2" align="center" color="text.secondary" gutterBottom>
+                        Por favor, solicita un nuevo enlace de confirmación.
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        sx={{ mt: 2 }}
+                        onClick={handleResendConfirmation}
+                        disabled={loading}
+                      >
+                        {loading ? 'Enviando...' : 'Solicitar nuevo enlace'}
+                      </Button>
+                    </Paper>
+                  </Box>
+                </Container>
+              );
             }
+            
+            setError('Error al verificar el email. Por favor, intenta nuevamente.');
             return;
           }
 
@@ -333,8 +379,8 @@ const Login: React.FC = () => {
           );
         } catch (error: any) {
           console.error('Error en verificación:', error);
-          if (error.message?.includes('expired')) {
-            setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+          if (error.message?.includes('expired') || error.message?.includes('invalid')) {
+            setError('El enlace de confirmación ha expirado o no es válido. Por favor, solicita un nuevo enlace de confirmación.');
           } else {
             setError('Error al verificar el email. Por favor, intenta nuevamente.');
           }
@@ -510,27 +556,32 @@ const Login: React.FC = () => {
       }
 
       const userData = users[0];
-      if (userData.status !== 'pending') {
+      
+      // Verificar si el usuario ya está activo
+      if (userData.status === 'active') {
         setError('Tu cuenta ya está activa. Por favor, intenta iniciar sesión.');
         return;
       }
 
-      // Intentar reenviar el email de confirmación
+      // Intentar reenviar el email de confirmación con opciones específicas
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: cleanEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/login?type=signup`
+          emailRedirectTo: `${window.location.origin}/admin/login`
         }
       });
 
       if (resendError) {
         console.error('Error al reenviar confirmación:', resendError);
+        if (resendError.message?.includes('rate limit')) {
+          throw new Error('Has solicitado demasiados enlaces de confirmación. Por favor, espera unos minutos antes de intentar nuevamente.');
+        }
         throw resendError;
       }
 
       setError('');
-      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. Por favor, revisa tu bandeja de entrada y sigue las instrucciones para activar tu cuenta.');
+      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. Por favor, revisa tu bandeja de entrada y sigue las instrucciones para activar tu cuenta. El enlace expirará en 24 horas.');
     } catch (error: any) {
       console.error('Error al reenviar confirmación:', error);
       setError(error.message || 'Error al reenviar el enlace de confirmación');
