@@ -158,24 +158,105 @@ const Login: React.FC = () => {
       
       if (isSupabaseRedirect) {
         console.log('Detectada redirección de Supabase');
-        // Extraer el token de la URL de Supabase
-        const supabaseToken = window.location.href.split('token=')[1]?.split('&')[0];
-        if (supabaseToken) {
-          console.log('Token extraído de URL de Supabase:', supabaseToken);
-          // Redirigir a nuestra aplicación con el token
-          window.location.href = `${window.location.origin}/admin/login?token=${supabaseToken}&type=signup`;
+        try {
+          // Extraer el token y el redirect_to de la URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const supabaseToken = urlParams.get('token');
+          const redirectTo = urlParams.get('redirect_to');
+          
+          console.log('Parámetros de Supabase:', {
+            token: supabaseToken,
+            redirectTo: redirectTo
+          });
+
+          if (supabaseToken) {
+            // Verificar el token directamente con Supabase
+            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+              token_hash: supabaseToken,
+              type: 'signup'
+            });
+
+            if (verifyError) {
+              console.error('Error al verificar token de Supabase:', verifyError);
+              throw verifyError;
+            }
+
+            console.log('Token verificado exitosamente:', verifyData);
+
+            // Obtener el usuario después de la verificación
+            const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
+            
+            if (verifiedUserError) {
+              console.error('Error al obtener usuario después de verificación:', verifiedUserError);
+              throw verifiedUserError;
+            }
+
+            if (!verifiedUser) {
+              throw new Error('No se pudo obtener la información del usuario');
+            }
+
+            console.log('Usuario verificado:', verifiedUser);
+
+            // Actualizar el estado del usuario en la tabla users
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({ 
+                status: 'active',
+                email_confirmed_at: new Date().toISOString()
+              })
+              .eq('id', verifiedUser.id);
+
+            if (updateError) {
+              console.error('Error al actualizar estado del usuario:', updateError);
+              throw updateError;
+            }
+
+            console.log('Estado del usuario actualizado exitosamente');
+
+            // Redirigir a la aplicación con mensaje de éxito
+            const redirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
+            redirectUrl.searchParams.set('verification', 'success');
+            window.location.href = redirectUrl.toString();
+            return;
+          }
+        } catch (error: any) {
+          console.error('Error en proceso de verificación de Supabase:', error);
+          // Redirigir a la aplicación con mensaje de error
+          const redirectUrl = new URL(`${window.location.origin}/admin/login`);
+          redirectUrl.searchParams.set('error_code', 'verification_failed');
+          redirectUrl.searchParams.set('error_description', encodeURIComponent(error.message));
+          window.location.href = redirectUrl.toString();
           return;
         }
       }
 
+      // Procesar parámetros de redirección después de verificación
+      if (params.get('verification') === 'success') {
+        setError('');
+        alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
+        window.history.replaceState({}, document.title, '/admin/login');
+        return;
+      }
+
+      if (errorCode === 'verification_failed') {
+        setError(decodeURIComponent(errorDescription || 'Error al verificar el email'));
+        window.history.replaceState({}, document.title, '/admin/login');
+        return;
+      }
+
+      if (errorCode === 'otp_expired') {
+        setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+        window.history.replaceState({}, document.title, '/admin/login');
+        return;
+      }
+
+      // Procesar verificación normal (no desde Supabase)
       if (token && type === 'signup') {
         setVerifying(true);
         try {
-          console.log('Iniciando verificación de email con token:', { token, type });
+          console.log('Iniciando verificación de email con token local:', { token, type });
           
-          let currentUser = null;
-          
-          // Verificar el token directamente
+          // Verificar el token
           const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: token,
             type: 'signup'
@@ -202,31 +283,8 @@ const Login: React.FC = () => {
           }
 
           if (!verifiedUser) {
-            console.error('No se encontró usuario después de la verificación');
             throw new Error('No se pudo obtener la información del usuario');
           }
-
-          currentUser = verifiedUser;
-          console.log('Usuario obtenido después de verificación:', currentUser);
-
-          // Verificar el estado actual del usuario en la tabla users
-          const { data: userData, error: userDataError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', currentUser.id)
-            .single();
-
-          if (userDataError) {
-            console.error('Error al verificar estado del usuario:', userDataError);
-            throw userDataError;
-          }
-
-          if (!userData) {
-            console.error('Usuario no encontrado en la tabla users');
-            throw new Error('Error: Usuario no encontrado en el sistema');
-          }
-
-          console.log('Estado actual del usuario:', userData);
 
           // Actualizar el estado del usuario en la tabla users
           const { error: updateError } = await supabase
@@ -235,7 +293,7 @@ const Login: React.FC = () => {
               status: 'active',
               email_confirmed_at: new Date().toISOString()
             })
-            .eq('id', currentUser.id);
+            .eq('id', verifiedUser.id);
 
           if (updateError) {
             console.error('Error al actualizar estado del usuario:', updateError);
@@ -244,10 +302,8 @@ const Login: React.FC = () => {
 
           console.log('Estado del usuario actualizado exitosamente');
 
-          // Limpiar la URL después de la verificación exitosa
+          // Limpiar la URL y mostrar mensaje de éxito
           window.history.replaceState({}, document.title, '/admin/login');
-          
-          // Mostrar mensaje de éxito
           setError('');
           alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
           
@@ -261,12 +317,6 @@ const Login: React.FC = () => {
         } finally {
           setVerifying(false);
         }
-      } else if (errorCode === 'otp_expired') {
-        setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
-        window.history.replaceState({}, document.title, '/admin/login');
-      } else if (errorCode) {
-        setError(decodeURIComponent(errorDescription || 'Error al confirmar el email'));
-        window.history.replaceState({}, document.title, '/admin/login');
       }
     };
 
