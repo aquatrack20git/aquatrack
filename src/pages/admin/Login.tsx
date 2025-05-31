@@ -26,14 +26,19 @@ const Login: React.FC = () => {
   useEffect(() => {
     const verifyEmail = async () => {
       const params = new URLSearchParams(location.search);
-      const code = params.get('code');
+      const token = params.get('token');
+      const type = params.get('type');
       const errorCode = params.get('error_code');
       const errorDescription = params.get('error_description');
 
-      if (code) {
+      if (token && type === 'signup') {
         setVerifying(true);
         try {
-          const { error: verifyError } = await supabase.auth.exchangeCodeForSession(code);
+          // Primero verificar el token
+          const { error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: token,
+            type: 'signup'
+          });
 
           if (verifyError) {
             console.error('Error al verificar email:', verifyError);
@@ -74,15 +79,14 @@ const Login: React.FC = () => {
         type: 'signup',
         email: email,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/login`,
-          expiresIn: 604800 // 7 días
+          emailRedirectTo: `${window.location.origin}/admin/login`
         }
       });
 
       if (resendError) throw resendError;
 
       setError('');
-      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. El enlace expirará en 7 días.');
+      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico.');
     } catch (error: any) {
       setError(error.message || 'Error al reenviar el enlace de confirmación');
     } finally {

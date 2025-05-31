@@ -156,7 +156,7 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/login`
+            emailRedirectTo: `${window.location.origin}/admin/login?type=signup`
           }
         });
 
