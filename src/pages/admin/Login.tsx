@@ -43,55 +43,92 @@ const Login: React.FC = () => {
       }
 
       if (!user) {
-        throw new Error('No se pudo obtener la información del usuario');
+        console.error('No se pudo obtener la información del usuario después del login');
+        throw new Error('Error al obtener la información del usuario');
       }
 
-      console.log('Verificando estado del usuario:', { userId: user.id });
+      console.log('Usuario autenticado:', { 
+        userId: user.id, 
+        email: user.email,
+        emailConfirmed: user.email_confirmed_at 
+      });
       
+      // Verificar el estado del usuario en la tabla users
       const { data: userData, error: statusError } = await supabase
         .from('users')
-        .select('status, email_confirmed_at')
+        .select('*')  // Seleccionar todos los campos para diagnóstico
         .eq('id', user.id)
         .single();
 
-      console.log('Estado del usuario en tabla users:', { userData, statusError });
+      console.log('Datos del usuario en tabla users:', { 
+        userData, 
+        statusError,
+        query: `SELECT * FROM users WHERE id = '${user.id}'`
+      });
 
       if (statusError) {
-        console.error('Error al verificar estado del usuario:', statusError);
-        throw new Error('Error al verificar el estado de tu cuenta');
+        console.error('Error al verificar estado del usuario:', {
+          error: statusError,
+          code: statusError.code,
+          details: statusError.details,
+          hint: statusError.hint
+        });
+        
+        // Verificar si el error es porque el usuario no existe en la tabla
+        if (statusError.code === 'PGRST116') {
+          console.error('Usuario no encontrado en la tabla users');
+          throw new Error('Error: Usuario no encontrado en el sistema. Por favor, contacta al administrador.');
+        }
+        
+        throw new Error('Error al verificar el estado de tu cuenta. Por favor, intenta nuevamente.');
       }
 
       if (!userData) {
-        console.error('Usuario no encontrado en tabla users');
-        throw new Error('Error: Usuario no encontrado en el sistema');
+        console.error('No se encontraron datos del usuario en la tabla users');
+        throw new Error('Error: No se encontraron los datos de tu cuenta. Por favor, contacta al administrador.');
       }
 
+      // Verificar el estado del usuario
       if (userData.status === 'pending') {
+        console.log('Usuario en estado pending');
         setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
         return;
       }
 
       if (userData.status === 'inactive') {
+        console.log('Usuario en estado inactive');
         setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
         return;
       }
 
-      if (!userData.email_confirmed_at) {
+      if (!userData.email_confirmed_at && !user.email_confirmed_at) {
+        console.log('Email no confirmado');
         setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
         return;
       }
 
-      console.log('Login completado exitosamente');
+      console.log('Login completado exitosamente:', {
+        userId: user.id,
+        status: userData.status,
+        emailConfirmed: userData.email_confirmed_at
+      });
+
       // Si todo está bien, navegar al dashboard
       navigate('/admin');
     } catch (error: any) {
-      console.error('Error completo en login:', error);
+      console.error('Error completo en login:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
       if (error.message?.includes('Invalid login credentials')) {
         setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
       } else if (error.message?.includes('Email not confirmed')) {
         setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
       } else {
-        setError(error.message || 'Error al iniciar sesión');
+        setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
       }
     } finally {
       setLoading(false);
