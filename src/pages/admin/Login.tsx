@@ -33,24 +33,44 @@ const Login: React.FC = () => {
       const cleanEmail = email.trim().toLowerCase();
       console.log('Intentando iniciar sesión con email limpio:', cleanEmail);
       
-      // Primero verificar si el usuario existe en la tabla users
-      const { data: users, error: userCheckError } = await supabase
+      // Verificar la conexión a la base de datos
+      const { data: testData, error: testError } = await supabase
+        .from('users')
+        .select('count')
+        .limit(1);
+
+      console.log('Prueba de conexión a la base de datos:', { testData, testError });
+
+      // Primero verificar si el usuario existe en la tabla users con una consulta más simple
+      const { data: directUser, error: directError } = await supabase
         .from('users')
         .select('*')
-        .ilike('email', cleanEmail);
+        .eq('email', cleanEmail)
+        .single();
 
-      console.log('Búsqueda de usuario en tabla users:', { 
+      console.log('Búsqueda directa de usuario:', { 
         emailBuscado: cleanEmail,
-        usuariosEncontrados: users,
-        error: userCheckError 
+        usuarioEncontrado: directUser,
+        error: directError 
       });
 
-      if (userCheckError) {
-        console.error('Error al verificar usuario:', userCheckError);
+      // Intentar una búsqueda más amplia para diagnóstico
+      const { data: allUsers, error: allUsersError } = await supabase
+        .from('users')
+        .select('email')
+        .limit(5);
+
+      console.log('Muestra de usuarios en la tabla:', {
+        usuariosEncontrados: allUsers,
+        error: allUsersError
+      });
+
+      if (directError) {
+        console.error('Error al verificar usuario:', directError);
         throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
       }
 
-      if (!users || users.length === 0) {
+      if (!directUser) {
         // Verificar si el usuario existe en auth.users
         const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
         console.log('Verificación en auth.users:', {
@@ -62,22 +82,21 @@ const Login: React.FC = () => {
         throw new Error('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
       }
 
-      const userData = users[0];
       console.log('Usuario encontrado:', {
-        id: userData.id,
-        email: userData.email,
-        status: userData.status,
-        emailConfirmed: userData.email_confirmed_at
+        id: directUser.id,
+        email: directUser.email,
+        status: directUser.status,
+        emailConfirmed: directUser.email_confirmed_at
       });
 
       // Verificar el estado del usuario
-      if (userData.status === 'pending') {
+      if (directUser.status === 'pending') {
         console.log('Usuario en estado pending');
         setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
         return;
       }
 
-      if (userData.status === 'inactive') {
+      if (directUser.status === 'inactive') {
         console.log('Usuario en estado inactive');
         setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
         return;
@@ -112,8 +131,8 @@ const Login: React.FC = () => {
 
       console.log('Login completado exitosamente:', {
         userId: authData.user.id,
-        status: userData.status,
-        emailConfirmed: userData.email_confirmed_at
+        status: directUser.status,
+        emailConfirmed: directUser.email_confirmed_at
       });
 
       // Si todo está bien, navegar al dashboard
@@ -139,34 +158,71 @@ const Login: React.FC = () => {
         try {
           console.log('Iniciando verificación de email con token:', { token, type });
           
-          // Verificar el token
-          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: token,
-            type: 'signup'
-          });
-
-          if (verifyError) {
-            console.error('Error al verificar email:', verifyError);
-            setError('Error al verificar el email. Por favor, intenta nuevamente.');
-            return;
-          }
-
-          console.log('Token verificado exitosamente:', verifyData);
-
-          // Obtener el usuario actual
-          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          let currentUser = null;
+          
+          // Primero verificar si el usuario existe en auth.users
+          const { data: { user: existingUser }, error: userError } = await supabase.auth.getUser();
           
           if (userError) {
             console.error('Error al obtener usuario:', userError);
             throw userError;
           }
 
-          if (!user) {
-            console.error('No se encontró usuario después de la verificación');
-            throw new Error('No se pudo obtener la información del usuario');
+          if (existingUser) {
+            console.log('Usuario encontrado en sesión:', existingUser);
+            currentUser = existingUser;
+          } else {
+            console.log('No hay usuario en sesión, verificando token...');
+            // Verificar el token
+            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+              token_hash: token,
+              type: 'signup'
+            });
+
+            if (verifyError) {
+              console.error('Error al verificar email:', verifyError);
+              setError('Error al verificar el email. Por favor, intenta nuevamente.');
+              return;
+            }
+
+            console.log('Token verificado exitosamente:', verifyData);
+
+            // Obtener el usuario después de la verificación
+            const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
+            
+            if (verifiedUserError) {
+              console.error('Error al obtener usuario después de verificación:', verifiedUserError);
+              throw verifiedUserError;
+            }
+
+            if (!verifiedUser) {
+              console.error('No se encontró usuario después de la verificación');
+              throw new Error('No se pudo obtener la información del usuario');
+            }
+
+            currentUser = verifiedUser;
           }
 
-          console.log('Usuario obtenido después de verificación:', user);
+          console.log('Usuario obtenido:', currentUser);
+
+          // Verificar el estado actual del usuario en la tabla users
+          const { data: userData, error: userDataError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', currentUser.id)
+            .single();
+
+          if (userDataError) {
+            console.error('Error al verificar estado del usuario:', userDataError);
+            throw userDataError;
+          }
+
+          if (!userData) {
+            console.error('Usuario no encontrado en la tabla users');
+            throw new Error('Error: Usuario no encontrado en el sistema');
+          }
+
+          console.log('Estado actual del usuario:', userData);
 
           // Actualizar el estado del usuario en la tabla users
           const { error: updateError } = await supabase
@@ -175,7 +231,7 @@ const Login: React.FC = () => {
               status: 'active',
               email_confirmed_at: new Date().toISOString()
             })
-            .eq('id', user.id);
+            .eq('id', currentUser.id);
 
           if (updateError) {
             console.error('Error al actualizar estado del usuario:', updateError);
@@ -184,25 +240,20 @@ const Login: React.FC = () => {
 
           console.log('Estado del usuario actualizado exitosamente');
 
-          // Intentar iniciar sesión automáticamente
-          const { error: signInError } = await supabase.auth.signInWithPassword({
-            email: user.email!,
-            password: 'Temporal123!' // La contraseña temporal que se estableció al crear el usuario
-          });
-
-          if (signInError) {
-            console.error('Error al iniciar sesión automáticamente:', signInError);
-            setError('');
-            // Limpiar la URL después de la verificación exitosa
-            window.history.replaceState({}, document.title, '/admin/login');
-            alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
-          } else {
-            // Si el inicio de sesión automático fue exitoso, navegar al dashboard
-            navigate('/admin');
-          }
+          // Limpiar la URL después de la verificación exitosa
+          window.history.replaceState({}, document.title, '/admin/login');
+          
+          // Mostrar mensaje de éxito
+          setError('');
+          alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
+          
         } catch (error: any) {
           console.error('Error en verificación:', error);
-          setError('Error al verificar el email. Por favor, intenta nuevamente.');
+          if (error.message?.includes('expired')) {
+            setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+          } else {
+            setError('Error al verificar el email. Por favor, intenta nuevamente.');
+          }
         } finally {
           setVerifying(false);
         }
