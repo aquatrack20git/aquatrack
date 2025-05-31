@@ -27,13 +27,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: true,
     flowType: 'pkce',
     storage: {
       getItem: (key) => {
         try {
           const value = sessionStorage.getItem(key);
-          return value ? JSON.parse(value) : null;
+          if (value) return JSON.parse(value);
+          
+          const localValue = localStorage.getItem(key);
+          return localValue ? JSON.parse(localValue) : null;
         } catch (error) {
           console.error('Error reading from storage:', error);
           return null;
@@ -41,7 +44,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       },
       setItem: (key, value) => {
         try {
-          sessionStorage.setItem(key, JSON.stringify(value));
+          const stringValue = JSON.stringify(value);
+          sessionStorage.setItem(key, stringValue);
+          localStorage.setItem(key, stringValue);
         } catch (error) {
           console.error('Error writing to storage:', error);
         }
@@ -49,6 +54,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       removeItem: (key) => {
         try {
           sessionStorage.removeItem(key);
+          localStorage.removeItem(key);
         } catch (error) {
           console.error('Error removing from storage:', error);
         }

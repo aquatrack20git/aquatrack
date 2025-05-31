@@ -39,6 +39,11 @@ CREATE TABLE users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Otorgar permisos necesarios
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO postgres;
+
 -- Función para crear políticas de seguridad
 CREATE OR REPLACE FUNCTION create_meters_policy(
     policy_name text,
@@ -96,7 +101,7 @@ BEGIN
         ', policy_name, operation, definition);
     END IF;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Función para crear políticas de seguridad para users
 CREATE OR REPLACE FUNCTION create_users_policy(
@@ -133,20 +138,24 @@ ALTER TABLE readings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
--- Crear políticas para meters
-SELECT create_meters_policy('meters_select', 'meters', 'true', 'SELECT');
-SELECT create_meters_policy('meters_insert', 'meters', 'true', 'INSERT');
-SELECT create_meters_policy('meters_update', 'meters', 'true', 'UPDATE');
-SELECT create_meters_policy('meters_delete', 'meters', 'true', 'DELETE');
+-- Crear políticas básicas para todas las tablas
+DO $$ 
+BEGIN
+    -- Políticas para meters
+    PERFORM create_meters_policy('meters_select', 'meters', 'true', 'SELECT');
+    PERFORM create_meters_policy('meters_insert', 'meters', 'true', 'INSERT');
+    PERFORM create_meters_policy('meters_update', 'meters', 'true', 'UPDATE');
+    PERFORM create_meters_policy('meters_delete', 'meters', 'true', 'DELETE');
 
--- Crear políticas para readings
-SELECT create_readings_policy('readings_select', 'SELECT', 'true');
-SELECT create_readings_policy('readings_insert', 'INSERT', 'true');
-SELECT create_readings_policy('readings_update', 'UPDATE', 'true');
-SELECT create_readings_policy('readings_delete', 'DELETE', 'true');
+    -- Políticas para readings
+    PERFORM create_readings_policy('readings_select', 'SELECT', 'true');
+    PERFORM create_readings_policy('readings_insert', 'INSERT', 'true');
+    PERFORM create_readings_policy('readings_update', 'UPDATE', 'true');
+    PERFORM create_readings_policy('readings_delete', 'DELETE', 'true');
 
--- Crear políticas para users
-SELECT create_users_policy('users_select', 'true', 'SELECT');
-SELECT create_users_policy('users_insert', 'true', 'INSERT');
-SELECT create_users_policy('users_update', 'true', 'UPDATE');
-SELECT create_users_policy('users_delete', 'true', 'DELETE'); 
+    -- Políticas para users
+    PERFORM create_users_policy('users_select', 'true', 'SELECT');
+    PERFORM create_users_policy('users_insert', 'true', 'INSERT');
+    PERFORM create_users_policy('users_update', 'true', 'UPDATE');
+    PERFORM create_users_policy('users_delete', 'true', 'DELETE');
+END $$; 
