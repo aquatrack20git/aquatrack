@@ -29,26 +29,46 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      console.log('Intentando iniciar sesión con:', { email });
+      // Limpiar el email de espacios en blanco
+      const cleanEmail = email.trim().toLowerCase();
+      console.log('Intentando iniciar sesión con email limpio:', cleanEmail);
       
       // Primero verificar si el usuario existe en la tabla users
-      const { data: userData, error: userCheckError } = await supabase
+      const { data: users, error: userCheckError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
-        .maybeSingle();
+        .ilike('email', cleanEmail);
 
-      console.log('Verificación de usuario en tabla users:', { userData, userCheckError });
+      console.log('Búsqueda de usuario en tabla users:', { 
+        emailBuscado: cleanEmail,
+        usuariosEncontrados: users,
+        error: userCheckError 
+      });
 
       if (userCheckError) {
         console.error('Error al verificar usuario:', userCheckError);
         throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
       }
 
-      if (!userData) {
+      if (!users || users.length === 0) {
+        // Verificar si el usuario existe en auth.users
+        const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+        console.log('Verificación en auth.users:', {
+          usuariosAuth: authUsers?.users?.filter(u => u.email?.toLowerCase() === cleanEmail),
+          error: authError
+        });
+
         console.error('Usuario no encontrado en tabla users');
         throw new Error('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
       }
+
+      const userData = users[0];
+      console.log('Usuario encontrado:', {
+        id: userData.id,
+        email: userData.email,
+        status: userData.status,
+        emailConfirmed: userData.email_confirmed_at
+      });
 
       // Verificar el estado del usuario
       if (userData.status === 'pending') {
@@ -66,7 +86,7 @@ const Login: React.FC = () => {
       // Si el usuario existe y está activo, intentar login
       console.log('Usuario verificado, intentando login');
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password
       });
 
@@ -206,27 +226,33 @@ const Login: React.FC = () => {
 
     setLoading(true);
     try {
-      console.log('Reenviando confirmación a:', email);
+      // Limpiar el email de espacios en blanco
+      const cleanEmail = email.trim().toLowerCase();
+      console.log('Reenviando confirmación a email limpio:', cleanEmail);
       
       // Verificar si el usuario existe en la tabla users
-      const { data: userData, error: userError } = await supabase
+      const { data: users, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
-        .maybeSingle();
+        .ilike('email', cleanEmail);
 
-      console.log('Verificación de usuario para reenvío:', { userData, userError });
+      console.log('Verificación de usuario para reenvío:', { 
+        emailBuscado: cleanEmail,
+        usuariosEncontrados: users,
+        error: userError 
+      });
 
       if (userError) {
         console.error('Error al verificar usuario para reenvío:', userError);
         throw new Error('Error al verificar el estado de tu cuenta');
       }
 
-      if (!userData) {
+      if (!users || users.length === 0) {
         setError('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
         return;
       }
 
+      const userData = users[0];
       if (userData.status !== 'pending') {
         setError('Tu cuenta ya está activa. Por favor, intenta iniciar sesión.');
         return;
@@ -235,7 +261,7 @@ const Login: React.FC = () => {
       // Intentar reenviar el email de confirmación
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
-        email: email,
+        email: cleanEmail,
         options: {
           emailRedirectTo: `${window.location.origin}/admin/login?type=signup`
         }
