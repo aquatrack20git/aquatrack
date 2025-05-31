@@ -23,6 +23,63 @@ const Login: React.FC = () => {
   const location = useLocation();
   const { login } = useAuth();
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      // Intentar iniciar sesión directamente
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (loginError) {
+        if (loginError.message?.includes('Email not confirmed')) {
+          setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+        } else if (loginError.message?.includes('Invalid login credentials')) {
+          setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
+        } else {
+          throw loginError;
+        }
+        return;
+      }
+
+      if (data?.user) {
+        // Verificar el estado del usuario en la tabla users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('status')
+          .eq('id', data.user.id)
+          .single();
+
+        if (userError) {
+          console.error('Error al verificar estado del usuario:', userError);
+          throw new Error('Error al verificar el estado de tu cuenta');
+        }
+
+        if (userData?.status === 'pending') {
+          setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
+          return;
+        }
+
+        if (userData?.status === 'inactive') {
+          setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
+          return;
+        }
+
+        // Si todo está bien, navegar al dashboard
+        navigate('/admin');
+      }
+    } catch (error: any) {
+      console.error('Error en login:', error);
+      setError(error.message || 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const verifyEmail = async () => {
       const params = new URLSearchParams(location.search);
@@ -34,7 +91,7 @@ const Login: React.FC = () => {
       if (token && type === 'signup') {
         setVerifying(true);
         try {
-          // Primero verificar el token
+          // Verificar el token
           const { error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: token,
             type: 'signup'
@@ -44,6 +101,26 @@ const Login: React.FC = () => {
             console.error('Error al verificar email:', verifyError);
             setError('Error al verificar el email. Por favor, intenta nuevamente.');
           } else {
+            // Actualizar el estado del usuario en la tabla users
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            
+            if (userError) {
+              console.error('Error al obtener usuario:', userError);
+              throw userError;
+            }
+
+            if (user) {
+              const { error: updateError } = await supabase
+                .from('users')
+                .update({ status: 'active' })
+                .eq('id', user.id);
+
+              if (updateError) {
+                console.error('Error al actualizar estado del usuario:', updateError);
+                throw updateError;
+              }
+            }
+
             setError('');
             // Limpiar la URL después de la verificación exitosa
             window.history.replaceState({}, document.title, '/admin/login');
@@ -89,39 +166,6 @@ const Login: React.FC = () => {
       alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico.');
     } catch (error: any) {
       setError(error.message || 'Error al reenviar el enlace de confirmación');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      // Primero intentar verificar si el email está confirmado
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) throw userError;
-
-      if (!user?.email_confirmed_at) {
-        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
-        setLoading(false);
-        return;
-      }
-
-      await login(email, password);
-      navigate('/admin');
-    } catch (error: any) {
-      console.error('Error en login:', error);
-      if (error.message?.includes('Email not confirmed')) {
-        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
-      } else if (error.message?.includes('Invalid login credentials')) {
-        setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
-      } else {
-        setError(error.message || 'Error al iniciar sesión');
-      }
     } finally {
       setLoading(false);
     }
