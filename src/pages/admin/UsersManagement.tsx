@@ -129,15 +129,20 @@ const UsersManagement: React.FC = () => {
         console.log('Iniciando creación de usuario...');
         console.log('Datos del formulario:', formData);
 
-        // Verificar si el usuario ya existe en auth.users
-        const { data: existingAuthUser, error: checkError } = await supabase.auth.admin.getUserByEmail(formData.email);
-        if (checkError && checkError.code !== 'PGRST116') {
-          console.error('Error al verificar usuario existente en auth:', checkError);
+        // Verificar si el usuario ya existe en la tabla users
+        const { data: existingUser, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', formData.email)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error('Error al verificar usuario existente:', checkError);
           throw checkError;
         }
 
-        if (existingAuthUser) {
-          console.log('Usuario ya existe en auth.users:', existingAuthUser);
+        if (existingUser) {
+          console.log('Usuario ya existe en la tabla users:', existingUser);
           throw new Error('Este correo electrónico ya está registrado en el sistema');
         }
 
@@ -187,10 +192,11 @@ const UsersManagement: React.FC = () => {
           console.error('Error detallado al crear usuario en la tabla:', dbError);
           // Si falla la inserción en la tabla users, intentar eliminar el usuario de auth
           try {
-            await supabase.auth.admin.deleteUser(authData.user.id);
-            console.log('Usuario eliminado de auth.users después del error');
+            // En lugar de usar admin.deleteUser, usamos signOut para limpiar la sesión
+            await supabase.auth.signOut();
+            console.log('Sesión limpiada después del error');
           } catch (deleteError) {
-            console.error('Error al intentar limpiar el usuario de auth:', deleteError);
+            console.error('Error al intentar limpiar la sesión:', deleteError);
           }
           throw new Error(`Error al crear usuario en la base de datos: ${dbError.message}`);
         }
