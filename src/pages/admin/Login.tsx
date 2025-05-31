@@ -18,24 +18,51 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
 
   useEffect(() => {
-    // Manejar errores de la URL
-    const params = new URLSearchParams(location.search);
-    const errorCode = params.get('error_code');
-    const errorDescription = params.get('error_description');
+    const verifyEmail = async () => {
+      const params = new URLSearchParams(location.search);
+      const code = params.get('code');
+      const errorCode = params.get('error_code');
+      const errorDescription = params.get('error_description');
 
-    if (errorCode === 'otp_expired') {
-      setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
-      // Limpiar los parámetros de error de la URL
-      window.history.replaceState({}, document.title, '/admin/login');
-    } else if (errorCode) {
-      setError(decodeURIComponent(errorDescription || 'Error al confirmar el email'));
-      window.history.replaceState({}, document.title, '/admin/login');
-    }
+      if (code) {
+        setVerifying(true);
+        try {
+          const { error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: code,
+            type: 'email',
+          });
+
+          if (verifyError) {
+            console.error('Error al verificar email:', verifyError);
+            setError('Error al verificar el email. Por favor, intenta nuevamente.');
+          } else {
+            setError('');
+            // Limpiar la URL después de la verificación exitosa
+            window.history.replaceState({}, document.title, '/admin/login');
+            alert('Email verificado exitosamente. Ahora puedes iniciar sesión.');
+          }
+        } catch (error: any) {
+          console.error('Error en verificación:', error);
+          setError('Error al verificar el email. Por favor, intenta nuevamente.');
+        } finally {
+          setVerifying(false);
+        }
+      } else if (errorCode === 'otp_expired') {
+        setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+        window.history.replaceState({}, document.title, '/admin/login');
+      } else if (errorCode) {
+        setError(decodeURIComponent(errorDescription || 'Error al confirmar el email'));
+        window.history.replaceState({}, document.title, '/admin/login');
+      }
+    };
+
+    verifyEmail();
   }, [location]);
 
   const handleResendConfirmation = async () => {
@@ -72,11 +99,25 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
+      // Primero intentar verificar si el email está confirmado
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+
+      if (!user?.email_confirmed_at) {
+        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+        setLoading(false);
+        return;
+      }
+
       await login(email, password);
       navigate('/admin');
     } catch (error: any) {
+      console.error('Error en login:', error);
       if (error.message?.includes('Email not confirmed')) {
         setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+      } else if (error.message?.includes('Invalid login credentials')) {
+        setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
       } else {
         setError(error.message || 'Error al iniciar sesión');
       }
@@ -84,6 +125,37 @@ const Login: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (verifying) {
+    return (
+      <Container component="main" maxWidth="xs">
+        <Box
+          sx={{
+            marginTop: 8,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <Paper
+            elevation={3}
+            sx={{
+              padding: 4,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+            }}
+          >
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography>
+              Verificando tu correo electrónico...
+            </Typography>
+          </Paper>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
     <Container component="main" maxWidth="xs">
