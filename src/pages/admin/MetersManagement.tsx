@@ -29,6 +29,9 @@ interface Meter {
   description: string;
   status: string;
   created_at: string;
+  identification: string | null;
+  email: string | null;
+  contact_number: string | null;
 }
 
 const MetersManagement: React.FC = () => {
@@ -40,6 +43,9 @@ const MetersManagement: React.FC = () => {
     location: '',
     description: '',
     status: 'active',
+    identification: '',
+    email: '',
+    contact_number: '',
   });
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -82,6 +88,9 @@ const MetersManagement: React.FC = () => {
         location: meter.location,
         description: meter.description,
         status: meter.status,
+        identification: meter.identification || '',
+        email: meter.email || '',
+        contact_number: meter.contact_number || '',
       });
     } else {
       setSelectedMeter(null);
@@ -90,6 +99,9 @@ const MetersManagement: React.FC = () => {
         location: '',
         description: '',
         status: 'active',
+        identification: '',
+        email: '',
+        contact_number: '',
       });
     }
     setOpenDialog(true);
@@ -118,6 +130,9 @@ const MetersManagement: React.FC = () => {
             location: formData.location,
             description: formData.description,
             status: formData.status,
+            identification: formData.identification,
+            email: formData.email,
+            contact_number: formData.contact_number,
           })
           .eq('code_meter', selectedMeter.code_meter);
 
@@ -132,6 +147,9 @@ const MetersManagement: React.FC = () => {
             location: formData.location,
             description: formData.description,
             status: formData.status,
+            identification: formData.identification,
+            email: formData.email,
+            contact_number: formData.contact_number,
             created_at: new Date().toISOString(),
           }]);
 
@@ -201,6 +219,9 @@ const MetersManagement: React.FC = () => {
               <TableCell>Código</TableCell>
               <TableCell>Ubicación</TableCell>
               <TableCell>Apellidos y Nombres</TableCell>
+              <TableCell>Identificación</TableCell>
+              <TableCell>Correo</TableCell>
+              <TableCell>Contacto</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
               <TableCell>Acciones</TableCell>
@@ -212,6 +233,9 @@ const MetersManagement: React.FC = () => {
                 <TableCell>{meter.code_meter}</TableCell>
                 <TableCell>{meter.location}</TableCell>
                 <TableCell>{meter.description}</TableCell>
+                <TableCell>{meter.identification || '-'}</TableCell>
+                <TableCell>{meter.email || '-'}</TableCell>
+                <TableCell>{meter.contact_number || '-'}</TableCell>
                 <TableCell>{meter.status}</TableCell>
                 <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>
@@ -265,6 +289,31 @@ const MetersManagement: React.FC = () => {
               fullWidth
               multiline
               rows={3}
+            />
+            <TextField
+              name="identification"
+              label="Identificación (DNI/RUC)"
+              value={formData.identification}
+              onChange={handleInputChange}
+              fullWidth
+              inputProps={{ maxLength: 20 }}
+            />
+            <TextField
+              name="email"
+              label="Correo Electrónico"
+              type="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              fullWidth
+              inputProps={{ maxLength: 255 }}
+            />
+            <TextField
+              name="contact_number"
+              label="Número de Contacto"
+              value={formData.contact_number}
+              onChange={handleInputChange}
+              fullWidth
+              inputProps={{ maxLength: 20 }}
             />
             <TextField
               name="status"
