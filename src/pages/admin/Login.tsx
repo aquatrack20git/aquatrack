@@ -153,6 +153,21 @@ const Login: React.FC = () => {
       const errorCode = params.get('error_code');
       const errorDescription = params.get('error_description');
 
+      // Verificar si estamos en la URL de redirección de Supabase
+      const isSupabaseRedirect = window.location.href.includes('supabase.co/auth/v1/verify');
+      
+      if (isSupabaseRedirect) {
+        console.log('Detectada redirección de Supabase');
+        // Extraer el token de la URL de Supabase
+        const supabaseToken = window.location.href.split('token=')[1]?.split('&')[0];
+        if (supabaseToken) {
+          console.log('Token extraído de URL de Supabase:', supabaseToken);
+          // Redirigir a nuestra aplicación con el token
+          window.location.href = `${window.location.origin}/admin/login?token=${supabaseToken}&type=signup`;
+          return;
+        }
+      }
+
       if (token && type === 'signup') {
         setVerifying(true);
         try {
@@ -160,50 +175,39 @@ const Login: React.FC = () => {
           
           let currentUser = null;
           
-          // Primero verificar si el usuario existe en auth.users
-          const { data: { user: existingUser }, error: userError } = await supabase.auth.getUser();
-          
-          if (userError) {
-            console.error('Error al obtener usuario:', userError);
-            throw userError;
-          }
+          // Verificar el token directamente
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: token,
+            type: 'signup'
+          });
 
-          if (existingUser) {
-            console.log('Usuario encontrado en sesión:', existingUser);
-            currentUser = existingUser;
-          } else {
-            console.log('No hay usuario en sesión, verificando token...');
-            // Verificar el token
-            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-              token_hash: token,
-              type: 'signup'
-            });
-
-            if (verifyError) {
-              console.error('Error al verificar email:', verifyError);
+          if (verifyError) {
+            console.error('Error al verificar email:', verifyError);
+            if (verifyError.message?.includes('expired')) {
+              setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+            } else {
               setError('Error al verificar el email. Por favor, intenta nuevamente.');
-              return;
             }
-
-            console.log('Token verificado exitosamente:', verifyData);
-
-            // Obtener el usuario después de la verificación
-            const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
-            
-            if (verifiedUserError) {
-              console.error('Error al obtener usuario después de verificación:', verifiedUserError);
-              throw verifiedUserError;
-            }
-
-            if (!verifiedUser) {
-              console.error('No se encontró usuario después de la verificación');
-              throw new Error('No se pudo obtener la información del usuario');
-            }
-
-            currentUser = verifiedUser;
+            return;
           }
 
-          console.log('Usuario obtenido:', currentUser);
+          console.log('Token verificado exitosamente:', verifyData);
+
+          // Obtener el usuario después de la verificación
+          const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
+          
+          if (verifiedUserError) {
+            console.error('Error al obtener usuario después de verificación:', verifiedUserError);
+            throw verifiedUserError;
+          }
+
+          if (!verifiedUser) {
+            console.error('No se encontró usuario después de la verificación');
+            throw new Error('No se pudo obtener la información del usuario');
+          }
+
+          currentUser = verifiedUser;
+          console.log('Usuario obtenido después de verificación:', currentUser);
 
           // Verificar el estado actual del usuario en la tabla users
           const { data: userData, error: userDataError } = await supabase
