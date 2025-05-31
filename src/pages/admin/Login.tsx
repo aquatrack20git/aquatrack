@@ -135,8 +135,10 @@ const Login: React.FC = () => {
       if (token && type === 'signup') {
         setVerifying(true);
         try {
+          console.log('Iniciando verificación de email con token:', { token, type });
+          
           // Verificar el token
-          const { error: verifyError } = await supabase.auth.verifyOtp({
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: token,
             type: 'signup'
           });
@@ -144,31 +146,57 @@ const Login: React.FC = () => {
           if (verifyError) {
             console.error('Error al verificar email:', verifyError);
             setError('Error al verificar el email. Por favor, intenta nuevamente.');
-          } else {
-            // Actualizar el estado del usuario en la tabla users
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            
-            if (userError) {
-              console.error('Error al obtener usuario:', userError);
-              throw userError;
-            }
+            return;
+          }
 
-            if (user) {
-              const { error: updateError } = await supabase
-                .from('users')
-                .update({ status: 'active' })
-                .eq('id', user.id);
+          console.log('Token verificado exitosamente:', verifyData);
 
-              if (updateError) {
-                console.error('Error al actualizar estado del usuario:', updateError);
-                throw updateError;
-              }
-            }
+          // Obtener el usuario actual
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          
+          if (userError) {
+            console.error('Error al obtener usuario:', userError);
+            throw userError;
+          }
 
+          if (!user) {
+            console.error('No se encontró usuario después de la verificación');
+            throw new Error('No se pudo obtener la información del usuario');
+          }
+
+          console.log('Usuario obtenido después de verificación:', user);
+
+          // Actualizar el estado del usuario en la tabla users
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ 
+              status: 'active',
+              email_confirmed_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw updateError;
+          }
+
+          console.log('Estado del usuario actualizado exitosamente');
+
+          // Intentar iniciar sesión automáticamente
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: user.email!,
+            password: 'Temporal123!' // La contraseña temporal que se estableció al crear el usuario
+          });
+
+          if (signInError) {
+            console.error('Error al iniciar sesión automáticamente:', signInError);
             setError('');
             // Limpiar la URL después de la verificación exitosa
             window.history.replaceState({}, document.title, '/admin/login');
-            alert('Email verificado exitosamente. Ahora puedes iniciar sesión.');
+            alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
+          } else {
+            // Si el inicio de sesión automático fue exitoso, navegar al dashboard
+            navigate('/admin');
           }
         } catch (error: any) {
           console.error('Error en verificación:', error);
@@ -186,7 +214,7 @@ const Login: React.FC = () => {
     };
 
     verifyEmail();
-  }, [location]);
+  }, [location, navigate]);
 
   const handleResendConfirmation = async () => {
     if (!email) {
@@ -196,19 +224,25 @@ const Login: React.FC = () => {
 
     setLoading(true);
     try {
+      console.log('Reenviando confirmación a:', email);
+      
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: email,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/login`
+          emailRedirectTo: `${window.location.origin}/admin/login?type=signup`
         }
       });
 
-      if (resendError) throw resendError;
+      if (resendError) {
+        console.error('Error al reenviar confirmación:', resendError);
+        throw resendError;
+      }
 
       setError('');
-      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico.');
+      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. Por favor, revisa tu bandeja de entrada.');
     } catch (error: any) {
+      console.error('Error al reenviar confirmación:', error);
       setError(error.message || 'Error al reenviar el enlace de confirmación');
     } finally {
       setLoading(false);
