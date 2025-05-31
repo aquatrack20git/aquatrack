@@ -19,47 +19,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
     key: supabaseAnonKey ? 'present' : 'missing',
     siteUrl
   });
-  throw new Error('Faltan las variables de entorno de Supabase')
+  throw new Error('Missing Supabase environment variables');
 }
 
 console.log('Supabase Config - Creating client');
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
     autoRefreshToken: true,
+    persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
-    storage: {
-      getItem: (key) => {
-        try {
-          const value = sessionStorage.getItem(key);
-          if (value) return JSON.parse(value);
-          
-          const localValue = localStorage.getItem(key);
-          return localValue ? JSON.parse(localValue) : null;
-        } catch (error) {
-          console.error('Error reading from storage:', error);
-          return null;
-        }
-      },
-      setItem: (key, value) => {
-        try {
-          const stringValue = JSON.stringify(value);
-          sessionStorage.setItem(key, stringValue);
-          localStorage.setItem(key, stringValue);
-        } catch (error) {
-          console.error('Error writing to storage:', error);
-        }
-      },
-      removeItem: (key) => {
-        try {
-          sessionStorage.removeItem(key);
-          localStorage.removeItem(key);
-        } catch (error) {
-          console.error('Error removing from storage:', error);
-        }
-      }
-    }
+    flowType: 'pkce'
   }
 });
 

@@ -16,6 +16,7 @@ import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Readings from './pages/Readings';
+import VerifyEmail from './pages/admin/VerifyEmail';
 
 const ErrorScreen = ({ message }: { message: string }) => (
   <Box
@@ -109,6 +110,7 @@ const AdminRoutes = () => {
     <Routes>
       <Route path="login" element={<Login />} />
       <Route path="setup" element={<SetupAdmin />} />
+      <Route path="verify-email" element={<VerifyEmail />} />
       <Route
         element={
           <PrivateRoute>

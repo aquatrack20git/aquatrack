@@ -154,84 +154,132 @@ const Login: React.FC = () => {
       const errorCode = params.get('error_code');
       const errorDescription = params.get('error_description');
 
-      // Verificar si estamos en la URL de redirección de Supabase
-      const isSupabaseRedirect = window.location.href.includes('supabase.co/auth/v1/verify');
+      // Verificar si estamos en la URL de verificación de Supabase
+      const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
       
-      if (isSupabaseRedirect) {
-        console.log('Detectada redirección de Supabase');
+      if (isSupabaseVerifyUrl) {
+        console.log('Detectada URL de verificación de Supabase');
+        setVerifying(true);
         try {
-          // Extraer el token y el redirect_to de la URL
+          // Extraer el token directamente de la URL
           const urlParams = new URLSearchParams(window.location.search);
-          const supabaseToken = urlParams.get('token');
+          const verifyToken = urlParams.get('token');
           const redirectTo = urlParams.get('redirect_to');
           
-          console.log('Parámetros de Supabase:', {
-            token: supabaseToken,
+          console.log('Parámetros de verificación:', {
+            token: verifyToken,
             redirectTo: redirectTo
           });
 
-          if (supabaseToken) {
-            // Verificar el token directamente con Supabase
-            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-              token_hash: supabaseToken,
-              type: 'signup'
-            });
-
-            if (verifyError) {
-              console.error('Error al verificar token de Supabase:', verifyError);
-              throw verifyError;
-            }
-
-            console.log('Token verificado exitosamente:', verifyData);
-
-            // Obtener el usuario después de la verificación
-            const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
-            
-            if (verifiedUserError) {
-              console.error('Error al obtener usuario después de verificación:', verifiedUserError);
-              throw verifiedUserError;
-            }
-
-            if (!verifiedUser) {
-              throw new Error('No se pudo obtener la información del usuario');
-            }
-
-            console.log('Usuario verificado:', verifiedUser);
-
-            // Actualizar el estado del usuario en la tabla users
-            const { error: updateError } = await supabase
-              .from('users')
-              .update({ 
-                status: 'active',
-                email_confirmed_at: new Date().toISOString()
-              })
-              .eq('id', verifiedUser.id);
-
-            if (updateError) {
-              console.error('Error al actualizar estado del usuario:', updateError);
-              throw updateError;
-            }
-
-            console.log('Estado del usuario actualizado exitosamente');
-
-            // Redirigir a la aplicación con mensaje de éxito
-            const redirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
-            redirectUrl.searchParams.set('verification', 'success');
-            window.location.href = redirectUrl.toString();
-            return;
+          if (!verifyToken) {
+            throw new Error('Token de verificación no encontrado');
           }
-        } catch (error: any) {
-          console.error('Error en proceso de verificación de Supabase:', error);
-          // Redirigir a la aplicación con mensaje de error
-          const redirectUrl = new URL(`${window.location.origin}/admin/login`);
-          redirectUrl.searchParams.set('error_code', 'verification_failed');
-          redirectUrl.searchParams.set('error_description', encodeURIComponent(error.message));
+
+          // Intentar verificar el token directamente con Supabase
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: verifyToken,
+            type: 'signup'
+          });
+
+          if (verifyError) {
+            console.error('Error en verificación de Supabase:', verifyError);
+            throw verifyError;
+          }
+
+          console.log('Token verificado exitosamente:', verifyData);
+
+          // Obtener el usuario después de la verificación
+          const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
+          
+          if (verifiedUserError) {
+            console.error('Error al obtener usuario:', verifiedUserError);
+            throw verifiedUserError;
+          }
+
+          if (!verifiedUser) {
+            throw new Error('No se pudo obtener la información del usuario');
+          }
+
+          console.log('Usuario verificado:', verifiedUser);
+
+          // Actualizar el estado del usuario en la tabla users
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ 
+              status: 'active',
+              email_confirmed_at: new Date().toISOString()
+            })
+            .eq('id', verifiedUser.id);
+
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw updateError;
+          }
+
+          console.log('Estado del usuario actualizado exitosamente');
+
+          // Redirigir a la aplicación con mensaje de éxito
+          const redirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
+          redirectUrl.searchParams.set('verification', 'success');
           window.location.href = redirectUrl.toString();
           return;
+
+        } catch (error: any) {
+          console.error('Error en proceso de verificación:', error);
+          setVerifying(false);
+          
+          // Mostrar interfaz de error con opción de reenvío
+          return (
+            <Container component="main" maxWidth="xs">
+              <Box
+                sx={{
+                  marginTop: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                }}
+              >
+                <Paper
+                  elevation={3}
+                  sx={{
+                    padding: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: '100%',
+                    backgroundColor: '#fff3e0',
+                  }}
+                >
+                  <Typography variant="h6" color="warning.main" gutterBottom>
+                    Error en la verificación
+                  </Typography>
+                  <Typography variant="body1" align="center" gutterBottom>
+                    {error.message?.includes('expired') || error.message?.includes('invalid')
+                      ? 'El enlace de confirmación ha expirado o no es válido.'
+                      : 'Hubo un error al verificar tu correo electrónico.'}
+                  </Typography>
+                  <Typography variant="body2" align="center" color="text.secondary" gutterBottom>
+                    Por favor, solicita un nuevo enlace de confirmación.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    sx={{ mt: 2 }}
+                    onClick={() => {
+                      // Redirigir a la página de login para solicitar nuevo enlace
+                      window.location.href = `${window.location.origin}/admin/login`;
+                    }}
+                  >
+                    Ir a la página de inicio de sesión
+                  </Button>
+                </Paper>
+              </Box>
+            </Container>
+          );
         }
       }
 
-      // Procesar verificación con code
+      // Procesar verificación con code (para URLs de la aplicación)
       if (code && type === 'signup') {
         setVerifying(true);
         try {
@@ -389,66 +437,7 @@ const Login: React.FC = () => {
         }
       }
 
-      // Procesar parámetros de redirección después de verificación
-      if (params.get('verification') === 'success') {
-        setError('');
-        return (
-          <Container component="main" maxWidth="xs">
-            <Box
-              sx={{
-                marginTop: 8,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}
-            >
-              <Paper
-                elevation={3}
-                sx={{
-                  padding: 4,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  width: '100%',
-                  backgroundColor: '#e8f5e9',
-                }}
-              >
-                <Typography variant="h6" color="success.main" gutterBottom>
-                  ¡Email verificado exitosamente!
-                </Typography>
-                <Typography variant="body1" align="center" gutterBottom>
-                  Tu cuenta ha sido activada correctamente.
-                </Typography>
-                <Typography variant="body2" align="center" color="text.secondary">
-                  Ahora puedes iniciar sesión con tus credenciales.
-                </Typography>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  sx={{ mt: 3 }}
-                  onClick={() => window.location.href = '/admin/login'}
-                >
-                  Ir a Iniciar Sesión
-                </Button>
-              </Paper>
-            </Box>
-          </Container>
-        );
-      }
-
-      if (errorCode === 'verification_failed') {
-        setError(decodeURIComponent(errorDescription || 'Error al verificar el email'));
-        window.history.replaceState({}, document.title, '/admin/login');
-        return;
-      }
-
-      if (errorCode === 'otp_expired') {
-        setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
-        window.history.replaceState({}, document.title, '/admin/login');
-        return;
-      }
-
-      // Procesar verificación normal (no desde Supabase)
+      // Procesar verificación con token (para URLs de la aplicación)
       if (token && type === 'signup') {
         setVerifying(true);
         try {
@@ -515,6 +504,65 @@ const Login: React.FC = () => {
         } finally {
           setVerifying(false);
         }
+      }
+
+      // Procesar parámetros de redirección después de verificación
+      if (params.get('verification') === 'success') {
+        setError('');
+        return (
+          <Container component="main" maxWidth="xs">
+            <Box
+              sx={{
+                marginTop: 8,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+              }}
+            >
+              <Paper
+                elevation={3}
+                sx={{
+                  padding: 4,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  width: '100%',
+                  backgroundColor: '#e8f5e9',
+                }}
+              >
+                <Typography variant="h6" color="success.main" gutterBottom>
+                  ¡Email verificado exitosamente!
+                </Typography>
+                <Typography variant="body1" align="center" gutterBottom>
+                  Tu cuenta ha sido activada correctamente.
+                </Typography>
+                <Typography variant="body2" align="center" color="text.secondary">
+                  Ahora puedes iniciar sesión con tus credenciales.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  sx={{ mt: 3 }}
+                  onClick={() => window.location.href = '/admin/login'}
+                >
+                  Ir a Iniciar Sesión
+                </Button>
+              </Paper>
+            </Box>
+          </Container>
+        );
+      }
+
+      if (errorCode === 'verification_failed') {
+        setError(decodeURIComponent(errorDescription || 'Error al verificar el email'));
+        window.history.replaceState({}, document.title, '/admin/login');
+        return;
+      }
+
+      if (errorCode === 'otp_expired') {
+        setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+        window.history.replaceState({}, document.title, '/admin/login');
+        return;
       }
     };
 

@@ -156,54 +156,41 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/login?type=signup`
+            emailRedirectTo: `${window.location.origin}/admin/verify-email`
           }
         });
 
         if (authError) {
-          console.error('Error detallado al crear usuario en auth:', authError);
-          throw new Error(`Error al crear usuario de autenticación: ${authError.message}`);
+          console.error('Error al crear usuario en auth:', authError);
+          throw new Error(`Error al crear usuario: ${authError.message}`);
         }
 
         if (!authData.user) {
-          console.error('No se recibió el usuario en la respuesta de signUp');
-          throw new Error('No se pudo crear el usuario de autenticación - respuesta vacía');
+          throw new Error('No se pudo crear el usuario');
         }
 
-        console.log('Usuario creado exitosamente en auth.users:', authData.user.id);
-
-        // Esperar un momento para asegurar que el usuario se haya propagado en auth.users
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        console.log('Intentando crear registro en la tabla users...');
-        // Luego crear el registro en la tabla users
-        const { error: dbError } = await supabase
+        // Crear el registro en la tabla de usuarios
+        const { error: insertError } = await supabase
           .from('users')
-          .insert([{
-            id: authData.user.id,
-            email: formData.email,
-            full_name: formData.full_name,
-            role: formData.role,
-            status: 'pending', // Cambiar el estado inicial a 'pending'
-            created_at: new Date().toISOString()
-          }]);
+          .insert([
+            {
+              id: authData.user.id,
+              email: formData.email,
+              full_name: formData.full_name,
+              role: formData.role,
+              status: 'pending', // El usuario estará pendiente hasta que verifique su email
+            },
+          ]);
 
-        if (dbError) {
-          console.error('Error detallado al crear usuario en la tabla:', dbError);
-          try {
-            await supabase.auth.signOut();
-            console.log('Sesión limpiada después del error');
-          } catch (deleteError) {
-            console.error('Error al intentar limpiar la sesión:', deleteError);
-          }
-          throw new Error(`Error al crear usuario en la base de datos: ${dbError.message}`);
+        if (insertError) {
+          console.error('Error al crear usuario en la tabla:', insertError);
+          throw new Error(`Error al crear usuario en la base de datos: ${insertError.message}`);
         }
 
-        console.log('Usuario creado exitosamente en la tabla users');
-        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo para confirmar la cuenta. El enlace expirará en 7 días.');
+        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo de verificación.');
+        handleClose();
+        fetchUsers();
       }
-      handleClose();
-      fetchUsers();
     } catch (error: any) {
       console.error('Error completo en handleSubmit:', error);
       showSnackbar(error.message || 'Error al guardar el usuario', 'error');
