@@ -149,6 +149,7 @@ const Login: React.FC = () => {
     const verifyEmail = async () => {
       const params = new URLSearchParams(location.search);
       const token = params.get('token');
+      const code = params.get('code');
       const type = params.get('type');
       const errorCode = params.get('error_code');
       const errorDescription = params.get('error_description');
@@ -230,12 +231,163 @@ const Login: React.FC = () => {
         }
       }
 
+      // Procesar verificación con code
+      if (code && type === 'signup') {
+        setVerifying(true);
+        try {
+          console.log('Iniciando verificación de email con code:', { code, type });
+          
+          // Verificar el código con Supabase
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: code,
+            type: 'signup'
+          });
+
+          if (verifyError) {
+            console.error('Error al verificar email:', verifyError);
+            if (verifyError.message?.includes('expired')) {
+              setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+            } else {
+              setError('Error al verificar el email. Por favor, intenta nuevamente.');
+            }
+            return;
+          }
+
+          console.log('Código verificado exitosamente:', verifyData);
+
+          // Obtener el usuario después de la verificación
+          const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
+          
+          if (verifiedUserError) {
+            console.error('Error al obtener usuario después de verificación:', verifiedUserError);
+            throw verifiedUserError;
+          }
+
+          if (!verifiedUser) {
+            throw new Error('No se pudo obtener la información del usuario');
+          }
+
+          // Actualizar el estado del usuario en la tabla users
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ 
+              status: 'active',
+              email_confirmed_at: new Date().toISOString()
+            })
+            .eq('id', verifiedUser.id);
+
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw updateError;
+          }
+
+          console.log('Estado del usuario actualizado exitosamente');
+
+          // Limpiar la URL y mostrar mensaje de éxito
+          window.history.replaceState({}, document.title, '/admin/login');
+          setError('');
+          setVerifying(false);
+          
+          // Mostrar mensaje de éxito en un componente más visible
+          return (
+            <Container component="main" maxWidth="xs">
+              <Box
+                sx={{
+                  marginTop: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                }}
+              >
+                <Paper
+                  elevation={3}
+                  sx={{
+                    padding: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: '100%',
+                    backgroundColor: '#e8f5e9',
+                  }}
+                >
+                  <Typography variant="h6" color="success.main" gutterBottom>
+                    ¡Email verificado exitosamente!
+                  </Typography>
+                  <Typography variant="body1" align="center" gutterBottom>
+                    Tu cuenta ha sido activada correctamente.
+                  </Typography>
+                  <Typography variant="body2" align="center" color="text.secondary">
+                    Ahora puedes iniciar sesión con tus credenciales.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    sx={{ mt: 3 }}
+                    onClick={() => window.location.href = '/admin/login'}
+                  >
+                    Ir a Iniciar Sesión
+                  </Button>
+                </Paper>
+              </Box>
+            </Container>
+          );
+        } catch (error: any) {
+          console.error('Error en verificación:', error);
+          if (error.message?.includes('expired')) {
+            setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+          } else {
+            setError('Error al verificar el email. Por favor, intenta nuevamente.');
+          }
+        } finally {
+          setVerifying(false);
+        }
+      }
+
       // Procesar parámetros de redirección después de verificación
       if (params.get('verification') === 'success') {
         setError('');
-        alert('Email verificado exitosamente. Por favor, inicia sesión con tus credenciales.');
-        window.history.replaceState({}, document.title, '/admin/login');
-        return;
+        return (
+          <Container component="main" maxWidth="xs">
+            <Box
+              sx={{
+                marginTop: 8,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+              }}
+            >
+              <Paper
+                elevation={3}
+                sx={{
+                  padding: 4,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  width: '100%',
+                  backgroundColor: '#e8f5e9',
+                }}
+              >
+                <Typography variant="h6" color="success.main" gutterBottom>
+                  ¡Email verificado exitosamente!
+                </Typography>
+                <Typography variant="body1" align="center" gutterBottom>
+                  Tu cuenta ha sido activada correctamente.
+                </Typography>
+                <Typography variant="body2" align="center" color="text.secondary">
+                  Ahora puedes iniciar sesión con tus credenciales.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  sx={{ mt: 3 }}
+                  onClick={() => window.location.href = '/admin/login'}
+                >
+                  Ir a Iniciar Sesión
+                </Button>
+              </Paper>
+            </Box>
+          </Container>
+        );
       }
 
       if (errorCode === 'verification_failed') {
