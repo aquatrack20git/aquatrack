@@ -75,29 +75,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
 
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('AuthContext - Iniciando login para:', email);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        console.error('AuthContext - Error en login:', error);
+        throw error;
+      }
+
+      if (!data.session) {
+        console.error('AuthContext - No se recibió sesión después del login');
+        throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
+      }
+
+      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
+      
+      // Actualizar el estado del usuario
+      setUser(data.user);
+      setError(null);
+    } catch (error: any) {
+      console.error('AuthContext - Error completo en login:', error);
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     
     const checkUser = async () => {
       try {
+        console.log('AuthContext - Verificando sesión actual');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          console.error('AuthProvider - Session error:', sessionError);
+          console.error('AuthContext - Error al obtener sesión:', sessionError);
           if (mounted) {
             setError(`Error de sesión: ${sessionError.message}`);
+            setUser(null);
           }
           return;
         }
 
         if (mounted) {
+          console.log('AuthContext - Estado de sesión:', { 
+            hasSession: !!session, 
+            userId: session?.user?.id 
+          });
           setUser(session?.user ?? null);
           setError(null);
         }
       } catch (error: any) {
-        console.error('AuthProvider - Error checking auth session:', error);
+        console.error('AuthContext - Error al verificar sesión:', error);
         if (mounted) {
           setError(`Error al verificar la sesión: ${error.message}`);
+          setUser(null);
         }
       } finally {
         if (mounted) {
@@ -109,6 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('AuthContext - Cambio en estado de autenticación:', { event, userId: session?.user?.id });
       if (mounted) {
         setUser(session?.user ?? null);
         setError(null);
@@ -120,18 +163,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
     };
   }, []);
-
-  const login = async (email: string, password: string) => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    } catch (error: any) {
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const logout = async () => {
     setLoading(true);
