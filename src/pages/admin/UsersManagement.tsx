@@ -156,12 +156,7 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/login`,
-            // Configurar opciones adicionales para el email
-            emailConfirm: true,
-            // Establecer un tiempo de expiración más largo (en segundos)
-            // 7 días = 7 * 24 * 60 * 60 = 604800 segundos
-            expiresIn: 604800
+            emailRedirectTo: `${window.location.origin}/admin/login`
           }
         });
 

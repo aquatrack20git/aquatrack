@@ -64,47 +64,45 @@ export const setupSecurityPolicies = async () => {
     // Política para la tabla meters
     console.log('Supabase Config - Creating meters policy');
     const { error: metersPolicyError } = await supabase.rpc('create_meters_policy', {
-      policy_name: 'Enable read access for authenticated users',
+      policy_name: 'meters_select',
       table_name: 'meters',
-      definition: '(auth.role() = \'authenticated\')',
-      command: 'SELECT'
-    })
+      definition: 'true',
+      operation: 'SELECT'
+    });
 
     if (metersPolicyError) {
-      console.error('Supabase Config - Error creating meters policy:', metersPolicyError)
+      console.error('Supabase Config - Error creating meters policy:', metersPolicyError);
     }
 
     // Política para la tabla readings
     console.log('Supabase Config - Creating readings policy');
     const { error: readingsPolicyError } = await supabase.rpc('create_readings_policy', {
-      policy_name: 'Enable read access for authenticated users',
-      table_name: 'readings',
-      definition: '(auth.role() = \'authenticated\')',
-      command: 'SELECT'
-    })
+      policy_name: 'readings_select',
+      operation: 'SELECT',
+      definition: 'true'
+    });
 
     if (readingsPolicyError) {
-      console.error('Supabase Config - Error creating readings policy:', readingsPolicyError)
+      console.error('Supabase Config - Error creating readings policy:', readingsPolicyError);
     }
 
     // Política para la tabla users
     console.log('Supabase Config - Creating users policy');
     const { error: usersPolicyError } = await supabase.rpc('create_users_policy', {
-      policy_name: 'Enable read access for authenticated users',
-      table_name: 'users',
-      definition: '(auth.role() = \'authenticated\')',
-      command: 'SELECT'
-    })
+      policy_name: 'users_select',
+      operation: 'SELECT',
+      definition: 'true'
+    });
 
     if (usersPolicyError) {
-      console.error('Supabase Config - Error creating users policy:', usersPolicyError)
+      console.error('Supabase Config - Error creating users policy:', usersPolicyError);
     }
 
     console.log('Supabase Config - Security policies setup completed');
   } catch (error) {
-    console.error('Supabase Config - Error setting up security policies:', error)
+    console.error('Supabase Config - Error setting up security policies:', error);
   }
-}
+};
 
 // Ejecutar la configuración de políticas
 console.log('Supabase Config - Initiating security policies setup');

@@ -33,10 +33,7 @@ const Login: React.FC = () => {
       if (code) {
         setVerifying(true);
         try {
-          const { error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: code,
-            type: 'email',
-          });
+          const { error: verifyError } = await supabase.auth.exchangeCodeForSession(code);
 
           if (verifyError) {
             console.error('Error al verificar email:', verifyError);
