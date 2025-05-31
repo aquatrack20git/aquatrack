@@ -156,7 +156,12 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/login`
+            emailRedirectTo: `${window.location.origin}/admin/login`,
+            // Configurar opciones adicionales para el email
+            emailConfirm: true,
+            // Establecer un tiempo de expiración más largo (en segundos)
+            // 7 días = 7 * 24 * 60 * 60 = 604800 segundos
+            expiresIn: 604800
           }
         });
 
@@ -184,15 +189,13 @@ const UsersManagement: React.FC = () => {
             email: formData.email,
             full_name: formData.full_name,
             role: formData.role,
-            status: formData.status,
+            status: 'pending', // Cambiar el estado inicial a 'pending'
             created_at: new Date().toISOString()
           }]);
 
         if (dbError) {
           console.error('Error detallado al crear usuario en la tabla:', dbError);
-          // Si falla la inserción en la tabla users, intentar eliminar el usuario de auth
           try {
-            // En lugar de usar admin.deleteUser, usamos signOut para limpiar la sesión
             await supabase.auth.signOut();
             console.log('Sesión limpiada después del error');
           } catch (deleteError) {
@@ -202,7 +205,7 @@ const UsersManagement: React.FC = () => {
         }
 
         console.log('Usuario creado exitosamente en la tabla users');
-        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo para confirmar la cuenta.');
+        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo para confirmar la cuenta. El enlace expirará en 7 días.');
       }
       handleClose();
       fetchUsers();

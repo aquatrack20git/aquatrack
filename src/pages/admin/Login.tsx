@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Container,
   Box,
@@ -8,8 +8,10 @@ import {
   TextField,
   Button,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../config/supabase';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -17,7 +19,52 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
+
+  useEffect(() => {
+    // Manejar errores de la URL
+    const params = new URLSearchParams(location.search);
+    const errorCode = params.get('error_code');
+    const errorDescription = params.get('error_description');
+
+    if (errorCode === 'otp_expired') {
+      setError('El enlace de confirmación ha expirado. Por favor, solicita un nuevo enlace de confirmación.');
+      // Limpiar los parámetros de error de la URL
+      window.history.replaceState({}, document.title, '/admin/login');
+    } else if (errorCode) {
+      setError(decodeURIComponent(errorDescription || 'Error al confirmar el email'));
+      window.history.replaceState({}, document.title, '/admin/login');
+    }
+  }, [location]);
+
+  const handleResendConfirmation = async () => {
+    if (!email) {
+      setError('Por favor, ingresa tu correo electrónico');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/admin/login`,
+          expiresIn: 604800 // 7 días
+        }
+      });
+
+      if (resendError) throw resendError;
+
+      setError('');
+      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. El enlace expirará en 7 días.');
+    } catch (error: any) {
+      setError(error.message || 'Error al reenviar el enlace de confirmación');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +75,11 @@ const Login: React.FC = () => {
       await login(email, password);
       navigate('/admin');
     } catch (error: any) {
-      setError(error.message || 'Error al iniciar sesión');
+      if (error.message?.includes('Email not confirmed')) {
+        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+      } else {
+        setError(error.message || 'Error al iniciar sesión');
+      }
     } finally {
       setLoading(false);
     }
@@ -62,35 +113,43 @@ const Login: React.FC = () => {
           </Typography>
 
           {error && (
-            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
+            <Alert 
+              severity="error" 
+              sx={{ width: '100%', mb: 2 }}
+              action={
+                error.includes('confirmado') && (
+                  <Button color="inherit" size="small" onClick={handleResendConfirmation}>
+                    Reenviar confirmación
+                  </Button>
+                )
+              }
+            >
               {error}
             </Alert>
           )}
 
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
+          <form onSubmit={handleSubmit} style={{ width: '100%' }}>
             <TextField
               margin="normal"
               required
               fullWidth
-              id="email"
               label="Correo electrónico"
               name="email"
-              autoComplete="email"
-              autoFocus
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
             />
             <TextField
               margin="normal"
               required
               fullWidth
-              name="password"
               label="Contraseña"
+              name="password"
               type="password"
-              id="password"
-              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
             />
             <Button
               type="submit"
@@ -99,9 +158,9 @@ const Login: React.FC = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+              {loading ? <CircularProgress size={24} /> : 'Iniciar Sesión'}
             </Button>
-          </Box>
+          </form>
         </Paper>
       </Box>
     </Container>
