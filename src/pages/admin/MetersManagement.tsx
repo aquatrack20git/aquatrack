@@ -200,7 +200,7 @@ const MetersManagement: React.FC = () => {
             <TableRow>
               <TableCell>Código</TableCell>
               <TableCell>Ubicación</TableCell>
-              <TableCell>Descripción</TableCell>
+              <TableCell>Apellidos y Nombres</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
               <TableCell>Acciones</TableCell>
@@ -259,7 +259,7 @@ const MetersManagement: React.FC = () => {
             />
             <TextField
               name="description"
-              label="Descripción"
+              label="Apellidos y Nombres"
               value={formData.description}
               onChange={handleInputChange}
               fullWidth
