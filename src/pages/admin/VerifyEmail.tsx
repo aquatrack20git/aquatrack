@@ -111,7 +111,10 @@ const VerifyEmail: React.FC = () => {
       }
 
       try {
-        // Intentar intercambiar el código por una sesión
+        console.log('Intentando verificar el código con Supabase...');
+        
+        // Intentar intercambiar el código por sesión directamente
+        console.log('Intentando intercambiar código por sesión...');
         const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
 
         if (sessionError) {
@@ -123,38 +126,44 @@ const VerifyEmail: React.FC = () => {
         }
 
         console.log('Código intercambiado exitosamente:', sessionData);
-
-        // Obtener el usuario de la sesión
         const user = sessionData.user;
         if (!user) {
           throw new Error('No se pudo obtener la información del usuario');
         }
 
-        // Actualizar el estado del usuario en la tabla users
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ 
-            status: 'active',
-            email_confirmed_at: new Date().toISOString()
-          })
-          .eq('id', user.id);
+        // Actualizar el estado del usuario
+        await updateUserStatus(user.id);
 
-        if (updateError) {
-          console.error('Error al actualizar estado del usuario:', updateError);
-          throw updateError;
-        }
-
-        console.log('Estado del usuario actualizado exitosamente');
-        setSuccess(true);
-        setVerifying(false);
-
-        // Redirigir a login con mensaje de éxito
-        window.location.href = '/admin/login?verification=success';
       } catch (error: any) {
         console.error('Error en proceso de verificación:', error);
         setError(error.message || 'Error al verificar el email');
         setVerifying(false);
       }
+    };
+
+    const updateUserStatus = async (userId: string) => {
+      console.log('Actualizando estado del usuario:', userId);
+      
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          status: 'active',
+          email_confirmed_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Error al actualizar estado del usuario:', updateError);
+        throw updateError;
+      }
+
+      console.log('Estado del usuario actualizado exitosamente');
+      setSuccess(true);
+      setVerifying(false);
+
+      // Redirigir a login con mensaje de éxito
+      console.log('Redirigiendo a login con mensaje de éxito');
+      window.location.href = '/admin/login?verification=success';
     };
 
     verifyEmail();
