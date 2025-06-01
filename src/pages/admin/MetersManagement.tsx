@@ -34,6 +34,7 @@ import {
   PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
+import * as XLSX from 'xlsx';
 
 interface Meter {
   code_meter: string;
@@ -245,41 +246,39 @@ const MetersManagement: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    // Crear el contenido CSV
-    const headers = [
-      'Código',
-      'Apellidos y Nombres',
-      'Identificación',
-      'Correo',
-      'Contacto',
-      'Ubicación',
-      'Estado',
-      'Fecha de Creación'
-    ].join(',');
+    // Preparar los datos para exportar
+    const exportData = filteredMeters.map(meter => ({
+      'Código': meter.code_meter,
+      'Apellidos y Nombres': meter.description,
+      'Identificación': meter.identification || '-',
+      'Correo': meter.email || '-',
+      'Contacto': meter.contact_number || '-',
+      'Ubicación': meter.location,
+      'Estado': meter.status,
+      'Fecha de Creación': new Date(meter.created_at).toLocaleDateString(),
+    }));
 
-    const rows = filteredMeters.map(meter => [
-      meter.code_meter,
-      `"${meter.description.replace(/"/g, '""')}"`,
-      meter.identification || '-',
-      meter.email || '-',
-      meter.contact_number || '-',
-      `"${meter.location.replace(/"/g, '""')}"`,
-      meter.status,
-      new Date(meter.created_at).toLocaleDateString()
-    ].join(','));
+    // Crear una nueva hoja de cálculo
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Medidores');
 
-    const csvContent = [headers, ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Ajustar el ancho de las columnas
+    const wscols = [
+      { wch: 15 }, // Código
+      { wch: 40 }, // Apellidos y Nombres
+      { wch: 20 }, // Identificación
+      { wch: 30 }, // Correo
+      { wch: 15 }, // Contacto
+      { wch: 40 }, // Ubicación
+      { wch: 15 }, // Estado
+      { wch: 20 }, // Fecha de Creación
+    ];
+    ws['!cols'] = wscols;
+
+    // Generar el archivo Excel
+    const fileName = `Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const exportToPDF = () => {
@@ -377,7 +376,7 @@ const MetersManagement: React.FC = () => {
             <Button
               startIcon={<FileDownloadIcon />}
               onClick={exportToExcel}
-              title="Exportar a CSV (Excel)"
+              title="Exportar a Excel"
             >
               Excel
             </Button>
