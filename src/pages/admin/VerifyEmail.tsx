@@ -27,7 +27,7 @@ const VerifyEmail: React.FC = () => {
           const type = url.searchParams.get('type');
           const redirectTo = url.searchParams.get('redirect_to');
 
-          console.log('Parámetros extraídos de la URL:', {
+          console.log('Parámetros extraídos de la URL de Supabase:', {
             token: verifyToken,
             type: type,
             redirectTo: redirectTo,
@@ -42,65 +42,13 @@ const VerifyEmail: React.FC = () => {
             throw new Error('Tipo de verificación inválido');
           }
 
-          console.log('Intentando verificar token con Supabase...');
-          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: verifyToken,
-            type: 'signup'
-          });
-
-          if (verifyError) {
-            console.error('Error en verificación de Supabase:', verifyError);
-            throw verifyError;
-          }
-
-          console.log('Token verificado exitosamente:', verifyData);
-
-          // Obtener el usuario después de la verificación
-          const { data: { user: verifiedUser }, error: userError } = await supabase.auth.getUser();
-          
-          if (userError || !verifiedUser) {
-            console.error('Error al obtener usuario:', userError);
-            throw new Error('Error al obtener la información del usuario');
-          }
-
-          console.log('Usuario verificado:', {
-            id: verifiedUser.id,
-            email: verifiedUser.email,
-            email_confirmed_at: verifiedUser.email_confirmed_at
-          });
-
-          // Actualizar el estado del usuario en la tabla users
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({ 
-              status: 'active',
-              email_confirmed_at: new Date().toISOString()
-            })
-            .eq('id', verifiedUser.id);
-
-          if (updateError) {
-            console.error('Error al actualizar estado del usuario:', updateError);
-            throw updateError;
-          }
-
-          console.log('Estado del usuario actualizado exitosamente');
-          setSuccess(true);
-          setVerifying(false);
-
-          // Si hay una URL de redirección específica, usarla
-          if (redirectTo) {
-            console.log('Redirigiendo a la URL especificada:', redirectTo);
-            const redirectUrl = new URL(redirectTo);
-            redirectUrl.searchParams.set('verification', 'success');
-            console.log('URL final de redirección:', redirectUrl.toString());
-            window.location.href = redirectUrl.toString();
-          }
+          await verifyWithToken(verifyToken, redirectTo);
+          return;
         } catch (error: any) {
-          console.error('Error en proceso de verificación:', error);
+          console.error('Error en proceso de verificación de Supabase:', error);
           setError(error.message || 'Error al verificar el email');
           setVerifying(false);
         }
-        return;
       }
 
       // Procesar verificación con parámetros normales
@@ -108,7 +56,7 @@ const VerifyEmail: React.FC = () => {
       const code = searchParams.get('code');
       const type = searchParams.get('type');
 
-      console.log('Parámetros de verificación:', { token, code, type });
+      console.log('Parámetros de verificación de la aplicación:', { token, code, type });
 
       if (!token && !code) {
         setError('No se encontró el token de verificación');
@@ -117,55 +65,78 @@ const VerifyEmail: React.FC = () => {
       }
 
       try {
-        // Intentar verificar el email usando el token o código
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: token || code || '',
-          type: type as any || 'signup'
-        });
-
-        if (verifyError) {
-          console.error('Error al verificar email:', verifyError);
-          if (verifyError.message?.includes('expired')) {
-            setError('El enlace de verificación ha expirado. Por favor, solicita un nuevo enlace.');
-          } else {
-            setError('Error al verificar el email. Por favor, intenta nuevamente.');
-          }
-          setVerifying(false);
-          return;
-        }
-
-        // Obtener el usuario después de la verificación
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          console.error('Error al obtener usuario:', userError);
-          setError('Error al obtener la información del usuario');
-          setVerifying(false);
-          return;
-        }
-
-        // Actualizar el estado del usuario en la tabla users
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ 
-            status: 'active',
-            email_confirmed_at: new Date().toISOString()
-          })
-          .eq('id', user.id);
-
-        if (updateError) {
-          console.error('Error al actualizar estado del usuario:', updateError);
-          setError('Error al actualizar el estado de la cuenta');
-          setVerifying(false);
-          return;
-        }
-
-        setSuccess(true);
-        setVerifying(false);
+        // Intentar verificar con el token o código disponible
+        await verifyWithToken(token || code || '', null);
       } catch (error: any) {
         console.error('Error en proceso de verificación:', error);
-        setError(error.message || 'Error al verificar el email');
+        if (error.message?.includes('expired') || error.message?.includes('invalid')) {
+          setError('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
+        } else {
+          setError(error.message || 'Error al verificar el email');
+        }
         setVerifying(false);
+      }
+    };
+
+    const verifyWithToken = async (tokenOrCode: string, redirectTo: string | null) => {
+      console.log('Intentando verificar con token/código:', tokenOrCode);
+      
+      // Intentar verificar el email usando el token o código
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: tokenOrCode,
+        type: 'signup'
+      });
+
+      if (verifyError) {
+        console.error('Error al verificar email:', verifyError);
+        throw verifyError;
+      }
+
+      console.log('Token/código verificado exitosamente:', data);
+
+      // Obtener el usuario después de la verificación
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error('Error al obtener usuario:', userError);
+        throw new Error('Error al obtener la información del usuario');
+      }
+
+      console.log('Usuario verificado:', {
+        id: user.id,
+        email: user.email,
+        email_confirmed_at: user.email_confirmed_at
+      });
+
+      // Actualizar el estado del usuario en la tabla users
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          status: 'active',
+          email_confirmed_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error al actualizar estado del usuario:', updateError);
+        throw updateError;
+      }
+
+      console.log('Estado del usuario actualizado exitosamente');
+      setSuccess(true);
+      setVerifying(false);
+
+      // Si hay una URL de redirección específica, usarla
+      if (redirectTo) {
+        console.log('Redirigiendo a la URL especificada:', redirectTo);
+        const redirectUrl = new URL(redirectTo);
+        redirectUrl.searchParams.set('verification', 'success');
+        console.log('URL final de redirección:', redirectUrl.toString());
+        window.location.href = redirectUrl.toString();
+      } else {
+        // Si no hay URL de redirección, redirigir a login con mensaje de éxito
+        console.log('Redirigiendo a login con mensaje de éxito');
+        window.location.href = '/admin/login?verification=success';
       }
     };
 
