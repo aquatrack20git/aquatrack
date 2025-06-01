@@ -79,31 +79,26 @@ const VerifyEmail: React.FC = () => {
     };
 
     const verifyWithToken = async (tokenOrCode: string, redirectTo: string | null) => {
-      console.log('Intentando verificar con token/código:', tokenOrCode);
+      console.log('Intentando verificar con código:', tokenOrCode);
       
       try {
-        // Intentar verificar el email usando el código
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: tokenOrCode,
-          type: 'signup'
-        });
+        // Intentar intercambiar el código por una sesión
+        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(tokenOrCode);
 
-        if (verifyError) {
-          console.error('Error al verificar email:', verifyError);
-          if (verifyError.message?.includes('expired') || verifyError.message?.includes('invalid')) {
+        if (sessionError) {
+          console.error('Error al intercambiar código por sesión:', sessionError);
+          if (sessionError.message?.includes('expired') || sessionError.message?.includes('invalid')) {
             throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
           }
-          throw verifyError;
+          throw sessionError;
         }
 
-        console.log('Código verificado exitosamente:', data);
+        console.log('Código intercambiado exitosamente:', sessionData);
 
-        // Obtener el usuario después de la verificación
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          console.error('Error al obtener usuario:', userError);
-          throw new Error('Error al obtener la información del usuario');
+        // Obtener el usuario de la sesión
+        const user = sessionData.user;
+        if (!user) {
+          throw new Error('No se pudo obtener la información del usuario');
         }
 
         console.log('Usuario verificado:', {
