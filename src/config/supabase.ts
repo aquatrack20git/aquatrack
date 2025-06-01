@@ -96,4 +96,7 @@ export const setupSecurityPolicies = async () => {
 
 // Ejecutar la configuración de políticas
 console.log('Supabase Config - Initiating security policies setup');
-setupSecurityPolicies(); 
+setupSecurityPolicies();
+
+// Función helper para obtener la URL de redirección
+export const getRedirectUrl = () => `${siteUrl}/admin/verify-email`; 

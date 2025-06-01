@@ -8,7 +8,7 @@ import {
   Paper,
   Container,
 } from '@mui/material';
-import { supabase } from '../../config/supabase';
+import { supabase, getRedirectUrl } from '../../config/supabase';
 
 const SetupAdmin: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -67,7 +67,7 @@ const SetupAdmin: React.FC = () => {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/verify-email`,
+          emailRedirectTo: getRedirectUrl(),
           data: {
             role: 'admin',
           },

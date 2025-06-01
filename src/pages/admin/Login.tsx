@@ -219,11 +219,18 @@ const Login: React.FC = () => {
 
           console.log('Estado del usuario actualizado exitosamente');
 
-          // Redirigir a la aplicación con mensaje de éxito
-          const finalRedirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
-          finalRedirectUrl.searchParams.set('verification', 'success');
-          console.log('Redirigiendo a:', finalRedirectUrl.toString());
-          window.location.href = finalRedirectUrl.toString();
+          // Si hay una URL de redirección específica, usarla
+          if (redirectTo) {
+            console.log('Redirigiendo a la URL especificada:', redirectTo);
+            // Asegurarnos de que la URL de redirección incluya el parámetro de verificación exitosa
+            const redirectUrl = new URL(redirectTo);
+            redirectUrl.searchParams.set('verification', 'success');
+            window.location.href = redirectUrl.toString();
+          } else {
+            // Si no hay URL de redirección, ir a la página de verificación
+            console.log('Redirigiendo a la página de verificación por defecto');
+            window.location.href = `${window.location.origin}/admin/verify-email?verification=success`;
+          }
           return;
 
         } catch (error: any) {
