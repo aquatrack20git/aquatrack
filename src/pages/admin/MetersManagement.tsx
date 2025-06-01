@@ -73,18 +73,25 @@ const MetersManagement: React.FC = () => {
   useEffect(() => {
     // Filtrar medidores cuando cambian los filtros
     const filtered = meters.filter(meter => {
-      const searchTerm = filters.search.toLowerCase();
-      const matchesSearch = !filters.search || 
-        meter.code_meter.toLowerCase().includes(searchTerm) ||
-        meter.description.toLowerCase().includes(searchTerm) ||
+      const searchTerm = filters.search.toLowerCase().trim();
+      if (!searchTerm && !filters.status) {
+        return true; // Si no hay filtros, mostrar todos
+      }
+
+      const matchesSearch = !searchTerm || 
+        (meter.code_meter && meter.code_meter.toLowerCase().includes(searchTerm)) ||
+        (meter.description && meter.description.toLowerCase().includes(searchTerm)) ||
         (meter.identification && meter.identification.toLowerCase().includes(searchTerm)) ||
         (meter.email && meter.email.toLowerCase().includes(searchTerm)) ||
-        meter.location.toLowerCase().includes(searchTerm);
+        (meter.location && meter.location.toLowerCase().includes(searchTerm));
       
       const matchesStatus = !filters.status || meter.status === filters.status;
       
       return matchesSearch && matchesStatus;
     });
+
+    // Resetear la página cuando cambian los filtros
+    setPage(0);
     setFilteredMeters(filtered);
   }, [filters, meters]);
 
@@ -256,15 +263,24 @@ const MetersManagement: React.FC = () => {
           <TextField
             label="Buscar"
             value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            onChange={(e) => {
+              const value = e.target.value;
+              setFilters(prev => ({ ...prev, search: value }));
+            }}
             placeholder="Buscar por código, nombres, identificación, etc."
             sx={{ minWidth: 300 }}
+            InputProps={{
+              autoComplete: 'off',
+            }}
           />
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel>Estado</InputLabel>
             <Select
               value={filters.status}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFilters(prev => ({ ...prev, status: value }));
+              }}
               label="Estado"
             >
               <MenuItem value="">Todos</MenuItem>
@@ -275,7 +291,10 @@ const MetersManagement: React.FC = () => {
           </FormControl>
           <Button
             variant="outlined"
-            onClick={() => setFilters({ search: '', status: '' })}
+            onClick={() => {
+              setFilters({ search: '', status: '' });
+              setPage(0);
+            }}
           >
             Limpiar filtros
           </Button>
@@ -288,64 +307,72 @@ const MetersManagement: React.FC = () => {
         </Typography>
       </Box>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Código</TableCell>
-              <TableCell>Apellidos y Nombres</TableCell>
-              <TableCell>Identificación</TableCell>
-              <TableCell>Correo</TableCell>
-              <TableCell>Contacto</TableCell>
-              <TableCell>Ubicación</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell>Fecha de Creación</TableCell>
-              <TableCell>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredMeters
-              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((meter) => (
-                <TableRow key={meter.code_meter}>
-                  <TableCell>{meter.code_meter}</TableCell>
-                  <TableCell>{meter.description}</TableCell>
-                  <TableCell>{meter.identification || '-'}</TableCell>
-                  <TableCell>{meter.email || '-'}</TableCell>
-                  <TableCell>{meter.contact_number || '-'}</TableCell>
-                  <TableCell>{meter.location}</TableCell>
-                  <TableCell>{meter.status}</TableCell>
-                  <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <IconButton
-                      color="primary"
-                      onClick={() => handleOpenDialog(meter)}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      color="error"
-                      onClick={() => handleDelete(meter.code_meter)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-        <TablePagination
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          component="div"
-          count={filteredMeters.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="Filas por página"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-        />
-      </TableContainer>
+      {filteredMeters.length === 0 ? (
+        <Paper sx={{ p: 3, textAlign: 'center' }}>
+          <Typography variant="body1" color="text.secondary">
+            No se encontraron medidores que coincidan con los criterios de búsqueda.
+          </Typography>
+        </Paper>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Código</TableCell>
+                <TableCell>Apellidos y Nombres</TableCell>
+                <TableCell>Identificación</TableCell>
+                <TableCell>Correo</TableCell>
+                <TableCell>Contacto</TableCell>
+                <TableCell>Ubicación</TableCell>
+                <TableCell>Estado</TableCell>
+                <TableCell>Fecha de Creación</TableCell>
+                <TableCell>Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredMeters
+                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                .map((meter) => (
+                  <TableRow key={meter.code_meter}>
+                    <TableCell>{meter.code_meter}</TableCell>
+                    <TableCell>{meter.description}</TableCell>
+                    <TableCell>{meter.identification || '-'}</TableCell>
+                    <TableCell>{meter.email || '-'}</TableCell>
+                    <TableCell>{meter.contact_number || '-'}</TableCell>
+                    <TableCell>{meter.location}</TableCell>
+                    <TableCell>{meter.status}</TableCell>
+                    <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <IconButton
+                        color="primary"
+                        onClick={() => handleOpenDialog(meter)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        color="error"
+                        onClick={() => handleDelete(meter.code_meter)}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+          <TablePagination
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            component="div"
+            count={filteredMeters.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            labelRowsPerPage="Filas por página"
+            labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+          />
+        </TableContainer>
+      )}
 
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
