@@ -33,7 +33,24 @@ const Login: React.FC = () => {
       const cleanEmail = email.trim().toLowerCase();
       console.log('Iniciando proceso de login para:', cleanEmail);
       
+      // Verificar la conexión a la base de datos primero
+      const { data: testData, error: testError } = await supabase
+        .from('users')
+        .select('count')
+        .limit(1);
+
+      console.log('Prueba de conexión a la base de datos:', { 
+        testData, 
+        testError
+      });
+
+      if (testError) {
+        console.error('Error de conexión a la base de datos:', testError);
+        throw new Error('Error de conexión a la base de datos. Por favor, intenta nuevamente.');
+      }
+
       // Verificar si el usuario existe en la tabla users
+      console.log('Buscando usuario en la tabla users...');
       const { data: directUser, error: directError } = await supabase
         .from('users')
         .select('*')
@@ -42,11 +59,17 @@ const Login: React.FC = () => {
 
       console.log('Resultado de búsqueda en tabla users:', { 
         usuario: directUser,
-        error: directError 
+        error: directError,
+        query: `SELECT * FROM users WHERE email = '${cleanEmail}'`
       });
 
       if (directError) {
-        console.error('Error al buscar usuario:', directError);
+        console.error('Error detallado al buscar usuario:', {
+          code: directError.code,
+          message: directError.message,
+          details: directError.details,
+          hint: directError.hint
+        });
         throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
       }
 
@@ -59,7 +82,8 @@ const Login: React.FC = () => {
         id: directUser.id,
         email: directUser.email,
         status: directUser.status,
-        role: directUser.role
+        role: directUser.role,
+        email_confirmed_at: directUser.email_confirmed_at
       });
 
       // Verificar el estado del usuario
@@ -84,11 +108,16 @@ const Login: React.FC = () => {
 
       console.log('Respuesta de autenticación:', {
         usuario: authData?.user,
-        error: authError
+        error: authError,
+        session: authData?.session
       });
 
       if (authError) {
-        console.error('Error de autenticación:', authError);
+        console.error('Error detallado de autenticación:', {
+          code: authError.code,
+          message: authError.message,
+          status: authError.status
+        });
         
         if (authError.message?.includes('Email not confirmed')) {
           setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
@@ -112,7 +141,9 @@ const Login: React.FC = () => {
       if (authData.user.id !== directUser.id) {
         console.error('ID de usuario no coincide:', {
           authId: authData.user.id,
-          dbId: directUser.id
+          dbId: directUser.id,
+          authEmail: authData.user.email,
+          dbEmail: directUser.email
         });
         throw new Error('Error de inconsistencia en los datos del usuario');
       }
@@ -121,13 +152,20 @@ const Login: React.FC = () => {
         userId: authData.user.id,
         email: authData.user.email,
         status: directUser.status,
-        role: directUser.role
+        role: directUser.role,
+        session: authData.session?.access_token ? 'Token presente' : 'Sin token'
       });
 
       // Si todo está bien, navegar al dashboard
       navigate('/admin/dashboard');
     } catch (error: any) {
-      console.error('Error completo en login:', error);
+      console.error('Error completo en login:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        details: error.details,
+        stack: error.stack
+      });
       setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
     } finally {
       setLoading(false);
