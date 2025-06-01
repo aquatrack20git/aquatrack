@@ -150,22 +150,6 @@ const Login: React.FC = () => {
       console.log('Iniciando proceso de verificación...');
       console.log('URL actual:', window.location.href);
       
-      const params = new URLSearchParams(location.search);
-      const token = params.get('token');
-      const code = params.get('code');
-      const type = params.get('type');
-      const errorCode = params.get('error_code');
-      const errorDescription = params.get('error_description');
-
-      console.log('Parámetros de la URL:', {
-        token,
-        code,
-        type,
-        errorCode,
-        errorDescription,
-        fullUrl: window.location.href
-      });
-
       // Verificar si estamos en la URL de verificación de Supabase
       const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
       console.log('¿Es URL de verificación de Supabase?', isSupabaseVerifyUrl);
@@ -174,13 +158,15 @@ const Login: React.FC = () => {
         console.log('Procesando URL de verificación de Supabase');
         setVerifying(true);
         try {
-          // Extraer el token y redirect_to de la URL
-          const urlParams = new URLSearchParams(window.location.search);
-          const verifyToken = urlParams.get('token');
-          const redirectTo = urlParams.get('redirect_to');
+          // Extraer parámetros directamente de la URL completa
+          const url = new URL(window.location.href);
+          const verifyToken = url.searchParams.get('token');
+          const type = url.searchParams.get('type');
+          const redirectTo = url.searchParams.get('redirect_to');
           
-          console.log('Parámetros de verificación:', {
+          console.log('Parámetros extraídos de la URL:', {
             token: verifyToken,
+            type: type,
             redirectTo: redirectTo,
             fullUrl: window.location.href
           });
@@ -188,6 +174,11 @@ const Login: React.FC = () => {
           if (!verifyToken) {
             console.error('Token no encontrado en la URL');
             throw new Error('Token de verificación no encontrado');
+          }
+
+          if (type !== 'signup') {
+            console.error('Tipo de verificación incorrecto:', type);
+            throw new Error('Tipo de verificación inválido');
           }
 
           console.log('Intentando verificar token con Supabase...');
@@ -261,61 +252,26 @@ const Login: React.FC = () => {
             window.location.href = defaultRedirect;
           }
           return;
-
         } catch (error: any) {
           console.error('Error en proceso de verificación:', error);
           setVerifying(false);
-          
-          // Mostrar interfaz de error con opción de reenvío
-          return (
-            <Container component="main" maxWidth="xs">
-              <Box
-                sx={{
-                  marginTop: 8,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
-                <Paper
-                  elevation={3}
-                  sx={{
-                    padding: 4,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    width: '100%',
-                    backgroundColor: '#fff3e0',
-                  }}
-                >
-                  <Typography variant="h6" color="warning.main" gutterBottom>
-                    Error en la verificación
-                  </Typography>
-                  <Typography variant="body1" align="center" gutterBottom>
-                    {error.message?.includes('expired') || error.message?.includes('invalid')
-                      ? 'El enlace de confirmación ha expirado o no es válido.'
-                      : 'Hubo un error al verificar tu correo electrónico.'}
-                  </Typography>
-                  <Typography variant="body2" align="center" color="text.secondary" gutterBottom>
-                    Por favor, solicita un nuevo enlace de confirmación.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    sx={{ mt: 2 }}
-                    onClick={() => {
-                      // Redirigir a la página de login para solicitar nuevo enlace
-                      window.location.href = `${window.location.origin}/admin/login`;
-                    }}
-                  >
-                    Ir a la página de inicio de sesión
-                  </Button>
-                </Paper>
-              </Box>
-            </Container>
-          );
+          setError(error.message || 'Error al verificar el email');
         }
       }
+
+      // Procesar otros parámetros de la URL (para URLs de la aplicación)
+      const params = new URLSearchParams(location.search);
+      const code = params.get('code');
+      const type = params.get('type');
+      const errorCode = params.get('error_code');
+      const errorDescription = params.get('error_description');
+
+      console.log('Parámetros de la URL de la aplicación:', {
+        code,
+        type,
+        errorCode,
+        errorDescription
+      });
 
       // Procesar verificación con code (para URLs de la aplicación)
       if (code && type === 'signup') {
@@ -476,6 +432,7 @@ const Login: React.FC = () => {
       }
 
       // Procesar verificación con token (para URLs de la aplicación)
+      const token = params.get('token');
       if (token && type === 'signup') {
         setVerifying(true);
         try {
