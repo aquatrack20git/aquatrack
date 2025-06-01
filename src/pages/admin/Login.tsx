@@ -158,17 +158,18 @@ const Login: React.FC = () => {
       const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
       
       if (isSupabaseVerifyUrl) {
-        console.log('Detectada URL de verificación de Supabase');
+        console.log('Detectada URL de verificación de Supabase:', window.location.href);
         setVerifying(true);
         try {
-          // Extraer el token directamente de la URL
+          // Extraer el token y redirect_to de la URL
           const urlParams = new URLSearchParams(window.location.search);
           const verifyToken = urlParams.get('token');
           const redirectTo = urlParams.get('redirect_to');
           
           console.log('Parámetros de verificación:', {
             token: verifyToken,
-            redirectTo: redirectTo
+            redirectTo: redirectTo,
+            fullUrl: window.location.href
           });
 
           if (!verifyToken) {
@@ -219,9 +220,10 @@ const Login: React.FC = () => {
           console.log('Estado del usuario actualizado exitosamente');
 
           // Redirigir a la aplicación con mensaje de éxito
-          const redirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
-          redirectUrl.searchParams.set('verification', 'success');
-          window.location.href = redirectUrl.toString();
+          const finalRedirectUrl = new URL(redirectTo || `${window.location.origin}/admin/login`);
+          finalRedirectUrl.searchParams.set('verification', 'success');
+          console.log('Redirigiendo a:', finalRedirectUrl.toString());
+          window.location.href = finalRedirectUrl.toString();
           return;
 
         } catch (error: any) {
