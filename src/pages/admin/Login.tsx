@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   Container,
   Box,
@@ -16,12 +16,13 @@ import { supabase } from '../../config/supabase';
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -563,6 +564,14 @@ const Login: React.FC = () => {
 
     verifyEmail();
   }, [location, navigate]);
+
+  useEffect(() => {
+    // Verificar si hay un mensaje de verificación exitosa
+    const verificationStatus = searchParams.get('verification');
+    if (verificationStatus === 'success') {
+      setError('Email verificado exitosamente. Por favor, inicia sesión.');
+    }
+  }, [searchParams]);
 
   const handleResendConfirmation = async () => {
     if (!email) {

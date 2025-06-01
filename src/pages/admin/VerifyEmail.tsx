@@ -12,9 +12,103 @@ const VerifyEmail: React.FC = () => {
 
   useEffect(() => {
     const verifyEmail = async () => {
+      console.log('Iniciando proceso de verificación en VerifyEmail...');
+      console.log('URL actual:', window.location.href);
+
+      // Verificar si estamos en la URL de verificación de Supabase
+      const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
+      console.log('¿Es URL de verificación de Supabase?', isSupabaseVerifyUrl);
+
+      if (isSupabaseVerifyUrl) {
+        try {
+          // Extraer parámetros directamente de la URL completa
+          const url = new URL(window.location.href);
+          const verifyToken = url.searchParams.get('token');
+          const type = url.searchParams.get('type');
+          const redirectTo = url.searchParams.get('redirect_to');
+
+          console.log('Parámetros extraídos de la URL:', {
+            token: verifyToken,
+            type: type,
+            redirectTo: redirectTo,
+            fullUrl: window.location.href
+          });
+
+          if (!verifyToken) {
+            throw new Error('Token de verificación no encontrado');
+          }
+
+          if (type !== 'signup') {
+            throw new Error('Tipo de verificación inválido');
+          }
+
+          console.log('Intentando verificar token con Supabase...');
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: verifyToken,
+            type: 'signup'
+          });
+
+          if (verifyError) {
+            console.error('Error en verificación de Supabase:', verifyError);
+            throw verifyError;
+          }
+
+          console.log('Token verificado exitosamente:', verifyData);
+
+          // Obtener el usuario después de la verificación
+          const { data: { user: verifiedUser }, error: userError } = await supabase.auth.getUser();
+          
+          if (userError || !verifiedUser) {
+            console.error('Error al obtener usuario:', userError);
+            throw new Error('Error al obtener la información del usuario');
+          }
+
+          console.log('Usuario verificado:', {
+            id: verifiedUser.id,
+            email: verifiedUser.email,
+            email_confirmed_at: verifiedUser.email_confirmed_at
+          });
+
+          // Actualizar el estado del usuario en la tabla users
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ 
+              status: 'active',
+              email_confirmed_at: new Date().toISOString()
+            })
+            .eq('id', verifiedUser.id);
+
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw updateError;
+          }
+
+          console.log('Estado del usuario actualizado exitosamente');
+          setSuccess(true);
+          setVerifying(false);
+
+          // Si hay una URL de redirección específica, usarla
+          if (redirectTo) {
+            console.log('Redirigiendo a la URL especificada:', redirectTo);
+            const redirectUrl = new URL(redirectTo);
+            redirectUrl.searchParams.set('verification', 'success');
+            console.log('URL final de redirección:', redirectUrl.toString());
+            window.location.href = redirectUrl.toString();
+          }
+        } catch (error: any) {
+          console.error('Error en proceso de verificación:', error);
+          setError(error.message || 'Error al verificar el email');
+          setVerifying(false);
+        }
+        return;
+      }
+
+      // Procesar verificación con parámetros normales
       const token = searchParams.get('token');
       const code = searchParams.get('code');
       const type = searchParams.get('type');
+
+      console.log('Parámetros de verificación:', { token, code, type });
 
       if (!token && !code) {
         setError('No se encontró el token de verificación');
