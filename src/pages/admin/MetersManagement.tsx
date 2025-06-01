@@ -24,9 +24,19 @@ import {
   Select,
   MenuItem,
   TablePagination,
+  ButtonGroup,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
+import { 
+  Edit as EditIcon, 
+  Delete as DeleteIcon, 
+  Add as AddIcon,
+  FileDownload as FileDownloadIcon,
+  PictureAsPdf as PdfIcon,
+} from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 interface Meter {
   code_meter: string;
@@ -237,6 +247,76 @@ const MetersManagement: React.FC = () => {
     setPage(0);
   };
 
+  const exportToExcel = () => {
+    // Preparar los datos para exportar
+    const exportData = filteredMeters.map(meter => ({
+      'Código': meter.code_meter,
+      'Apellidos y Nombres': meter.description,
+      'Identificación': meter.identification || '-',
+      'Correo': meter.email || '-',
+      'Contacto': meter.contact_number || '-',
+      'Ubicación': meter.location,
+      'Estado': meter.status,
+      'Fecha de Creación': new Date(meter.created_at).toLocaleDateString(),
+    }));
+
+    // Crear una nueva hoja de cálculo
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Medidores');
+
+    // Generar el archivo Excel
+    const fileName = `Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    // Título del documento
+    doc.setFontSize(16);
+    doc.text('Reporte de Medidores', 14, 15);
+    
+    // Fecha de generación
+    doc.setFontSize(10);
+    doc.text(`Generado el: ${new Date().toLocaleDateString()}`, 14, 22);
+
+    // Preparar los datos para la tabla
+    const tableData = filteredMeters.map(meter => [
+      meter.code_meter,
+      meter.description,
+      meter.identification || '-',
+      meter.email || '-',
+      meter.contact_number || '-',
+      meter.location,
+      meter.status,
+      new Date(meter.created_at).toLocaleDateString(),
+    ]);
+
+    // Configurar y generar la tabla
+    (doc as any).autoTable({
+      head: [['Código', 'Apellidos y Nombres', 'Identificación', 'Correo', 'Contacto', 'Ubicación', 'Estado', 'Fecha de Creación']],
+      body: tableData,
+      startY: 30,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 35 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 35 },
+        6: { cellWidth: 20 },
+        7: { cellWidth: 25 },
+      },
+    });
+
+    // Guardar el PDF
+    doc.save(`Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`);
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
@@ -249,13 +329,29 @@ const MetersManagement: React.FC = () => {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Gestión de Medidores</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-        >
-          Nuevo Medidor
-        </Button>
+        <Box display="flex" gap={2}>
+          <ButtonGroup variant="outlined">
+            <Button
+              startIcon={<FileDownloadIcon />}
+              onClick={exportToExcel}
+            >
+              Excel
+            </Button>
+            <Button
+              startIcon={<PdfIcon />}
+              onClick={exportToPDF}
+            >
+              PDF
+            </Button>
+          </ButtonGroup>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+          >
+            Nuevo Medidor
+          </Button>
+        </Box>
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
