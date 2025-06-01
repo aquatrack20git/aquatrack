@@ -28,14 +28,41 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'pkce'
+    flowType: 'pkce',
+    storageKey: 'aquatrack-auth-token',
+    storage: window.localStorage
+  },
+  db: {
+    schema: 'public'
+  },
+  global: {
+    headers: {
+      'x-application-name': 'aquatrack'
+    }
   }
+});
+
+// Verificar la conexión inicial
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('Supabase Auth State Change:', { event, session: session ? 'present' : 'none' });
 });
 
 // Configurar políticas de seguridad
 export const setupSecurityPolicies = async () => {
   console.log('Supabase Config - Setting up security policies');
   try {
+    // Política para la tabla users - Permitir acceso público para SELECT
+    console.log('Supabase Config - Creating users policy');
+    const { error: usersPolicyError } = await supabase.rpc('create_users_policy', {
+      policy_name: 'users_select',
+      operation: 'SELECT',
+      definition: 'true'  // Permitir acceso público para consultas
+    });
+
+    if (usersPolicyError) {
+      console.error('Supabase Config - Error creating users policy:', usersPolicyError);
+    }
+
     // Política para la tabla meters
     console.log('Supabase Config - Creating meters policy');
     const { error: metersPolicyError } = await supabase.rpc('create_meters_policy', {
@@ -59,18 +86,6 @@ export const setupSecurityPolicies = async () => {
 
     if (readingsPolicyError) {
       console.error('Supabase Config - Error creating readings policy:', readingsPolicyError);
-    }
-
-    // Política para la tabla users
-    console.log('Supabase Config - Creating users policy');
-    const { error: usersPolicyError } = await supabase.rpc('create_users_policy', {
-      policy_name: 'users_select',
-      operation: 'SELECT',
-      definition: 'true'
-    });
-
-    if (usersPolicyError) {
-      console.error('Supabase Config - Error creating users policy:', usersPolicyError);
     }
 
     console.log('Supabase Config - Security policies setup completed');
