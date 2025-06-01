@@ -67,7 +67,7 @@ const SetupAdmin: React.FC = () => {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/login?type=signup`,
+          emailRedirectTo: `${window.location.origin}/admin/verify-email`,
           data: {
             role: 'admin',
           },

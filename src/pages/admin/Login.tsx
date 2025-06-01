@@ -616,7 +616,7 @@ const Login: React.FC = () => {
         type: 'signup',
         email: cleanEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}/admin/login`
+          emailRedirectTo: `${window.location.origin}/admin/verify-email`
         }
       });
 
