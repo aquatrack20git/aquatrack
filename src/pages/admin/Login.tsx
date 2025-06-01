@@ -31,62 +31,35 @@ const Login: React.FC = () => {
     try {
       // Limpiar el email de espacios en blanco
       const cleanEmail = email.trim().toLowerCase();
-      console.log('Intentando iniciar sesión con email limpio:', cleanEmail);
+      console.log('Iniciando proceso de login para:', cleanEmail);
       
-      // Verificar la conexión a la base de datos
-      const { data: testData, error: testError } = await supabase
-        .from('users')
-        .select('count')
-        .limit(1);
-
-      console.log('Prueba de conexión a la base de datos:', { testData, testError });
-
-      // Primero verificar si el usuario existe en la tabla users con una consulta más simple
+      // Verificar si el usuario existe en la tabla users
       const { data: directUser, error: directError } = await supabase
         .from('users')
         .select('*')
         .eq('email', cleanEmail)
         .single();
 
-      console.log('Búsqueda directa de usuario:', { 
-        emailBuscado: cleanEmail,
-        usuarioEncontrado: directUser,
+      console.log('Resultado de búsqueda en tabla users:', { 
+        usuario: directUser,
         error: directError 
       });
 
-      // Intentar una búsqueda más amplia para diagnóstico
-      const { data: allUsers, error: allUsersError } = await supabase
-        .from('users')
-        .select('email')
-        .limit(5);
-
-      console.log('Muestra de usuarios en la tabla:', {
-        usuariosEncontrados: allUsers,
-        error: allUsersError
-      });
-
       if (directError) {
-        console.error('Error al verificar usuario:', directError);
+        console.error('Error al buscar usuario:', directError);
         throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
       }
 
       if (!directUser) {
-        // Verificar si el usuario existe en auth.users
-        const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-        console.log('Verificación en auth.users:', {
-          usuariosAuth: authUsers?.users?.filter(u => u.email?.toLowerCase() === cleanEmail),
-          error: authError
-        });
-
         console.error('Usuario no encontrado en tabla users');
         throw new Error('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
       }
 
-      console.log('Usuario encontrado:', {
+      console.log('Estado del usuario:', {
         id: directUser.id,
         email: directUser.email,
         status: directUser.status,
-        emailConfirmed: directUser.email_confirmed_at
+        role: directUser.role
       });
 
       // Verificar el estado del usuario
@@ -103,10 +76,15 @@ const Login: React.FC = () => {
       }
 
       // Si el usuario existe y está activo, intentar login
-      console.log('Usuario verificado, intentando login');
+      console.log('Intentando autenticación con Supabase...');
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password
+      });
+
+      console.log('Respuesta de autenticación:', {
+        usuario: authData?.user,
+        error: authError
       });
 
       if (authError) {
@@ -126,17 +104,28 @@ const Login: React.FC = () => {
       }
 
       if (!authData.user) {
+        console.error('No se recibió usuario en la respuesta de autenticación');
         throw new Error('Error al obtener la información del usuario');
       }
 
-      console.log('Login completado exitosamente:', {
+      // Verificar que el usuario autenticado coincida con el usuario en la tabla
+      if (authData.user.id !== directUser.id) {
+        console.error('ID de usuario no coincide:', {
+          authId: authData.user.id,
+          dbId: directUser.id
+        });
+        throw new Error('Error de inconsistencia en los datos del usuario');
+      }
+
+      console.log('Login exitoso:', {
         userId: authData.user.id,
+        email: authData.user.email,
         status: directUser.status,
-        emailConfirmed: directUser.email_confirmed_at
+        role: directUser.role
       });
 
       // Si todo está bien, navegar al dashboard
-      navigate('/admin');
+      navigate('/admin/dashboard');
     } catch (error: any) {
       console.error('Error completo en login:', error);
       setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
