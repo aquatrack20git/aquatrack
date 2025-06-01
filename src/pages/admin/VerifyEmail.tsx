@@ -81,62 +81,71 @@ const VerifyEmail: React.FC = () => {
     const verifyWithToken = async (tokenOrCode: string, redirectTo: string | null) => {
       console.log('Intentando verificar con token/código:', tokenOrCode);
       
-      // Intentar verificar el email usando el token o código
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        token_hash: tokenOrCode,
-        type: 'signup'
-      });
+      try {
+        // Intentar verificar el email usando el código
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: tokenOrCode,
+          type: 'signup'
+        });
 
-      if (verifyError) {
-        console.error('Error al verificar email:', verifyError);
-        throw verifyError;
-      }
+        if (verifyError) {
+          console.error('Error al verificar email:', verifyError);
+          if (verifyError.message?.includes('expired') || verifyError.message?.includes('invalid')) {
+            throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
+          }
+          throw verifyError;
+        }
 
-      console.log('Token/código verificado exitosamente:', data);
+        console.log('Código verificado exitosamente:', data);
 
-      // Obtener el usuario después de la verificación
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        console.error('Error al obtener usuario:', userError);
-        throw new Error('Error al obtener la información del usuario');
-      }
+        // Obtener el usuario después de la verificación
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          console.error('Error al obtener usuario:', userError);
+          throw new Error('Error al obtener la información del usuario');
+        }
 
-      console.log('Usuario verificado:', {
-        id: user.id,
-        email: user.email,
-        email_confirmed_at: user.email_confirmed_at
-      });
+        console.log('Usuario verificado:', {
+          id: user.id,
+          email: user.email,
+          email_confirmed_at: user.email_confirmed_at
+        });
 
-      // Actualizar el estado del usuario en la tabla users
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ 
-          status: 'active',
-          email_confirmed_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+        // Actualizar el estado del usuario en la tabla users
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ 
+            status: 'active',
+            email_confirmed_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
 
-      if (updateError) {
-        console.error('Error al actualizar estado del usuario:', updateError);
-        throw updateError;
-      }
+        if (updateError) {
+          console.error('Error al actualizar estado del usuario:', updateError);
+          throw updateError;
+        }
 
-      console.log('Estado del usuario actualizado exitosamente');
-      setSuccess(true);
-      setVerifying(false);
+        console.log('Estado del usuario actualizado exitosamente');
+        setSuccess(true);
+        setVerifying(false);
 
-      // Si hay una URL de redirección específica, usarla
-      if (redirectTo) {
-        console.log('Redirigiendo a la URL especificada:', redirectTo);
-        const redirectUrl = new URL(redirectTo);
-        redirectUrl.searchParams.set('verification', 'success');
-        console.log('URL final de redirección:', redirectUrl.toString());
-        window.location.href = redirectUrl.toString();
-      } else {
-        // Si no hay URL de redirección, redirigir a login con mensaje de éxito
-        console.log('Redirigiendo a login con mensaje de éxito');
-        window.location.href = '/admin/login?verification=success';
+        // Si hay una URL de redirección específica, usarla
+        if (redirectTo) {
+          console.log('Redirigiendo a la URL especificada:', redirectTo);
+          const redirectUrl = new URL(redirectTo);
+          redirectUrl.searchParams.set('verification', 'success');
+          console.log('URL final de redirección:', redirectUrl.toString());
+          window.location.href = redirectUrl.toString();
+        } else {
+          // Si no hay URL de redirección, redirigir a login con mensaje de éxito
+          console.log('Redirigiendo a login con mensaje de éxito');
+          window.location.href = '/admin/login?verification=success';
+        }
+      } catch (error: any) {
+        console.error('Error en proceso de verificación:', error);
+        setError(error.message || 'Error al verificar el email');
+        setVerifying(false);
       }
     };
 
