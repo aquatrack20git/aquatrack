@@ -34,9 +34,6 @@ import {
   PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 interface Meter {
   code_meter: string;
@@ -248,73 +245,119 @@ const MetersManagement: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    // Preparar los datos para exportar
-    const exportData = filteredMeters.map(meter => ({
-      'Código': meter.code_meter,
-      'Apellidos y Nombres': meter.description,
-      'Identificación': meter.identification || '-',
-      'Correo': meter.email || '-',
-      'Contacto': meter.contact_number || '-',
-      'Ubicación': meter.location,
-      'Estado': meter.status,
-      'Fecha de Creación': new Date(meter.created_at).toLocaleDateString(),
-    }));
+    // Crear el contenido CSV
+    const headers = [
+      'Código',
+      'Apellidos y Nombres',
+      'Identificación',
+      'Correo',
+      'Contacto',
+      'Ubicación',
+      'Estado',
+      'Fecha de Creación'
+    ].join(',');
 
-    // Crear una nueva hoja de cálculo
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Medidores');
-
-    // Generar el archivo Excel
-    const fileName = `Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  };
-
-  const exportToPDF = () => {
-    const doc = new jsPDF();
-    
-    // Título del documento
-    doc.setFontSize(16);
-    doc.text('Reporte de Medidores', 14, 15);
-    
-    // Fecha de generación
-    doc.setFontSize(10);
-    doc.text(`Generado el: ${new Date().toLocaleDateString()}`, 14, 22);
-
-    // Preparar los datos para la tabla
-    const tableData = filteredMeters.map(meter => [
+    const rows = filteredMeters.map(meter => [
       meter.code_meter,
-      meter.description,
+      `"${meter.description.replace(/"/g, '""')}"`,
       meter.identification || '-',
       meter.email || '-',
       meter.contact_number || '-',
-      meter.location,
+      `"${meter.location.replace(/"/g, '""')}"`,
       meter.status,
-      new Date(meter.created_at).toLocaleDateString(),
-    ]);
+      new Date(meter.created_at).toLocaleDateString()
+    ].join(','));
 
-    // Configurar y generar la tabla
-    (doc as any).autoTable({
-      head: [['Código', 'Apellidos y Nombres', 'Identificación', 'Correo', 'Contacto', 'Ubicación', 'Estado', 'Fecha de Creación']],
-      body: tableData,
-      startY: 30,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [41, 128, 185] },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 35 },
-        4: { cellWidth: 25 },
-        5: { cellWidth: 35 },
-        6: { cellWidth: 20 },
-        7: { cellWidth: 25 },
-      },
-    });
+    const csvContent = [headers, ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-    // Guardar el PDF
-    doc.save(`Medidores_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`);
+  const exportToPDF = () => {
+    // Crear una ventana nueva para el PDF
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showSnackbar('No se pudo abrir la ventana de impresión. Por favor, verifica que los bloqueadores de ventanas emergentes estén desactivados.', 'error');
+      return;
+    }
+
+    // Crear el contenido HTML
+    const content = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Reporte de Medidores</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            h1 { text-align: center; color: #333; }
+            .date { text-align: right; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f5f5f5; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+            @media print {
+              @page { size: landscape; margin: 1cm; }
+              body { margin: 0; }
+              table { page-break-inside: auto; }
+              tr { page-break-inside: avoid; page-break-after: auto; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Reporte de Medidores</h1>
+          <div class="date">Generado el: ${new Date().toLocaleDateString()}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Apellidos y Nombres</th>
+                <th>Identificación</th>
+                <th>Correo</th>
+                <th>Contacto</th>
+                <th>Ubicación</th>
+                <th>Estado</th>
+                <th>Fecha de Creación</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredMeters.map(meter => `
+                <tr>
+                  <td>${meter.code_meter}</td>
+                  <td>${meter.description}</td>
+                  <td>${meter.identification || '-'}</td>
+                  <td>${meter.email || '-'}</td>
+                  <td>${meter.contact_number || '-'}</td>
+                  <td>${meter.location}</td>
+                  <td>${meter.status}</td>
+                  <td>${new Date(meter.created_at).toLocaleDateString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    // Escribir el contenido y abrir el diálogo de impresión
+    printWindow.document.write(content);
+    printWindow.document.close();
   };
 
   if (loading) {
@@ -334,12 +377,14 @@ const MetersManagement: React.FC = () => {
             <Button
               startIcon={<FileDownloadIcon />}
               onClick={exportToExcel}
+              title="Exportar a CSV (Excel)"
             >
               Excel
             </Button>
             <Button
               startIcon={<PdfIcon />}
               onClick={exportToPDF}
+              title="Exportar a PDF"
             >
               PDF
             </Button>
