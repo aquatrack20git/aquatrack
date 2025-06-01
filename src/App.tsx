@@ -101,8 +101,11 @@ const AdminRoutes = () => {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  // Si no está autenticado y no está en login o setup, redirigir a login
-  if (!isAuthenticated && !loading && !location.pathname.includes('/admin/login') && !location.pathname.includes('/admin/setup')) {
+  // Lista de rutas públicas que no requieren autenticación
+  const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
+
+  // Si no está autenticado y no está en una ruta pública, redirigir a login
+  if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
     return <Navigate to="/admin/login" replace />;
   }
 
