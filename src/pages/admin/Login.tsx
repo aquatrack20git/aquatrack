@@ -147,6 +147,9 @@ const Login: React.FC = () => {
 
   useEffect(() => {
     const verifyEmail = async () => {
+      console.log('Iniciando proceso de verificación...');
+      console.log('URL actual:', window.location.href);
+      
       const params = new URLSearchParams(location.search);
       const token = params.get('token');
       const code = params.get('code');
@@ -154,11 +157,21 @@ const Login: React.FC = () => {
       const errorCode = params.get('error_code');
       const errorDescription = params.get('error_description');
 
+      console.log('Parámetros de la URL:', {
+        token,
+        code,
+        type,
+        errorCode,
+        errorDescription,
+        fullUrl: window.location.href
+      });
+
       // Verificar si estamos en la URL de verificación de Supabase
       const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
+      console.log('¿Es URL de verificación de Supabase?', isSupabaseVerifyUrl);
       
       if (isSupabaseVerifyUrl) {
-        console.log('Detectada URL de verificación de Supabase:', window.location.href);
+        console.log('Procesando URL de verificación de Supabase');
         setVerifying(true);
         try {
           // Extraer el token y redirect_to de la URL
@@ -173,9 +186,11 @@ const Login: React.FC = () => {
           });
 
           if (!verifyToken) {
+            console.error('Token no encontrado en la URL');
             throw new Error('Token de verificación no encontrado');
           }
 
+          console.log('Intentando verificar token con Supabase...');
           // Intentar verificar el token directamente con Supabase
           const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: verifyToken,
@@ -183,13 +198,18 @@ const Login: React.FC = () => {
           });
 
           if (verifyError) {
-            console.error('Error en verificación de Supabase:', verifyError);
+            console.error('Error detallado en verificación de Supabase:', {
+              message: verifyError.message,
+              status: verifyError.status,
+              name: verifyError.name
+            });
             throw verifyError;
           }
 
           console.log('Token verificado exitosamente:', verifyData);
 
           // Obtener el usuario después de la verificación
+          console.log('Obteniendo información del usuario...');
           const { data: { user: verifiedUser }, error: verifiedUserError } = await supabase.auth.getUser();
           
           if (verifiedUserError) {
@@ -198,12 +218,18 @@ const Login: React.FC = () => {
           }
 
           if (!verifiedUser) {
+            console.error('No se pudo obtener la información del usuario después de la verificación');
             throw new Error('No se pudo obtener la información del usuario');
           }
 
-          console.log('Usuario verificado:', verifiedUser);
+          console.log('Usuario verificado:', {
+            id: verifiedUser.id,
+            email: verifiedUser.email,
+            email_confirmed_at: verifiedUser.email_confirmed_at
+          });
 
           // Actualizar el estado del usuario en la tabla users
+          console.log('Actualizando estado del usuario en la base de datos...');
           const { error: updateError } = await supabase
             .from('users')
             .update({ 
@@ -225,11 +251,14 @@ const Login: React.FC = () => {
             // Asegurarnos de que la URL de redirección incluya el parámetro de verificación exitosa
             const redirectUrl = new URL(redirectTo);
             redirectUrl.searchParams.set('verification', 'success');
+            console.log('URL final de redirección:', redirectUrl.toString());
             window.location.href = redirectUrl.toString();
           } else {
             // Si no hay URL de redirección, ir a la página de verificación
             console.log('Redirigiendo a la página de verificación por defecto');
-            window.location.href = `${window.location.origin}/admin/verify-email?verification=success`;
+            const defaultRedirect = `${window.location.origin}/admin/verify-email?verification=success`;
+            console.log('URL de redirección por defecto:', defaultRedirect);
+            window.location.href = defaultRedirect;
           }
           return;
 

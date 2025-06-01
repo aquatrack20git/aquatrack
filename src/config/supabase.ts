@@ -30,7 +30,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     flowType: 'pkce',
     storageKey: 'aquatrack-auth-token',
-    storage: window.localStorage
+    storage: window.localStorage,
+    debug: true // Habilitar logs de depuración
   },
   db: {
     schema: 'public'
@@ -42,9 +43,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Verificar la conexión inicial
+// Verificar la conexión inicial y el estado de autenticación
 supabase.auth.onAuthStateChange((event, session) => {
-  console.log('Supabase Auth State Change:', { event, session: session ? 'present' : 'none' });
+  console.log('Supabase Auth State Change:', { 
+    event, 
+    session: session ? {
+      user: session.user?.id,
+      email: session.user?.email,
+      expires_at: session.expires_at
+    } : 'none',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Configurar políticas de seguridad
