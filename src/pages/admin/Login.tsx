@@ -33,73 +33,7 @@ const Login: React.FC = () => {
       const cleanEmail = email.trim().toLowerCase();
       console.log('Iniciando proceso de login para:', cleanEmail);
       
-      // Verificar la conexión a la base de datos primero
-      const { data: testData, error: testError } = await supabase
-        .from('users')
-        .select('count')
-        .limit(1);
-
-      console.log('Prueba de conexión a la base de datos:', { 
-        testData, 
-        testError
-      });
-
-      if (testError) {
-        console.error('Error de conexión a la base de datos:', testError);
-        throw new Error('Error de conexión a la base de datos. Por favor, intenta nuevamente.');
-      }
-
-      // Verificar si el usuario existe en la tabla users
-      console.log('Buscando usuario en la tabla users...');
-      const { data: directUser, error: directError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .single();
-
-      console.log('Resultado de búsqueda en tabla users:', { 
-        usuario: directUser,
-        error: directError,
-        query: `SELECT * FROM users WHERE email = '${cleanEmail}'`
-      });
-
-      if (directError) {
-        console.error('Error detallado al buscar usuario:', {
-          code: directError.code,
-          message: directError.message,
-          details: directError.details,
-          hint: directError.hint
-        });
-        throw new Error('Error al verificar el usuario. Por favor, intenta nuevamente.');
-      }
-
-      if (!directUser) {
-        console.error('Usuario no encontrado en tabla users');
-        throw new Error('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
-      }
-
-      console.log('Estado del usuario:', {
-        id: directUser.id,
-        email: directUser.email,
-        status: directUser.status,
-        role: directUser.role,
-        email_confirmed_at: directUser.email_confirmed_at
-      });
-
-      // Verificar el estado del usuario
-      if (directUser.status === 'pending') {
-        console.log('Usuario en estado pending');
-        setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
-        return;
-      }
-
-      if (directUser.status === 'inactive') {
-        console.log('Usuario en estado inactive');
-        setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
-        return;
-      }
-
-      // Si el usuario existe y está activo, intentar login
+      // Primero intentar la autenticación con Supabase
       console.log('Intentando autenticación con Supabase...');
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -137,15 +71,54 @@ const Login: React.FC = () => {
         throw new Error('Error al obtener la información del usuario');
       }
 
-      // Verificar que el usuario autenticado coincida con el usuario en la tabla
-      if (authData.user.id !== directUser.id) {
-        console.error('ID de usuario no coincide:', {
-          authId: authData.user.id,
-          dbId: directUser.id,
-          authEmail: authData.user.email,
-          dbEmail: directUser.email
+      // Si la autenticación fue exitosa, verificar el estado del usuario
+      console.log('Autenticación exitosa, verificando estado del usuario...');
+      const { data: directUser, error: directError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      console.log('Resultado de búsqueda en tabla users:', { 
+        usuario: directUser,
+        error: directError,
+        query: `SELECT * FROM users WHERE id = '${authData.user.id}'`
+      });
+
+      if (directError) {
+        console.error('Error detallado al buscar usuario:', {
+          code: directError.code,
+          message: directError.message,
+          details: directError.details,
+          hint: directError.hint
         });
-        throw new Error('Error de inconsistencia en los datos del usuario');
+        throw new Error('Error al verificar el estado del usuario. Por favor, contacta al administrador.');
+      }
+
+      if (!directUser) {
+        console.error('Usuario no encontrado en tabla users después de autenticación exitosa');
+        throw new Error('Error: Usuario autenticado pero no encontrado en la base de datos. Por favor, contacta al administrador.');
+      }
+
+      console.log('Estado del usuario:', {
+        id: directUser.id,
+        email: directUser.email,
+        status: directUser.status,
+        role: directUser.role,
+        email_confirmed_at: directUser.email_confirmed_at
+      });
+
+      // Verificar el estado del usuario
+      if (directUser.status === 'pending') {
+        console.log('Usuario en estado pending');
+        setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
+        return;
+      }
+
+      if (directUser.status === 'inactive') {
+        console.log('Usuario en estado inactive');
+        setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
+        return;
       }
 
       console.log('Login exitoso:', {

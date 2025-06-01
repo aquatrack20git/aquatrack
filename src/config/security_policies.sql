@@ -43,6 +43,8 @@ CREATE TABLE users (
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO postgres;
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 
 -- Función para crear políticas de seguridad
 CREATE OR REPLACE FUNCTION create_meters_policy(
@@ -141,21 +143,107 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 -- Crear políticas básicas para todas las tablas
 DO $$ 
 BEGIN
+    -- Políticas para users - Acceso público para SELECT
+    DROP POLICY IF EXISTS users_select ON users;
+    CREATE POLICY users_select ON users
+        FOR SELECT
+        TO public
+        USING (true);
+
+    DROP POLICY IF EXISTS users_insert ON users;
+    CREATE POLICY users_insert ON users
+        FOR INSERT
+        TO authenticated
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS users_update ON users;
+    CREATE POLICY users_update ON users
+        FOR UPDATE
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS users_delete ON users;
+    CREATE POLICY users_delete ON users
+        FOR DELETE
+        TO authenticated
+        USING (true);
+
     -- Políticas para meters
-    PERFORM create_meters_policy('meters_select', 'meters', 'true', 'SELECT');
-    PERFORM create_meters_policy('meters_insert', 'meters', 'true', 'INSERT');
-    PERFORM create_meters_policy('meters_update', 'meters', 'true', 'UPDATE');
-    PERFORM create_meters_policy('meters_delete', 'meters', 'true', 'DELETE');
+    DROP POLICY IF EXISTS meters_select ON meters;
+    CREATE POLICY meters_select ON meters
+        FOR SELECT
+        TO authenticated
+        USING (true);
+
+    DROP POLICY IF EXISTS meters_insert ON meters;
+    CREATE POLICY meters_insert ON meters
+        FOR INSERT
+        TO authenticated
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS meters_update ON meters;
+    CREATE POLICY meters_update ON meters
+        FOR UPDATE
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS meters_delete ON meters;
+    CREATE POLICY meters_delete ON meters
+        FOR DELETE
+        TO authenticated
+        USING (true);
 
     -- Políticas para readings
-    PERFORM create_readings_policy('readings_select', 'SELECT', 'true');
-    PERFORM create_readings_policy('readings_insert', 'INSERT', 'true');
-    PERFORM create_readings_policy('readings_update', 'UPDATE', 'true');
-    PERFORM create_readings_policy('readings_delete', 'DELETE', 'true');
+    DROP POLICY IF EXISTS readings_select ON readings;
+    CREATE POLICY readings_select ON readings
+        FOR SELECT
+        TO authenticated
+        USING (true);
 
-    -- Políticas para users
-    PERFORM create_users_policy('users_select', 'true', 'SELECT');
-    PERFORM create_users_policy('users_insert', 'true', 'INSERT');
-    PERFORM create_users_policy('users_update', 'true', 'UPDATE');
-    PERFORM create_users_policy('users_delete', 'true', 'DELETE');
+    DROP POLICY IF EXISTS readings_insert ON readings;
+    CREATE POLICY readings_insert ON readings
+        FOR INSERT
+        TO authenticated
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS readings_update ON readings;
+    CREATE POLICY readings_update ON readings
+        FOR UPDATE
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS readings_delete ON readings;
+    CREATE POLICY readings_delete ON readings
+        FOR DELETE
+        TO authenticated
+        USING (true);
+
+    -- Políticas para comments
+    DROP POLICY IF EXISTS comments_select ON comments;
+    CREATE POLICY comments_select ON comments
+        FOR SELECT
+        TO authenticated
+        USING (true);
+
+    DROP POLICY IF EXISTS comments_insert ON comments;
+    CREATE POLICY comments_insert ON comments
+        FOR INSERT
+        TO authenticated
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS comments_update ON comments;
+    CREATE POLICY comments_update ON comments
+        FOR UPDATE
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+
+    DROP POLICY IF EXISTS comments_delete ON comments;
+    CREATE POLICY comments_delete ON comments
+        FOR DELETE
+        TO authenticated
+        USING (true);
 END $$; 
