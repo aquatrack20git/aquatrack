@@ -87,43 +87,22 @@ const VerifyEmail: React.FC = () => {
       try {
         console.log('Intentando verificar el código con Supabase...');
         
-        // Intentar obtener la sesión actual
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
+        // Intentar intercambiar el código por una sesión
+        console.log('Intentando intercambiar código por sesión...');
+        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+
         if (sessionError) {
-          console.error('Error al obtener sesión:', sessionError);
+          console.error('Error al intercambiar código por sesión:', sessionError);
+          if (sessionError.message?.includes('expired') || sessionError.message?.includes('invalid')) {
+            throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
+          }
           throw sessionError;
         }
 
-        if (session) {
-          console.log('Sesión encontrada:', session);
-          const user = session.user;
-          
-          // Actualizar el estado del usuario
-          await updateUserStatus(user.id, null);
-          return;
-        }
-
-        // Si no hay sesión, intentar verificar el código
-        console.log('No hay sesión activa, intentando verificar código...');
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: code,
-          type: 'signup'
-        });
-
-        if (verifyError) {
-          console.error('Error al verificar código:', verifyError);
-          throw verifyError;
-        }
-
-        console.log('Código verificado exitosamente:', data);
-
-        // Obtener el usuario después de la verificación
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          console.error('Error al obtener usuario:', userError);
-          throw new Error('Error al obtener la información del usuario');
+        console.log('Código intercambiado exitosamente:', sessionData);
+        const user = sessionData.user;
+        if (!user) {
+          throw new Error('No se pudo obtener la información del usuario');
         }
 
         // Actualizar el estado del usuario
