@@ -87,7 +87,25 @@ const VerifyEmail: React.FC = () => {
       try {
         console.log('Intentando verificar el código con Supabase...');
         
-        // Intentar verificar el código PKCE
+        // Intentar obtener la sesión actual
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Error al obtener sesión:', sessionError);
+          throw sessionError;
+        }
+
+        if (session) {
+          console.log('Sesión encontrada:', session);
+          const user = session.user;
+          
+          // Actualizar el estado del usuario
+          await updateUserStatus(user.id, null);
+          return;
+        }
+
+        // Si no hay sesión, intentar verificar el código
+        console.log('No hay sesión activa, intentando verificar código...');
         const { data, error: verifyError } = await supabase.auth.verifyOtp({
           token_hash: code,
           type: 'signup'
