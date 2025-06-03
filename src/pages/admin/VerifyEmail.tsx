@@ -12,6 +12,7 @@ const VerifyEmail: React.FC = () => {
   const [resendEmail, setResendEmail] = useState('');
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [resendMessage, setResendMessage] = useState('');
+  const [timeWarning, setTimeWarning] = useState<string | null>(null);
 
   useEffect(() => {
     const verifyEmail = async () => {
@@ -116,6 +117,25 @@ const VerifyEmail: React.FC = () => {
       }
     };
 
+    // Validar hora local vs servidor
+    const checkTimeSync = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_server_time');
+        if (!error && data) {
+          const serverTime = new Date(data);
+          const localTime = new Date();
+          const diffMs = Math.abs(localTime.getTime() - serverTime.getTime());
+          const diffMinutes = diffMs / (1000 * 60);
+          if (diffMinutes > 5) {
+            setTimeWarning('La hora de tu dispositivo está desincronizada respecto al servidor. Esto puede causar problemas de autenticación. Por favor, revisa la configuración de fecha y hora de tu sistema.');
+          }
+        }
+      } catch (e) {
+        // No mostrar advertencia si falla la consulta
+      }
+    };
+    checkTimeSync();
+
     verifyEmail();
   }, [searchParams]);
 
@@ -146,6 +166,11 @@ const VerifyEmail: React.FC = () => {
   if (verifying) {
     return (
       <Container component="main" maxWidth="xs">
+        {timeWarning && (
+          <Alert severity="warning" sx={{ mt: 4, mb: 2 }}>
+            {timeWarning}
+          </Alert>
+        )}
         <Box
           sx={{
             marginTop: 8,
@@ -177,6 +202,11 @@ const VerifyEmail: React.FC = () => {
   if (error) {
     return (
       <Container component="main" maxWidth="xs">
+        {timeWarning && (
+          <Alert severity="warning" sx={{ mt: 4, mb: 2 }}>
+            {timeWarning}
+          </Alert>
+        )}
         <Box
           sx={{
             marginTop: 8,
@@ -248,6 +278,11 @@ const VerifyEmail: React.FC = () => {
   if (success) {
     return (
       <Container component="main" maxWidth="xs">
+        {timeWarning && (
+          <Alert severity="warning" sx={{ mt: 4, mb: 2 }}>
+            {timeWarning}
+          </Alert>
+        )}
         <Box
           sx={{
             marginTop: 8,
