@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Container, Box, Paper, Typography, Button, CircularProgress, Alert } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Container, Box, Paper, Typography, Button, CircularProgress } from '@mui/material';
 import { supabase } from '../../config/supabase';
 
 const VerifyEmail: React.FC = () => {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [verifying, setVerifying] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,106 +15,54 @@ const VerifyEmail: React.FC = () => {
       console.log('URL actual:', window.location.href);
 
       // Verificar si estamos en la URL de verificación de Supabase
-      const isSupabaseVerifyUrl = window.location.href.includes('supabase.co/auth/v1/verify');
-      console.log('¿Es URL de verificación de Supabase?', isSupabaseVerifyUrl);
+      const url = new URL(window.location.href);
+      const verifyToken = url.searchParams.get('token');
+      const type = url.searchParams.get('type');
+      const redirectTo = url.searchParams.get('redirect_to');
 
-      if (isSupabaseVerifyUrl) {
-        try {
-          // Extraer parámetros directamente de la URL completa
-          const url = new URL(window.location.href);
-          const verifyToken = url.searchParams.get('token');
-          const type = url.searchParams.get('type');
-          const redirectTo = url.searchParams.get('redirect_to');
+      console.log('Parámetros extraídos de la URL de Supabase:', {
+        token: verifyToken,
+        type: type,
+        redirectTo: redirectTo,
+        fullUrl: window.location.href
+      });
 
-          console.log('Parámetros extraídos de la URL de Supabase:', {
-            token: verifyToken,
-            type: type,
-            redirectTo: redirectTo,
-            fullUrl: window.location.href
-          });
-
-          if (!verifyToken) {
-            throw new Error('Token de verificación no encontrado');
-          }
-
-          if (type !== 'signup') {
-            throw new Error('Tipo de verificación inválido');
-          }
-
-          // Verificar el token PKCE directamente
-          const { data, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: verifyToken,
-            type: 'signup'
-          });
-
-          if (verifyError) {
-            console.error('Error al verificar token PKCE:', verifyError);
-            throw verifyError;
-          }
-
-          console.log('Token PKCE verificado exitosamente:', data);
-
-          // Obtener el usuario después de la verificación
-          const { data: { user }, error: userError } = await supabase.auth.getUser();
-          
-          if (userError || !user) {
-            console.error('Error al obtener usuario:', userError);
-            throw new Error('Error al obtener la información del usuario');
-          }
-
-          // Actualizar el estado del usuario
-          await updateUserStatus(user.id, redirectTo);
-          return;
-        } catch (error: any) {
-          console.error('Error en proceso de verificación de Supabase:', error);
-          setError(error.message || 'Error al verificar el email');
-          setVerifying(false);
-          return;
-        }
-      }
-
-      // Si no estamos en la URL de Supabase, intentar verificar con el código
-      const code = searchParams.get('code');
-      console.log('Código de verificación de la aplicación:', code);
-
-      if (!code) {
-        setError('No se encontró el código de verificación');
+      if (!verifyToken || type !== 'signup') {
+        setError('El enlace de verificación no es válido o le faltan parámetros. Por favor, solicita un nuevo enlace.');
         setVerifying(false);
         return;
       }
 
       try {
-        console.log('Intentando verificar el código con Supabase...');
-        
-        // Intentar intercambiar el código por una sesión
-        console.log('Intentando intercambiar código por sesión...');
-        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+        // Verificar el token PKCE directamente
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: verifyToken,
+          type: 'signup'
+        });
 
-        if (sessionError) {
-          console.error('Error al intercambiar código por sesión:', sessionError);
-          if (sessionError.message?.includes('expired') || sessionError.message?.includes('invalid')) {
-            throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
-          }
-          throw sessionError;
+        if (verifyError) {
+          console.error('Error al verificar token PKCE:', verifyError);
+          throw verifyError;
         }
 
-        console.log('Código intercambiado exitosamente:', sessionData);
-        const user = sessionData.user;
-        if (!user) {
-          throw new Error('No se pudo obtener la información del usuario');
+        console.log('Token PKCE verificado exitosamente:', data);
+
+        // Obtener el usuario después de la verificación
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          console.error('Error al obtener usuario:', userError);
+          throw new Error('Error al obtener la información del usuario');
         }
 
         // Actualizar el estado del usuario
-        await updateUserStatus(user.id, null);
-
+        await updateUserStatus(user.id, redirectTo);
+        return;
       } catch (error: any) {
-        console.error('Error en proceso de verificación:', error);
-        if (error.message?.includes('expired') || error.message?.includes('invalid')) {
-          setError('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
-        } else {
-          setError(error.message || 'Error al verificar el email');
-        }
+        console.error('Error en proceso de verificación de Supabase:', error);
+        setError(error.message || 'Error al verificar el email');
         setVerifying(false);
+        return;
       }
     };
 
@@ -154,7 +101,7 @@ const VerifyEmail: React.FC = () => {
     };
 
     verifyEmail();
-  }, [searchParams]);
+  }, []);
 
   if (verifying) {
     return (
