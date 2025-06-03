@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Container, Box, Paper, Typography, Button, CircularProgress } from '@mui/material';
+import { Container, Box, Paper, Typography, Button, CircularProgress, Alert, TextField } from '@mui/material';
 import { supabase } from '../../config/supabase';
 
 const VerifyEmail: React.FC = () => {
@@ -9,6 +9,9 @@ const VerifyEmail: React.FC = () => {
   const [verifying, setVerifying] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [resendMessage, setResendMessage] = useState('');
 
   useEffect(() => {
     const verifyEmail = async () => {
@@ -116,6 +119,30 @@ const VerifyEmail: React.FC = () => {
     verifyEmail();
   }, [searchParams]);
 
+  const handleResend = async () => {
+    setResendStatus('loading');
+    setResendMessage('');
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: resendEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/admin/verify-email`,
+        },
+      });
+      if (error) {
+        setResendStatus('error');
+        setResendMessage(error.message || 'Error al reenviar el correo de verificación');
+      } else {
+        setResendStatus('success');
+        setResendMessage('Correo de verificación reenviado exitosamente. Revisa tu bandeja de entrada.');
+      }
+    } catch (e: any) {
+      setResendStatus('error');
+      setResendMessage(e.message || 'Error al reenviar el correo de verificación');
+    }
+  };
+
   if (verifying) {
     return (
       <Container component="main" maxWidth="xs">
@@ -183,6 +210,35 @@ const VerifyEmail: React.FC = () => {
             >
               Volver al inicio de sesión
             </Button>
+            <Box sx={{ mt: 3, width: '100%' }}>
+              <Typography variant="body2" align="center" gutterBottom>
+                ¿No recibiste el correo o el enlace expiró? Ingresa tu email para reenviar el correo de verificación:
+              </Typography>
+              <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={resendEmail}
+                  onChange={e => setResendEmail(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={{ mt: 1 }}
+                />
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleResend}
+                  disabled={resendStatus === 'loading' || !resendEmail}
+                >
+                  {resendStatus === 'loading' ? 'Enviando...' : 'Reenviar correo de verificación'}
+                </Button>
+                {resendStatus !== 'idle' && (
+                  <Alert severity={resendStatus === 'success' ? 'success' : 'error'} sx={{ mt: 1 }}>
+                    {resendMessage}
+                  </Alert>
+                )}
+              </Box>
+            </Box>
           </Paper>
         </Box>
       </Container>
