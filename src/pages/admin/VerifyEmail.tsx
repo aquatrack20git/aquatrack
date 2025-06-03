@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Container, Box, Paper, Typography, Button, CircularProgress } from '@mui/material';
 import { supabase } from '../../config/supabase';
 
 const VerifyEmail: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [verifying, setVerifying] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,61 +15,78 @@ const VerifyEmail: React.FC = () => {
       console.log('Iniciando proceso de verificación en VerifyEmail...');
       console.log('URL actual:', window.location.href);
 
-      // Verificar si estamos en la URL de verificación de Supabase
       const url = new URL(window.location.href);
+      const code = url.searchParams.get('code');
       const verifyToken = url.searchParams.get('token');
       const type = url.searchParams.get('type');
       const redirectTo = url.searchParams.get('redirect_to');
 
-      console.log('Parámetros extraídos de la URL de Supabase:', {
+      console.log('Parámetros extraídos de la URL:', {
+        code,
         token: verifyToken,
-        type: type,
-        redirectTo: redirectTo,
+        type,
+        redirectTo,
         fullUrl: window.location.href
       });
 
-      if (!verifyToken || type !== 'signup') {
-        setError('El enlace de verificación no es válido o le faltan parámetros. Por favor, solicita un nuevo enlace.');
-        setVerifying(false);
+      if (code) {
+        // Flujo estándar de Supabase con code
+        try {
+          const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+          if (sessionError) {
+            console.error('Error al intercambiar código por sesión:', sessionError);
+            if (sessionError.message?.includes('expired') || sessionError.message?.includes('invalid')) {
+              throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
+            }
+            throw sessionError;
+          }
+          console.log('Código intercambiado exitosamente:', sessionData);
+          const user = sessionData.user;
+          if (!user) {
+            throw new Error('No se pudo obtener la información del usuario');
+          }
+          await updateUserStatus(user.id, null);
+        } catch (error: any) {
+          console.error('Error en proceso de verificación (code):', error);
+          setError(error.message || 'Error al verificar el email');
+          setVerifying(false);
+        }
         return;
       }
 
-      try {
-        // Verificar el token PKCE directamente
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: verifyToken,
-          type: 'signup'
-        });
-
-        if (verifyError) {
-          console.error('Error al verificar token PKCE:', verifyError);
-          throw verifyError;
+      if (verifyToken && type) {
+        // Flujo alternativo con token y type
+        try {
+          const { data, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: verifyToken,
+            type: type as any
+          });
+          if (verifyError) {
+            console.error('Error al verificar token PKCE:', verifyError);
+            throw verifyError;
+          }
+          console.log('Token PKCE verificado exitosamente:', data);
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          if (userError || !user) {
+            console.error('Error al obtener usuario:', userError);
+            throw new Error('Error al obtener la información del usuario');
+          }
+          await updateUserStatus(user.id, redirectTo);
+        } catch (error: any) {
+          console.error('Error en proceso de verificación (token):', error);
+          setError(error.message || 'Error al verificar el email');
+          setVerifying(false);
         }
-
-        console.log('Token PKCE verificado exitosamente:', data);
-
-        // Obtener el usuario después de la verificación
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          console.error('Error al obtener usuario:', userError);
-          throw new Error('Error al obtener la información del usuario');
-        }
-
-        // Actualizar el estado del usuario
-        await updateUserStatus(user.id, redirectTo);
-        return;
-      } catch (error: any) {
-        console.error('Error en proceso de verificación de Supabase:', error);
-        setError(error.message || 'Error al verificar el email');
-        setVerifying(false);
         return;
       }
+
+      // Si no hay parámetros válidos
+      setError('El enlace de verificación no es válido o le faltan parámetros. Por favor, solicita un nuevo enlace.');
+      setVerifying(false);
     };
 
     const updateUserStatus = async (userId: string, redirectTo: string | null) => {
       console.log('Actualizando estado del usuario:', userId);
-      
       const { error: updateError } = await supabase
         .from('users')
         .update({ 
@@ -76,17 +94,13 @@ const VerifyEmail: React.FC = () => {
           email_confirmed_at: new Date().toISOString()
         })
         .eq('id', userId);
-
       if (updateError) {
         console.error('Error al actualizar estado del usuario:', updateError);
         throw updateError;
       }
-
       console.log('Estado del usuario actualizado exitosamente');
       setSuccess(true);
       setVerifying(false);
-
-      // Si hay una URL de redirección específica, usarla
       if (redirectTo) {
         console.log('Redirigiendo a la URL especificada:', redirectTo);
         const redirectUrl = new URL(redirectTo);
@@ -94,14 +108,13 @@ const VerifyEmail: React.FC = () => {
         console.log('URL final de redirección:', redirectUrl.toString());
         window.location.href = redirectUrl.toString();
       } else {
-        // Si no hay URL de redirección, redirigir a login con mensaje de éxito
         console.log('Redirigiendo a login con mensaje de éxito');
         window.location.href = '/admin/login?verification=success';
       }
     };
 
     verifyEmail();
-  }, []);
+  }, [searchParams]);
 
   if (verifying) {
     return (
