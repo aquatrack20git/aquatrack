@@ -15,35 +15,28 @@ const VerifyEmail: React.FC = () => {
   const [timeWarning, setTimeWarning] = useState<string | null>(null);
 
   useEffect(() => {
-    const code = searchParams.get('code');
-    if (!code) {
-      setError('El enlace de verificación no es válido o le faltan parámetros. Por favor, solicita un nuevo enlace.');
+    const emailParam = searchParams.get('email');
+    const decodedEmail = emailParam ? decodeURIComponent(decodeURIComponent(emailParam)) : null;
+    if (!decodedEmail) {
+      setError('No se encontró el email en el enlace de verificación.');
       setVerifying(false);
       return;
     }
 
     const activateUser = async () => {
       try {
-        // Intercambiar el code por una sesión
-        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-        if (sessionError) {
-          throw new Error('El enlace de verificación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
-        }
-        const user = sessionData.user;
-        if (!user || !user.id) {
-          throw new Error('No se pudo obtener la información del usuario.');
-        }
-        // Actualizar el estado usando el id
         const { error: updateError } = await supabase
           .from('users')
           .update({
             status: 'active',
             email_confirmed_at: new Date().toISOString(),
           })
-          .eq('id', user.id);
+          .eq('email', decodedEmail);
+
         if (updateError) {
           throw updateError;
         }
+
         setSuccess(true);
       } catch (e: any) {
         setError(e.message || 'Error al activar el usuario.');
@@ -51,6 +44,7 @@ const VerifyEmail: React.FC = () => {
         setVerifying(false);
       }
     };
+
     activateUser();
   }, [searchParams]);
 
