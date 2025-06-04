@@ -27,6 +27,7 @@ const VerifyEmail: React.FC = () => {
           .update({
             status: 'active',
             email_confirmed_at: new Date().toISOString(),
+            requires_password_change: true
           })
           .eq('email', decodedEmail);
 

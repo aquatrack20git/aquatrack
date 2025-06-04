@@ -112,7 +112,8 @@ const Login: React.FC = () => {
         email: directUser.email,
         status: directUser.status,
         role: directUser.role,
-        email_confirmed_at: directUser.email_confirmed_at
+        email_confirmed_at: directUser.email_confirmed_at,
+        requires_password_change: directUser.requires_password_change
       });
 
       // Verificar el estado del usuario
@@ -125,6 +126,13 @@ const Login: React.FC = () => {
       if (directUser.status === 'inactive') {
         console.log('Usuario en estado inactive');
         setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
+        return;
+      }
+
+      // Verificar si requiere cambio de contraseña
+      if (directUser.requires_password_change) {
+        console.log('Usuario requiere cambio de contraseña');
+        navigate('/admin/change-password');
         return;
       }
 

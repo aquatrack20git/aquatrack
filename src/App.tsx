@@ -14,6 +14,7 @@ import ReadingsManagement from './pages/admin/ReadingsManagement';
 import ReadingsReport from './pages/admin/ReadingsReport';
 import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
+import ChangePassword from './pages/admin/ChangePassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Readings from './pages/Readings';
 import VerifyEmail from './pages/admin/VerifyEmail';
@@ -114,6 +115,7 @@ const AdminRoutes = () => {
       <Route path="login" element={<Login />} />
       <Route path="setup" element={<SetupAdmin />} />
       <Route path="verify-email" element={<VerifyEmail />} />
+      <Route path="change-password" element={<ChangePassword />} />
       <Route
         element={
           <PrivateRoute>
