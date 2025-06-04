@@ -24,28 +24,38 @@ const VerifyEmail: React.FC = () => {
       try {
         console.log('Iniciando activación de usuario para email:', decodedEmail);
 
-        // Primero verificar el estado actual del usuario
-        const { data: currentUser, error: checkError } = await supabase
+        // Buscar el usuario por email
+        const { data: users, error: checkError } = await supabase
           .from('users')
-          .select('status, email_confirmed_at')
-          .eq('email', decodedEmail)
-          .single();
+          .select('id, status, email_confirmed_at')
+          .eq('email', decodedEmail);
 
         if (checkError) {
-          console.error('Error al verificar estado actual del usuario:', checkError);
-          throw checkError;
+          console.error('Error al buscar usuario:', checkError);
+          throw new Error('Error al verificar el usuario');
         }
 
+        if (!users || users.length === 0) {
+          console.error('No se encontró usuario con el email:', decodedEmail);
+          throw new Error('No se encontró una cuenta asociada a este email');
+        }
+
+        if (users.length > 1) {
+          console.error('Se encontraron múltiples usuarios con el mismo email:', decodedEmail);
+          throw new Error('Error: Se encontraron múltiples cuentas con este email. Por favor, contacta al administrador.');
+        }
+
+        const currentUser = users[0];
         console.log('Estado actual del usuario:', currentUser);
 
         // Si el usuario ya está activo, no hacer nada
-        if (currentUser?.status === 'active') {
+        if (currentUser.status === 'active') {
           console.log('Usuario ya está activo');
           setSuccess(true);
           return;
         }
 
-        // Actualizar el estado del usuario
+        // Actualizar el estado del usuario usando el ID específico
         const { error: updateError } = await supabase
           .from('users')
           .update({
@@ -53,11 +63,11 @@ const VerifyEmail: React.FC = () => {
             email_confirmed_at: new Date().toISOString(),
             requires_password_change: true
           })
-          .eq('email', decodedEmail);
+          .eq('id', currentUser.id); // Usar ID en lugar de email para mayor precisión
 
         if (updateError) {
           console.error('Error al actualizar estado del usuario:', updateError);
-          throw updateError;
+          throw new Error('Error al activar la cuenta');
         }
 
         console.log('Usuario activado exitosamente');
