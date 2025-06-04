@@ -156,7 +156,7 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/verify-email?email=${encodeURIComponent(formData.email)}`
+            emailRedirectTo: `${window.location.origin}/admin/verify-email`
           }
         });
 
@@ -174,10 +174,10 @@ const UsersManagement: React.FC = () => {
           .from('users')
           .insert([
             {
-              id: authData.user.id,
-              email: formData.email,
-              full_name: formData.full_name,
-              role: formData.role,
+            id: authData.user.id,
+            email: formData.email,
+            full_name: formData.full_name,
+            role: formData.role,
               status: 'pending', // El usuario estará pendiente hasta que verifique su email
             },
           ]);
@@ -188,8 +188,8 @@ const UsersManagement: React.FC = () => {
         }
 
         showSnackbar('Usuario creado exitosamente. Se ha enviado un correo de verificación.');
-        handleClose();
-        fetchUsers();
+      handleClose();
+      fetchUsers();
       }
     } catch (error: any) {
       console.error('Error completo en handleSubmit:', error);
