@@ -25,13 +25,28 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
+        // Buscar el usuario por email para obtener el id
+        const { data: userData, error: fetchError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', decodedEmail)
+          .maybeSingle();
+
+        if (fetchError) {
+          throw fetchError;
+        }
+        if (!userData || !userData.id) {
+          throw new Error('No se encontró el usuario asociado a este email.');
+        }
+
+        // Actualizar el estado usando el id
         const { error: updateError } = await supabase
           .from('users')
           .update({
             status: 'active',
             email_confirmed_at: new Date().toISOString(),
           })
-          .eq('email', decodedEmail);
+          .eq('id', userData.id);
 
         if (updateError) {
           throw updateError;
