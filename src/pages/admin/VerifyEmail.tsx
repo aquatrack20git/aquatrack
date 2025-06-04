@@ -11,24 +11,49 @@ const VerifyEmail: React.FC = () => {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    const code = searchParams.get('code');
     const emailParam = searchParams.get('email');
-    const decodedEmail = emailParam ? decodeURIComponent(decodeURIComponent(emailParam)) : null;
+    console.log('Parámetros recibidos:', { code, emailParam });
 
-    if (!decodedEmail) {
-      setError('No se encontró el email en el enlace de verificación.');
+    if (!code || !emailParam) {
+      console.error('Faltan parámetros requeridos:', { code, emailParam });
+      setError('El enlace de verificación es inválido. Faltan parámetros requeridos.');
       setVerifying(false);
       return;
     }
 
-    const activateUser = async () => {
+    const decodedEmail = decodeURIComponent(emailParam);
+    console.log('Email decodificado:', decodedEmail);
+
+    const verifyAndActivateUser = async () => {
       try {
-        console.log('Iniciando activación de usuario para email:', decodedEmail);
+        console.log('Iniciando verificación con Supabase...');
+        
+        // Primero verificar el código con Supabase
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          email: decodedEmail,
+          token: code,
+          type: 'signup'
+        });
+
+        if (verifyError) {
+          console.error('Error en verificación OTP:', verifyError);
+          throw new Error('El código de verificación es inválido o ha expirado.');
+        }
+
+        console.log('Código verificado exitosamente, buscando usuario...');
 
         // Buscar el usuario por email
         const { data: users, error: checkError } = await supabase
           .from('users')
-          .select('id, status, email_confirmed_at')
+          .select('id, email, status, email_confirmed_at')
           .eq('email', decodedEmail);
+
+        console.log('Resultado de búsqueda:', {
+          emailBuscado: decodedEmail,
+          usuariosEncontrados: users,
+          error: checkError
+        });
 
         if (checkError) {
           console.error('Error al buscar usuario:', checkError);
@@ -37,11 +62,14 @@ const VerifyEmail: React.FC = () => {
 
         if (!users || users.length === 0) {
           console.error('No se encontró usuario con el email:', decodedEmail);
-          throw new Error('No se encontró una cuenta asociada a este email');
+          throw new Error('No se encontró una cuenta asociada a este email.');
         }
 
         if (users.length > 1) {
-          console.error('Se encontraron múltiples usuarios con el mismo email:', decodedEmail);
+          console.error('Se encontraron múltiples usuarios con el mismo email:', {
+            email: decodedEmail,
+            usuarios: users
+          });
           throw new Error('Error: Se encontraron múltiples cuentas con este email. Por favor, contacta al administrador.');
         }
 
@@ -55,7 +83,7 @@ const VerifyEmail: React.FC = () => {
           return;
         }
 
-        // Actualizar el estado del usuario usando el ID específico
+        // Actualizar el estado del usuario
         const { error: updateError } = await supabase
           .from('users')
           .update({
@@ -63,7 +91,7 @@ const VerifyEmail: React.FC = () => {
             email_confirmed_at: new Date().toISOString(),
             requires_password_change: true
           })
-          .eq('id', currentUser.id); // Usar ID en lugar de email para mayor precisión
+          .eq('id', currentUser.id);
 
         if (updateError) {
           console.error('Error al actualizar estado del usuario:', updateError);
@@ -73,14 +101,14 @@ const VerifyEmail: React.FC = () => {
         console.log('Usuario activado exitosamente');
         setSuccess(true);
       } catch (e: any) {
-        console.error('Error en activación de usuario:', e);
-        setError(e.message || 'Error al activar el usuario.');
+        console.error('Error en proceso de verificación:', e);
+        setError(e.message || 'Error al verificar el usuario.');
       } finally {
         setVerifying(false);
       }
     };
 
-    activateUser();
+    verifyAndActivateUser();
   }, [searchParams]);
 
   if (verifying) {
