@@ -12,7 +12,10 @@ const VerifyEmail: React.FC = () => {
 
   useEffect(() => {
     const emailParam = searchParams.get('email');
-    console.log('Email param recibido:', emailParam);
+    console.log('Email param recibido (raw):', emailParam);
+    console.log('Email param recibido (typeof):', typeof emailParam);
+    console.log('Email param recibido (length):', emailParam?.length);
+    console.log('Email param recibido (char codes):', emailParam?.split('').map(c => c.charCodeAt(0)));
 
     if (!emailParam) {
       console.error('No se encontró el parámetro email en la URL');
@@ -23,74 +26,121 @@ const VerifyEmail: React.FC = () => {
 
     const decodedEmail = decodeURIComponent(emailParam);
     console.log('Email decodificado:', decodedEmail);
+    console.log('Email decodificado (length):', decodedEmail.length);
+    console.log('Email decodificado (char codes):', decodedEmail.split('').map(c => c.charCodeAt(0)));
 
     const activateUser = async () => {
       try {
         console.log('Iniciando activación de usuario para email:', decodedEmail);
 
-        // Buscar el usuario por email
-        const { data: users, error: checkError } = await supabase
+        // Primero intentar buscar el usuario directamente
+        const { data: directUser, error: directError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
-          .eq('email', decodedEmail);
+          .eq('email', decodedEmail)
+          .maybeSingle();
 
-        console.log('Resultado de búsqueda:', {
+        console.log('Búsqueda directa:', {
           emailBuscado: decodedEmail,
-          usuariosEncontrados: users,
-          error: checkError
+          resultado: directUser,
+          error: directError
         });
 
-        if (checkError) {
-          console.error('Error al buscar usuario:', checkError);
-          throw new Error('Error al verificar el usuario');
-        }
+        // Si no se encuentra, intentar con una búsqueda más flexible
+        if (!directUser) {
+          console.log('Intentando búsqueda alternativa...');
+          const { data: users, error: checkError } = await supabase
+            .from('users')
+            .select('id, email, status, email_confirmed_at')
+            .ilike('email', decodedEmail);
 
-        if (!users || users.length === 0) {
-          console.error('No se encontró usuario con el email:', decodedEmail);
-          throw new Error('No se encontró una cuenta asociada a este email.');
-        }
-
-        if (users.length > 1) {
-          console.error('Se encontraron múltiples usuarios con el mismo email:', {
-            email: decodedEmail,
-            usuarios: users
+          console.log('Búsqueda alternativa:', {
+            emailBuscado: decodedEmail,
+            usuariosEncontrados: users,
+            error: checkError
           });
-          throw new Error('Error: Se encontraron múltiples cuentas con este email. Por favor, contacta al administrador.');
-        }
 
-        const currentUser = users[0];
-        console.log('Estado actual del usuario:', currentUser);
+          if (checkError) {
+            console.error('Error en búsqueda alternativa:', checkError);
+            throw new Error('Error al verificar el usuario');
+          }
 
-        // Si el usuario ya está activo, no hacer nada
-        if (currentUser.status === 'active') {
-          console.log('Usuario ya está activo');
-          setSuccess(true);
+          if (!users || users.length === 0) {
+            // Último intento: buscar sin decodificar
+            console.log('Intentando búsqueda con email sin decodificar...');
+            const { data: rawUsers, error: rawError } = await supabase
+              .from('users')
+              .select('id, email, status, email_confirmed_at')
+              .eq('email', emailParam);
+
+            console.log('Búsqueda con email sin decodificar:', {
+              emailBuscado: emailParam,
+              usuariosEncontrados: rawUsers,
+              error: rawError
+            });
+
+            if (rawError) {
+              console.error('Error en búsqueda con email sin decodificar:', rawError);
+              throw new Error('Error al verificar el usuario');
+            }
+
+            if (!rawUsers || rawUsers.length === 0) {
+              console.error('No se encontró usuario con ningún método de búsqueda');
+              throw new Error('No se encontró una cuenta asociada a este email. Por favor, verifica que el email sea correcto.');
+            }
+
+            if (rawUsers.length > 1) {
+              console.error('Se encontraron múltiples usuarios con el email sin decodificar');
+              throw new Error('Error: Se encontraron múltiples cuentas con este email. Por favor, contacta al administrador.');
+            }
+
+            // Usar el usuario encontrado con email sin decodificar
+            const currentUser = rawUsers[0];
+            await updateUserStatus(currentUser.id);
+            return;
+          }
+
+          if (users.length > 1) {
+            console.error('Se encontraron múltiples usuarios en la búsqueda alternativa');
+            throw new Error('Error: Se encontraron múltiples cuentas con este email. Por favor, contacta al administrador.');
+          }
+
+          // Usar el usuario encontrado en la búsqueda alternativa
+          const currentUser = users[0];
+          await updateUserStatus(currentUser.id);
           return;
         }
 
-        // Actualizar el estado del usuario
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            status: 'active',
-            email_confirmed_at: new Date().toISOString(),
-            requires_password_change: true
-          })
-          .eq('id', currentUser.id);
+        // Si se encontró el usuario directamente, actualizarlo
+        await updateUserStatus(directUser.id);
 
-        if (updateError) {
-          console.error('Error al actualizar estado del usuario:', updateError);
-          throw new Error('Error al activar la cuenta');
-        }
-
-        console.log('Usuario activado exitosamente');
-        setSuccess(true);
       } catch (e: any) {
         console.error('Error en activación de usuario:', e);
         setError(e.message || 'Error al activar el usuario.');
       } finally {
         setVerifying(false);
       }
+    };
+
+    const updateUserStatus = async (userId: string) => {
+      console.log('Actualizando estado del usuario:', userId);
+      
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          status: 'active',
+          email_confirmed_at: new Date().toISOString(),
+          requires_password_change: true
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Error al actualizar estado del usuario:', updateError);
+        throw new Error('Error al activar la cuenta');
+      }
+
+      console.log('Usuario activado exitosamente');
+      setSuccess(true);
     };
 
     activateUser();
