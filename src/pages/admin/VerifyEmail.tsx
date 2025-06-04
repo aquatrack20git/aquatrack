@@ -22,6 +22,30 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
+        console.log('Iniciando activación de usuario para email:', decodedEmail);
+
+        // Primero verificar el estado actual del usuario
+        const { data: currentUser, error: checkError } = await supabase
+          .from('users')
+          .select('status, email_confirmed_at')
+          .eq('email', decodedEmail)
+          .single();
+
+        if (checkError) {
+          console.error('Error al verificar estado actual del usuario:', checkError);
+          throw checkError;
+        }
+
+        console.log('Estado actual del usuario:', currentUser);
+
+        // Si el usuario ya está activo, no hacer nada
+        if (currentUser?.status === 'active') {
+          console.log('Usuario ya está activo');
+          setSuccess(true);
+          return;
+        }
+
+        // Actualizar el estado del usuario
         const { error: updateError } = await supabase
           .from('users')
           .update({
@@ -32,11 +56,14 @@ const VerifyEmail: React.FC = () => {
           .eq('email', decodedEmail);
 
         if (updateError) {
+          console.error('Error al actualizar estado del usuario:', updateError);
           throw updateError;
         }
 
+        console.log('Usuario activado exitosamente');
         setSuccess(true);
       } catch (e: any) {
+        console.error('Error en activación de usuario:', e);
         setError(e.message || 'Error al activar el usuario.');
       } finally {
         setVerifying(false);

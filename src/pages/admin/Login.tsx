@@ -116,7 +116,7 @@ const Login: React.FC = () => {
         requires_password_change: directUser.requires_password_change
       });
 
-      // Verificar el estado del usuario
+      // Primero verificar el estado del usuario
       if (directUser.status === 'pending') {
         console.log('Usuario en estado pending');
         setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
@@ -129,23 +129,29 @@ const Login: React.FC = () => {
         return;
       }
 
-      // Verificar si requiere cambio de contraseña
-      if (directUser.requires_password_change) {
-        console.log('Usuario requiere cambio de contraseña');
-        navigate('/admin/change-password');
+      // Solo si el usuario está activo, verificar si requiere cambio de contraseña
+      if (directUser.status === 'active') {
+        if (directUser.requires_password_change) {
+          console.log('Usuario activo requiere cambio de contraseña');
+          navigate('/admin/change-password');
+          return;
+        }
+
+        console.log('Login exitoso:', {
+          userId: authData.user.id,
+          email: authData.user.email,
+          status: directUser.status,
+          role: directUser.role,
+          session: authData.session?.access_token ? 'Token presente' : 'Sin token'
+        });
+
+        // Si todo está bien, navegar al dashboard
+        navigate('/admin/dashboard');
         return;
       }
 
-      console.log('Login exitoso:', {
-        userId: authData.user.id,
-        email: authData.user.email,
-        status: directUser.status,
-        role: directUser.role,
-        session: authData.session?.access_token ? 'Token presente' : 'Sin token'
-      });
-
-      // Si todo está bien, navegar al dashboard
-      navigate('/admin/dashboard');
+      // Si llegamos aquí, hay un estado no manejado
+      throw new Error('Estado de usuario no válido. Por favor, contacta al administrador.');
     } catch (error: any) {
       console.error('Error completo en login:', {
         message: error.message,
