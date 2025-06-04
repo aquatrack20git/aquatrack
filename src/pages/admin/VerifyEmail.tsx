@@ -33,108 +33,63 @@ const VerifyEmail: React.FC = () => {
       try {
         console.log('Iniciando activación de usuario para email:', decodedEmail);
 
-        // Verificar si el usuario existe intentando un sign in
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithOtp({
-          email: decodedEmail,
-          options: {
-            shouldCreateUser: false // No crear usuario si no existe
-          }
-        });
-
-        console.log('Verificación de usuario:', {
-          email: decodedEmail,
-          resultado: signInData,
-          error: signInError
-        });
-
-        // Si el error indica que el usuario no existe, lanzar error
-        if (signInError?.message?.includes('User not found')) {
-          console.error('Usuario no encontrado en auth');
-          throw new Error('No se encontró una cuenta de usuario válida. Por favor, contacta al administrador.');
-        }
-
-        // Si hay otro tipo de error, lanzarlo
-        if (signInError) {
-          console.error('Error al verificar usuario:', signInError);
-          throw new Error('Error al verificar el usuario en el sistema de autenticación');
-        }
-
-        // Obtener el usuario actual
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          console.error('Error al obtener usuario actual:', userError);
-          throw new Error('Error al obtener la información del usuario');
-        }
-
-        // Buscar el usuario en la tabla users
+        // Buscar el usuario directamente en la tabla users
         const { data: users, error: checkError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
-          .eq('id', user.id);
+          .eq('email', decodedEmail)
+          .maybeSingle();
 
-        console.log('Búsqueda en tabla users por ID:', {
-          userId: user.id,
-          usuariosEncontrados: users,
+        console.log('Búsqueda en tabla users:', {
+          email: decodedEmail,
+          usuario: users,
           error: checkError
         });
 
         if (checkError) {
-          console.error('Error al buscar usuario en tabla users:', checkError);
+          console.error('Error al buscar usuario:', checkError);
           throw new Error('Error al verificar el estado del usuario');
         }
 
-        if (!users || users.length === 0) {
-          // Si no existe en la tabla users, crearlo
-          console.log('Usuario no encontrado en tabla users, creando registro...');
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert([{
-              id: user.id,
-              email: decodedEmail,
-              status: 'active',
-              email_confirmed_at: new Date().toISOString(),
-              requires_password_change: true,
-              role: 'user' // Asignar rol por defecto
-            }]);
-
-          if (insertError) {
-            console.error('Error al crear usuario en tabla users:', insertError);
-            throw new Error('Error al crear el registro del usuario');
-          }
-
-          console.log('Usuario creado exitosamente en tabla users');
-          setSuccess(true);
-          return;
+        if (!users) {
+          console.error('Usuario no encontrado en la tabla users');
+          throw new Error('No se encontró una cuenta asociada a este email. Por favor, verifica que el email sea correcto.');
         }
 
-        const currentUser = users[0];
-        console.log('Estado actual del usuario:', currentUser);
+        console.log('Estado actual del usuario:', users);
 
         // Si el usuario ya está activo, no hacer nada
-        if (currentUser.status === 'active') {
+        if (users.status === 'active') {
           console.log('Usuario ya está activo');
           setSuccess(true);
           return;
         }
 
-        // Actualizar el estado del usuario
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            status: 'active',
-            email_confirmed_at: new Date().toISOString(),
-            requires_password_change: true
-          })
-          .eq('id', currentUser.id);
+        // Si el usuario está pendiente, activarlo
+        if (users.status === 'pending') {
+          console.log('Activando usuario pendiente...');
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({
+              status: 'active',
+              email_confirmed_at: new Date().toISOString(),
+              requires_password_change: true
+            })
+            .eq('id', users.id);
 
-        if (updateError) {
-          console.error('Error al actualizar estado del usuario:', updateError);
-          throw new Error('Error al activar la cuenta');
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw new Error('Error al activar la cuenta');
+          }
+
+          console.log('Usuario activado exitosamente');
+          setSuccess(true);
+          return;
         }
 
-        console.log('Usuario activado exitosamente');
-        setSuccess(true);
+        // Si el usuario está en otro estado, mostrar error
+        throw new Error(`El usuario se encuentra en un estado inválido: ${users.status}`);
+
       } catch (e: any) {
         console.error('Error en activación de usuario:', e);
         setError(e.message || 'Error al activar el usuario.');
