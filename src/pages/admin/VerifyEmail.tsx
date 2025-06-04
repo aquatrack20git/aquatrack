@@ -11,13 +11,12 @@ const VerifyEmail: React.FC = () => {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const code = searchParams.get('code');
     const emailParam = searchParams.get('email');
-    console.log('Parámetros recibidos:', { code, emailParam });
+    console.log('Email param recibido:', emailParam);
 
-    if (!code || !emailParam) {
-      console.error('Faltan parámetros requeridos:', { code, emailParam });
-      setError('El enlace de verificación es inválido. Faltan parámetros requeridos.');
+    if (!emailParam) {
+      console.error('No se encontró el parámetro email en la URL');
+      setError('No se encontró el email en el enlace de verificación.');
       setVerifying(false);
       return;
     }
@@ -25,23 +24,9 @@ const VerifyEmail: React.FC = () => {
     const decodedEmail = decodeURIComponent(emailParam);
     console.log('Email decodificado:', decodedEmail);
 
-    const verifyAndActivateUser = async () => {
+    const activateUser = async () => {
       try {
-        console.log('Iniciando verificación con Supabase...');
-        
-        // Primero verificar el código con Supabase
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          email: decodedEmail,
-          token: code,
-          type: 'signup'
-        });
-
-        if (verifyError) {
-          console.error('Error en verificación OTP:', verifyError);
-          throw new Error('El código de verificación es inválido o ha expirado.');
-        }
-
-        console.log('Código verificado exitosamente, buscando usuario...');
+        console.log('Iniciando activación de usuario para email:', decodedEmail);
 
         // Buscar el usuario por email
         const { data: users, error: checkError } = await supabase
@@ -101,14 +86,14 @@ const VerifyEmail: React.FC = () => {
         console.log('Usuario activado exitosamente');
         setSuccess(true);
       } catch (e: any) {
-        console.error('Error en proceso de verificación:', e);
-        setError(e.message || 'Error al verificar el usuario.');
+        console.error('Error en activación de usuario:', e);
+        setError(e.message || 'Error al activar el usuario.');
       } finally {
         setVerifying(false);
       }
     };
 
-    verifyAndActivateUser();
+    activateUser();
   }, [searchParams]);
 
   if (verifying) {
