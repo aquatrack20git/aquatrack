@@ -156,7 +156,7 @@ const UsersManagement: React.FC = () => {
               full_name: formData.full_name,
               role: formData.role,
             },
-            emailRedirectTo: `${window.location.origin}/admin/verify-email`
+            emailRedirectTo: `${window.location.origin}/admin/verify-email?email=${encodeURIComponent(formData.email)}`
           }
         });
 
