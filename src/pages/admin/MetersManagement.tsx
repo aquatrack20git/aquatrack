@@ -35,6 +35,7 @@ import {
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Meter {
   code_meter: string;
@@ -48,6 +49,7 @@ interface Meter {
 }
 
 const MetersManagement: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filteredMeters, setFilteredMeters] = useState<Meter[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -371,29 +373,23 @@ const MetersManagement: React.FC = () => {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Gestión de Medidores</Typography>
-        <Box display="flex" gap={2}>
-          <ButtonGroup variant="outlined">
+        <Box>
+          {isAdmin && (
             <Button
-              startIcon={<FileDownloadIcon />}
-              onClick={exportToExcel}
-              title="Exportar a Excel"
+              variant="contained"
+              onClick={() => handleOpenDialog()}
+              startIcon={<AddIcon />}
+              sx={{ mr: 1 }}
             >
-              Excel
+              Nuevo Medidor
             </Button>
-            <Button
-              startIcon={<PdfIcon />}
-              onClick={exportToPDF}
-              title="Exportar a PDF"
-            >
-              PDF
-            </Button>
-          </ButtonGroup>
+          )}
           <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
+            variant="outlined"
+            onClick={exportToExcel}
+            startIcon={<FileDownloadIcon />}
           >
-            Nuevo Medidor
+            Exportar a Excel
           </Button>
         </Box>
       </Box>
@@ -466,7 +462,7 @@ const MetersManagement: React.FC = () => {
                 <TableCell>Ubicación</TableCell>
                 <TableCell>Estado</TableCell>
                 <TableCell>Fecha de Creación</TableCell>
-                <TableCell>Acciones</TableCell>
+                {isAdmin && <TableCell>Acciones</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -481,21 +477,25 @@ const MetersManagement: React.FC = () => {
                     <TableCell>{meter.contact_number || '-'}</TableCell>
                     <TableCell>{meter.location}</TableCell>
                     <TableCell>{meter.status}</TableCell>
-                    <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      <IconButton
-                        color="primary"
-                        onClick={() => handleOpenDialog(meter)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        onClick={() => handleDelete(meter.code_meter)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                      {new Date(meter.created_at).toLocaleDateString()}
                     </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <IconButton
+                          color="primary"
+                          onClick={() => handleOpenDialog(meter)}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          color="error"
+                          onClick={() => handleDelete(meter.code_meter)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
             </TableBody>
@@ -514,86 +514,88 @@ const MetersManagement: React.FC = () => {
         </TableContainer>
       )}
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {selectedMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField
-              name="code_meter"
-              label="Código del Medidor"
-              value={formData.code_meter}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              disabled={!!selectedMeter}
-            />
-            <TextField
-              name="location"
-              label="Ubicación"
-              value={formData.location}
-              onChange={handleInputChange}
-              fullWidth
-              required
-            />
-            <TextField
-              name="description"
-              label="Apellidos y Nombres"
-              value={formData.description}
-              onChange={handleInputChange}
-              fullWidth
-              multiline
-              rows={3}
-            />
-            <TextField
-              name="identification"
-              label="Identificación (DNI/RUC)"
-              value={formData.identification}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
-              name="email"
-              label="Correo Electrónico"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 255 }}
-            />
-            <TextField
-              name="contact_number"
-              label="Número de Contacto"
-              value={formData.contact_number}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
-              name="status"
-              label="Estado"
-              value={formData.status}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              select
-              SelectProps={{ native: true }}
-            >
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-              <option value="maintenance">En Mantenimiento</option>
-            </TextField>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancelar</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {selectedMeter ? 'Actualizar' : 'Crear'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {isAdmin && (
+        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {selectedMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
+          </DialogTitle>
+          <DialogContent>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+              <TextField
+                name="code_meter"
+                label="Código del Medidor"
+                value={formData.code_meter}
+                onChange={handleInputChange}
+                fullWidth
+                required
+                disabled={!!selectedMeter}
+              />
+              <TextField
+                name="location"
+                label="Ubicación"
+                value={formData.location}
+                onChange={handleInputChange}
+                fullWidth
+                required
+              />
+              <TextField
+                name="description"
+                label="Apellidos y Nombres"
+                value={formData.description}
+                onChange={handleInputChange}
+                fullWidth
+                multiline
+                rows={3}
+              />
+              <TextField
+                name="identification"
+                label="Identificación (DNI/RUC)"
+                value={formData.identification}
+                onChange={handleInputChange}
+                fullWidth
+                inputProps={{ maxLength: 20 }}
+              />
+              <TextField
+                name="email"
+                label="Correo Electrónico"
+                type="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                fullWidth
+                inputProps={{ maxLength: 255 }}
+              />
+              <TextField
+                name="contact_number"
+                label="Número de Contacto"
+                value={formData.contact_number}
+                onChange={handleInputChange}
+                fullWidth
+                inputProps={{ maxLength: 20 }}
+              />
+              <TextField
+                name="status"
+                label="Estado"
+                value={formData.status}
+                onChange={handleInputChange}
+                fullWidth
+                required
+                select
+                SelectProps={{ native: true }}
+              >
+                <option value="active">Activo</option>
+                <option value="inactive">Inactivo</option>
+                <option value="maintenance">En Mantenimiento</option>
+              </TextField>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>Cancelar</Button>
+            <Button onClick={handleSubmit} variant="contained">
+              {selectedMeter ? 'Actualizar' : 'Crear'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
       <Snackbar
         open={snackbar.open}

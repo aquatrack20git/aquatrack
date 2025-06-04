@@ -7,7 +7,9 @@ import { Outlet, useLocation } from 'react-router-dom';
 
 interface AuthContextType {
   user: User | null;
+  userRole: string | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -71,39 +73,49 @@ const ErrorScreen = ({ message }: { message: string }) => (
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
+
+  const fetchUserRole = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+      return data?.role || null;
+    } catch (error) {
+      console.error('Error fetching user role:', error);
+      return null;
+    }
+  };
 
   const login = async (email: string, password: string) => {
     setLoading(true);
     setError(null);
     try {
-      console.log('AuthContext - Iniciando login para:', email);
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) {
-        console.error('AuthContext - Error en login:', error);
-        throw error;
-      }
+      if (error) throw error;
 
       if (!data.session) {
-        console.error('AuthContext - No se recibió sesión después del login');
         throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
       }
 
-      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
-      
-      // Actualizar el estado del usuario
+      const role = await fetchUserRole(data.user.id);
       setUser(data.user);
+      setUserRole(role);
       setError(null);
     } catch (error: any) {
-      console.error('AuthContext - Error completo en login:', error);
       setUser(null);
+      setUserRole(null);
       throw error;
     } finally {
       setLoading(false);
@@ -115,31 +127,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     const checkUser = async () => {
       try {
-        console.log('AuthContext - Verificando sesión actual');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          console.error('AuthContext - Error al obtener sesión:', sessionError);
           if (mounted) {
             setError(`Error de sesión: ${sessionError.message}`);
             setUser(null);
+            setUserRole(null);
           }
           return;
         }
 
-        if (mounted) {
-          console.log('AuthContext - Estado de sesión:', { 
-            hasSession: !!session, 
-            userId: session?.user?.id 
-          });
-          setUser(session?.user ?? null);
-          setError(null);
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+          if (mounted) {
+            setUser(session.user);
+            setUserRole(role);
+            setError(null);
+          }
+        } else if (mounted) {
+          setUser(null);
+          setUserRole(null);
         }
       } catch (error: any) {
-        console.error('AuthContext - Error al verificar sesión:', error);
         if (mounted) {
           setError(`Error al verificar la sesión: ${error.message}`);
           setUser(null);
+          setUserRole(null);
         }
       } finally {
         if (mounted) {
@@ -150,10 +164,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('AuthContext - Cambio en estado de autenticación:', { event, userId: session?.user?.id });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
-        setUser(session?.user ?? null);
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+          setUser(session.user);
+          setUserRole(role);
+        } else {
+          setUser(null);
+          setUserRole(null);
+        }
         setError(null);
       }
     });
@@ -169,6 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      setUser(null);
+      setUserRole(null);
     } catch (error: any) {
       throw error;
     } finally {
@@ -192,7 +214,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       user,
+      userRole,
       isAuthenticated: !!user,
+      isAdmin: userRole === 'admin',
       login,
       logout,
       loading,

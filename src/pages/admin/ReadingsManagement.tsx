@@ -37,6 +37,7 @@ import {
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Reading {
   id: number;
@@ -59,6 +60,7 @@ interface Meter {
 }
 
 const ReadingsManagement: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [filteredReadings, setFilteredReadings] = useState<Reading[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
@@ -590,31 +592,24 @@ const ReadingsManagement: React.FC = () => {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Registro de Lecturas</Typography>
-        <Box display="flex" gap={2}>
-          <ButtonGroup variant="outlined">
+        <Typography variant="h4">Gestión de Lecturas</Typography>
+        <Box>
+          {isAdmin && (
             <Button
-              startIcon={<FileDownloadIcon />}
-              onClick={exportToExcel}
+              variant="contained"
+              onClick={() => handleOpen()}
+              startIcon={<AddIcon />}
+              sx={{ mr: 1 }}
             >
-              Excel
+              Nueva Lectura
             </Button>
-            <Button
-              startIcon={<PdfIcon />}
-              onClick={exportToPdf}
-            >
-              PDF
-            </Button>
-          </ButtonGroup>
+          )}
           <Button
             variant="outlined"
-            startIcon={<AssessmentIcon />}
-            onClick={exportConsumptionReport}
+            onClick={exportToExcel}
+            startIcon={<FileDownloadIcon />}
           >
-            Reporte de Consumo
-          </Button>
-          <Button variant="contained" onClick={() => handleOpen()}>
-            Nueva Lectura
+            Exportar a Excel
           </Button>
         </Box>
       </Box>
@@ -670,13 +665,13 @@ const ReadingsManagement: React.FC = () => {
           <TableHead>
             <TableRow>
               <TableCell>Medidor</TableCell>
-              <TableCell>Lectura Anterior</TableCell>
-              <TableCell>Lectura Actual</TableCell>
-              <TableCell>Consumo</TableCell>
+              <TableCell>Ubicación</TableCell>
               <TableCell>Período</TableCell>
+              <TableCell>Lectura</TableCell>
+              <TableCell>Consumo</TableCell>
               <TableCell>Foto</TableCell>
-              <TableCell>Fecha</TableCell>
-              <TableCell>Acciones</TableCell>
+              <TableCell>Fecha de Registro</TableCell>
+              {isAdmin && <TableCell>Acciones</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -684,36 +679,34 @@ const ReadingsManagement: React.FC = () => {
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((reading) => (
                 <TableRow key={reading.id}>
-                  <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
-                  <TableCell>{reading.previous_reading || '-'}</TableCell>
-                  <TableCell>{reading.value}</TableCell>
-                  <TableCell>{reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-'}</TableCell>
+                  <TableCell>{reading.meter.code_meter}</TableCell>
+                  <TableCell>{reading.meter.location}</TableCell>
                   <TableCell>{reading.period}</TableCell>
+                  <TableCell>{reading.value}</TableCell>
+                  <TableCell>{reading.consumption || '-'}</TableCell>
                   <TableCell>
-                    {reading.photo_url ? (
+                    {reading.photo_url && (
                       <IconButton
                         onClick={() => handleImageClick(reading.photo_url)}
                         color="primary"
                       >
                         <ImageIcon />
                       </IconButton>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        Sin foto
-                      </Typography>
                     )}
                   </TableCell>
                   <TableCell>
                     {new Date(reading.created_at).toLocaleDateString()}
                   </TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleOpen(reading)} color="primary">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(reading.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <IconButton onClick={() => handleOpen(reading)} color="primary">
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(reading.id)} color="error">
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
           </TableBody>
@@ -731,62 +724,63 @@ const ReadingsManagement: React.FC = () => {
         />
       </TableContainer>
 
-      {/* Diálogo para crear/editar lectura */}
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingReading ? 'Editar Lectura' : 'Nueva Lectura'}
-        </DialogTitle>
-        <form onSubmit={handleSubmit}>
-          <DialogContent>
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Medidor</InputLabel>
-              <Select
-                value={formData.meter_id}
-                onChange={(e) => setFormData({ ...formData, meter_id: e.target.value })}
-                label="Medidor"
+      {isAdmin && (
+        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {editingReading ? 'Editar Lectura' : 'Nueva Lectura'}
+          </DialogTitle>
+          <form onSubmit={handleSubmit}>
+            <DialogContent>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Medidor</InputLabel>
+                <Select
+                  value={formData.meter_id}
+                  onChange={(e) => setFormData({ ...formData, meter_id: e.target.value })}
+                  label="Medidor"
+                  required
+                >
+                  {meters.map((meter) => (
+                    <MenuItem key={meter.code_meter} value={meter.code_meter}>
+                      {meter.code_meter}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                fullWidth
+                label="Valor"
+                type="number"
+                value={formData.value}
+                onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                margin="normal"
                 required
-              >
-                {meters.map((meter) => (
-                  <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                    {meter.code_meter}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              fullWidth
-              label="Valor"
-              type="number"
-              value={formData.value}
-              onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-              margin="normal"
-              required
-              inputProps={{ step: "0.01" }}
-            />
-            <TextField
-              fullWidth
-              label="Período"
-              value={formData.period}
-              onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-              margin="normal"
-              required
-            />
-            <TextField
-              fullWidth
-              label="URL de la Foto"
-              value={formData.photo_url}
-              onChange={(e) => setFormData({ ...formData, photo_url: e.target.value })}
-              margin="normal"
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained">
-              {editingReading ? 'Actualizar' : 'Crear'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+                inputProps={{ step: "0.01" }}
+              />
+              <TextField
+                fullWidth
+                label="Período"
+                value={formData.period}
+                onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                label="URL de la Foto"
+                value={formData.photo_url}
+                onChange={(e) => setFormData({ ...formData, photo_url: e.target.value })}
+                margin="normal"
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleClose}>Cancelar</Button>
+              <Button type="submit" variant="contained">
+                {editingReading ? 'Actualizar' : 'Crear'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+      )}
 
       {/* Diálogo para mostrar la imagen */}
       <Dialog
