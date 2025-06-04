@@ -200,12 +200,25 @@ const UsersManagement: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
+        // Primero eliminar el usuario de auth.users
+        const { error: authError } = await supabase.auth.admin.deleteUser(id);
+        
+        if (authError) {
+          console.error('Error al eliminar usuario de auth:', authError);
+          throw new Error('Error al eliminar el usuario del sistema de autenticación');
+        }
+
+        // Luego eliminar el usuario de la tabla users
         const { error } = await supabase
           .from('users')
           .delete()
           .eq('id', id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error al eliminar usuario de la tabla users:', error);
+          throw new Error('Error al eliminar el usuario de la base de datos');
+        }
+
         showSnackbar('Usuario eliminado exitosamente');
         fetchUsers();
       } catch (error: any) {
