@@ -89,80 +89,107 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Función para verificar y establecer el rol del usuario
   const verifyAndSetUserRole = async (userId: string) => {
-    console.log('AuthContext - Verificando rol de usuario:', userId);
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('role, status')
-      .eq('id', userId)
-      .single();
+    console.log('AuthContext - Iniciando verificación de rol para usuario:', userId);
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role, status')
+        .eq('id', userId)
+        .single();
 
-    if (userError) {
-      console.error('AuthContext - Error al obtener rol de usuario:', userError);
-      throw userError;
+      console.log('AuthContext - Respuesta de verificación de rol:', {
+        hasData: !!userData,
+        hasError: !!userError,
+        data: userData,
+        error: userError
+      });
+
+      if (userError) {
+        console.error('AuthContext - Error al obtener rol de usuario:', userError);
+        throw userError;
+      }
+
+      if (!userData) {
+        console.error('AuthContext - No se encontró el usuario en la base de datos');
+        throw new Error('Usuario no encontrado en la base de datos');
+      }
+
+      if (userData.status !== 'active') {
+        console.error('AuthContext - Usuario no está activo:', userData.status);
+        throw new Error('Usuario no está activo');
+      }
+
+      console.log('AuthContext - Rol verificado exitosamente:', userData.role);
+      return userData.role;
+    } catch (error) {
+      console.error('AuthContext - Error en verificación de rol:', error);
+      throw error;
     }
-
-    if (!userData) {
-      console.error('AuthContext - No se encontró el usuario en la base de datos');
-      throw new Error('Usuario no encontrado en la base de datos');
-    }
-
-    if (userData.status !== 'active') {
-      console.error('AuthContext - Usuario no está activo:', userData.status);
-      throw new Error('Usuario no está activo');
-    }
-
-    return userData.role;
   };
 
   // Verificar sesión inicial
   useEffect(() => {
+    let mounted = true;
+
     const checkInitialSession = async () => {
       try {
-        console.log('AuthContext - Verificando sesión inicial');
+        console.log('AuthContext - Iniciando verificación de sesión inicial');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
+        console.log('AuthContext - Resultado de verificación inicial:', {
+          hasSession: !!session,
+          hasError: !!sessionError,
+          userId: session?.user?.id,
+          email: session?.user?.email
+        });
+
         if (sessionError) {
           console.error('AuthContext - Error al obtener sesión:', sessionError);
           throw sessionError;
         }
 
-        if (session) {
-          console.log('AuthContext - Sesión encontrada:', {
-            user: session.user?.email,
-            expires_at: session.expires_at,
-            timestamp: new Date().toISOString()
-          });
-
+        if (session && mounted) {
           try {
             const role = await verifyAndSetUserRole(session.user.id);
-            setUser(session.user);
-            setUserRole(role);
-            console.log('AuthContext - Sesión inicial verificada:', {
-              email: session.user.email,
-              role,
-              timestamp: new Date().toISOString()
-            });
+            if (mounted) {
+              setUser(session.user);
+              setUserRole(role);
+              console.log('AuthContext - Sesión inicial establecida:', {
+                email: session.user.email,
+                role,
+                timestamp: new Date().toISOString()
+              });
+            }
           } catch (error: any) {
-            console.error('AuthContext - Error al verificar rol:', error);
-            // No limpiar la sesión aquí, solo el rol
-            setUserRole(null);
-            throw error;
+            console.error('AuthContext - Error al verificar rol en sesión inicial:', error);
+            if (mounted) {
+              setUserRole(null);
+              // No establecer error aquí para evitar pantalla de error
+              console.log('AuthContext - Continuando sin rol de usuario');
+            }
           }
-        } else {
+        } else if (mounted) {
           console.log('AuthContext - No hay sesión activa');
           clearSession();
         }
       } catch (error: any) {
         console.error('AuthContext - Error en verificación inicial:', error);
-        // Solo establecer el error, no limpiar la sesión
-        setError(error.message);
+        if (mounted) {
+          setError(error.message);
+        }
       } finally {
-        setInitialCheckComplete(true);
-        setLoading(false);
+        if (mounted) {
+          setInitialCheckComplete(true);
+          setLoading(false);
+        }
       }
     };
 
     checkInitialSession();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Suscribirse a cambios de autenticación
@@ -173,6 +200,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('AuthContext - Cambio de estado de autenticación:', {
         event,
         hasSession: !!session,
+        userId: session?.user?.id,
+        email: session?.user?.email,
         timestamp: new Date().toISOString()
       });
 
@@ -193,26 +222,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           try {
             const role = await verifyAndSetUserRole(session.user.id);
-            setUser(session.user);
-            setUserRole(role);
-            setError(null);
-            console.log('AuthContext - Sesión actualizada:', {
-              email: session.user.email,
-              role,
-              timestamp: new Date().toISOString()
-            });
+            if (mounted) {
+              setUser(session.user);
+              setUserRole(role);
+              setError(null);
+              console.log('AuthContext - Sesión actualizada exitosamente:', {
+                email: session.user.email,
+                role,
+                timestamp: new Date().toISOString()
+              });
+            }
           } catch (error: any) {
             console.error('AuthContext - Error al verificar rol en cambio de estado:', error);
-            // No limpiar la sesión aquí, solo el rol
-            setUserRole(null);
-            throw error;
+            if (mounted) {
+              setUserRole(null);
+              // No establecer error aquí para evitar pantalla de error
+              console.log('AuthContext - Continuando sin rol de usuario');
+            }
           }
         }
       } catch (error: any) {
         console.error('AuthContext - Error en cambio de estado:', error);
-        setError(error.message);
+        if (mounted) {
+          setError(error.message);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     });
 
@@ -222,30 +259,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Solo mostrar loading/error para rutas protegidas y después de la verificación inicial
-  const isProtectedRoute = initialCheckComplete && 
-    location.pathname.startsWith('/admin') && 
-    !location.pathname.includes('/login') && 
-    !location.pathname.includes('/setup') &&
-    !location.pathname.includes('/verify-email');
-
-  // Si aún no se ha completado la verificación inicial, mostrar loading
+  // Solo mostrar loading durante la verificación inicial
   if (!initialCheckComplete) {
     console.log('AuthContext - Esperando verificación inicial');
     return <LoadingScreen />;
   }
 
-  // Solo mostrar error si es una ruta protegida y hay un error
-  if (isProtectedRoute && error) {
+  // Solo mostrar error si es una ruta protegida y hay un error crítico
+  const isProtectedRoute = location.pathname.startsWith('/admin') && 
+    !location.pathname.includes('/login') && 
+    !location.pathname.includes('/setup') &&
+    !location.pathname.includes('/verify-email');
+
+  if (isProtectedRoute && error && !user) {
     console.log('AuthContext - Mostrando pantalla de error para ruta protegida:', {
       path: location.pathname,
       error,
-      initialCheckComplete,
       hasUser: !!user,
       hasRole: !!userRole
     });
     return <ErrorScreen message={error} />;
   }
+
+  // Si tenemos usuario pero no rol, permitir continuar
+  console.log('AuthContext - Estado actual:', {
+    hasUser: !!user,
+    hasRole: !!userRole,
+    path: location.pathname,
+    loading,
+    error
+  });
 
   const login = async (email: string, password: string) => {
     setLoading(true);
