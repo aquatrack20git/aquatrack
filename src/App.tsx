@@ -110,6 +110,17 @@ const AdminRoutes = () => {
 
   // Lista de rutas públicas que no requieren autenticación
   const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
+  
+  // Lista de rutas válidas protegidas
+  const validProtectedRoutes = [
+    '/admin/dashboard',
+    '/admin/meters',
+    '/admin/users',
+    '/admin/readings',
+    '/admin/reports/readings',
+    '/admin/reports/comments',
+    '/admin/change-password'
+  ];
 
   // Si estamos en /admin o /admin/, redirigir según el estado de autenticación
   if (location.pathname === '/admin' || location.pathname === '/admin/') {
@@ -122,8 +133,19 @@ const AdminRoutes = () => {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
+  // Verificar si la ruta actual es válida
+  const isPublicRoute = publicRoutes.some(route => location.pathname === route);
+  const isValidProtectedRoute = validProtectedRoutes.some(route => location.pathname === route);
+  const isValidRoute = isPublicRoute || isValidProtectedRoute;
+
+  // Si la ruta no es válida, redirigir a login
+  if (!isValidRoute) {
+    console.log('AdminRoutes - Ruta no válida detectada:', location.pathname);
+    return <Navigate to="/admin/login" replace />;
+  }
+
   // Si no está autenticado y no está en una ruta pública, redirigir a login
-  if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
+  if (!isAuthenticated && !loading && !isPublicRoute) {
     console.log('AdminRoutes - Redirigiendo a login desde:', location.pathname);
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
