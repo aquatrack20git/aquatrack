@@ -25,7 +25,7 @@ const VerifyEmail: React.FC = () => {
         const { data: users, error: checkError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
-          .eq('email', decodedEmail)
+          .ilike('email', decodedEmail)
           .maybeSingle();
 
         if (checkError) {
