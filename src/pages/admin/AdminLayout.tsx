@@ -15,9 +15,6 @@ import {
   ListItemText,
   useTheme,
   useMediaQuery,
-  Menu,
-  MenuItem,
-  Avatar,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -27,8 +24,6 @@ import {
   Assessment as AssessmentIcon,
   Comment as CommentIcon,
   Logout as LogoutIcon,
-  AccountCircle as AccountCircleIcon,
-  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -45,12 +40,11 @@ const menuItems = [
 
 const AdminLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -70,19 +64,6 @@ const AdminLayout: React.FC = () => {
     } catch (error) {
       console.error('Error logging out:', error);
     }
-  };
-
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleChangePassword = () => {
-    handleMenuClose();
-    navigate('/admin/change-password');
   };
 
   const getCurrentTitle = () => {
@@ -135,63 +116,19 @@ const AdminLayout: React.FC = () => {
           ml: { sm: `${drawerWidth}px` },
         }}
       >
-        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              edge="start"
-              onClick={handleDrawerToggle}
-              sx={{ mr: 2, display: { sm: 'none' } }}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap component="div">
-              {getCurrentTitle()}
-            </Typography>
-          </Box>
-          
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton
-              onClick={handleMenuOpen}
-              size="large"
-              edge="end"
-              aria-label="account of current user"
-              aria-haspopup="true"
-              color="inherit"
-            >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.light' }}>
-                {user?.email?.charAt(0).toUpperCase()}
-              </Avatar>
-            </IconButton>
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
-              onClick={handleMenuClose}
-              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-            >
-              <MenuItem disabled>
-                <Typography variant="body2" color="text.secondary">
-                  {user?.email}
-                </Typography>
-              </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleChangePassword}>
-                <ListItemIcon>
-                  <LockIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Cambiar Contraseña</ListItemText>
-              </MenuItem>
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <LogoutIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Cerrar Sesión</ListItemText>
-              </MenuItem>
-            </Menu>
-          </Box>
+        <Toolbar>
+          <IconButton
+            color="inherit"
+            aria-label="open drawer"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2, display: { sm: 'none' } }}
+          >
+            <MenuIcon />
+          </IconButton>
+          <Typography variant="h6" noWrap component="div">
+            {getCurrentTitle()}
+          </Typography>
         </Toolbar>
       </AppBar>
       <Box
