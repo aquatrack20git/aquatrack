@@ -63,34 +63,28 @@ const validProtectedRoutes = [
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, loading, error } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const isMobile = useMediaQuery('(max-width:600px)');
   
-  useEffect(() => {
-    console.log('PrivateRoute - Estado de autenticación:', { 
-      isAuthenticated, 
-      loading, 
-      error,
-      path: location.pathname,
-      isMobile,
-      timestamp: new Date().toISOString()
-    });
-
-    // Verificar si la ruta actual es válida cuando el usuario está autenticado
-    if (isAuthenticated && !loading) {
-      const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
-      if (!isValidRoute) {
-        console.log('PrivateRoute - Redirigiendo a dashboard desde ruta inválida:', location.pathname);
-        navigate('/admin/dashboard', { replace: true });
-      }
-    }
-  }, [isAuthenticated, loading, error, location.pathname, isMobile, navigate]);
+  // Verificar si la ruta actual es válida
+  const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
   
+  console.log('PrivateRoute - Estado:', { 
+    isAuthenticated, 
+    loading, 
+    error,
+    path: location.pathname,
+    isValidRoute,
+    isMobile,
+    timestamp: new Date().toISOString()
+  });
+
+  // Si hay un error, mostrar pantalla de error
   if (error) {
     console.log('PrivateRoute - Mostrando pantalla de error:', error);
     return <ErrorScreen message={error} />;
   }
-  
+
+  // Si está cargando, mostrar pantalla de carga
   if (loading) {
     console.log('PrivateRoute - Mostrando pantalla de carga');
     return (
@@ -107,19 +101,20 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
       </Box>
     );
   }
-  
+
+  // Si no está autenticado, redirigir a login
   if (!isAuthenticated) {
     console.log('PrivateRoute - Redirigiendo a login desde:', location.pathname);
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
-  // Verificar si la ruta actual es válida
-  const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
+  // Si está autenticado pero la ruta no es válida, redirigir al dashboard
   if (!isValidRoute) {
-    console.log('PrivateRoute - Ruta protegida no válida detectada:', location.pathname);
+    console.log('PrivateRoute - Redirigiendo a dashboard desde ruta inválida:', location.pathname);
     return <Navigate to="/admin/dashboard" replace />;
   }
-  
+
+  // Si todo está bien, renderizar el contenido protegido
   console.log('PrivateRoute - Renderizando contenido protegido');
   return <>{children}</>;
 };
