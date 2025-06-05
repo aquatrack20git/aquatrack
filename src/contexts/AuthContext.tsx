@@ -195,8 +195,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
+        // Verificar si la sesión es válida
+        if (!session || !session.user || !session.user.id) {
+          console.error('AuthContext - Sesión inválida:', session);
+          if (mounted) {
+            clearSession();
+            setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
+          }
+          return;
+        }
+
         // Verificar si la sesión ha expirado
-        if (session && checkSessionExpiration(session)) {
+        if (checkSessionExpiration(session)) {
           console.log('AuthContext - Sesión expirada');
           if (mounted) {
             clearSession();
@@ -207,42 +217,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         console.log('AuthContext - Estado de sesión:', {
           tieneSesion: !!session,
-          userId: session?.user?.id,
-          email: session?.user?.email,
-          expiraEn: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira'
+          userId: session.user?.id,
+          email: session.user?.email,
+          expiraEn: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira',
+          timestamp: new Date().toISOString()
         });
 
-        if (session?.user) {
-          console.log('AuthContext - Obteniendo rol de usuario');
-          const role = await fetchUserRole(session.user.id);
-          
-          if (!role && retryCount < MAX_RETRIES) {
-            console.log(`AuthContext - Reintentando obtener rol (intento ${retryCount + 1}/${MAX_RETRIES})`);
-            retryCount++;
-            // Esperar 1 segundo antes de reintentar
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            return checkUser();
+        // Verificar el rol del usuario
+        console.log('AuthContext - Obteniendo rol de usuario');
+        const role = await fetchUserRole(session.user.id);
+        
+        if (!role && retryCount < MAX_RETRIES) {
+          console.log(`AuthContext - Reintentando obtener rol (intento ${retryCount + 1}/${MAX_RETRIES})`);
+          retryCount++;
+          // Esperar 1 segundo antes de reintentar
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return checkUser();
+        }
+
+        console.log('AuthContext - Rol obtenido:', role);
+        
+        if (mounted) {
+          if (!role) {
+            console.error('AuthContext - No se pudo obtener el rol después de varios intentos');
+            clearSession();
+            setError('Error al verificar permisos de usuario. Por favor, inicia sesión nuevamente.');
+            return;
           }
 
-          console.log('AuthContext - Rol obtenido:', role);
-          
-          if (mounted) {
-            if (!role) {
-              console.error('AuthContext - No se pudo obtener el rol después de varios intentos');
-              clearSession();
-              setError('Error al verificar permisos de usuario. Por favor, inicia sesión nuevamente.');
-              return;
-            }
-            setUser(session.user);
-            setUserRole(role);
-            setError(null);
+          // Verificar si el usuario tiene permisos para la ruta actual
+          const currentPath = window.location.pathname;
+          if (currentPath.startsWith('/admin') && role !== 'admin') {
+            console.error('AuthContext - Usuario no tiene permisos de administrador');
+            clearSession();
+            setError('No tienes permisos para acceder a esta sección.');
+            return;
           }
-        } else if (mounted) {
-          console.log('AuthContext - No hay sesión activa');
-          clearSession();
+
+          setUser(session.user);
+          setUserRole(role);
+          setError(null);
         }
       } catch (error: any) {
-        console.error('AuthContext - Error en checkUser:', error);
+        console.error('AuthContext - Error en checkUser:', {
+          error,
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          timestamp: new Date().toISOString()
+        });
         if (mounted) {
           clearSession();
           setError(`Error al verificar la sesión: ${error.message}`);
@@ -263,11 +286,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         evento: event,
         tieneSesion: !!session,
         userId: session?.user?.id,
-        expiraEn: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira'
+        email: session?.user?.email,
+        expiraEn: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira',
+        timestamp: new Date().toISOString()
       });
 
       if (mounted) {
         if (session?.user) {
+          // Verificar si la sesión es válida
+          if (!session.user.id) {
+            console.error('AuthContext - Sesión inválida en cambio de estado');
+            clearSession();
+            setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
+            return;
+          }
+
           // Verificar si la sesión ha expirado
           if (checkSessionExpiration(session)) {
             console.log('AuthContext - Sesión expirada en cambio de estado');
@@ -278,14 +311,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           console.log('AuthContext - Obteniendo rol para nuevo estado de sesión');
           const role = await fetchUserRole(session.user.id);
-          console.log('AuthContext - Nuevo rol obtenido:', role);
+          
+          if (!role) {
+            console.error('AuthContext - No se pudo obtener el rol en cambio de estado');
+            clearSession();
+            setError('Error al verificar permisos de usuario. Por favor, inicia sesión nuevamente.');
+            return;
+          }
+
+          // Verificar permisos para la ruta actual
+          const currentPath = window.location.pathname;
+          if (currentPath.startsWith('/admin') && role !== 'admin') {
+            console.error('AuthContext - Usuario no tiene permisos de administrador en cambio de estado');
+            clearSession();
+            setError('No tienes permisos para acceder a esta sección.');
+            return;
+          }
+
           setUser(session.user);
           setUserRole(role);
+          setError(null);
         } else {
           console.log('AuthContext - Sesión finalizada');
           clearSession();
         }
-        setError(null);
       }
     });
 
@@ -312,13 +361,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Solo mostrar loading/error para rutas protegidas
   const isProtectedRoute = location.pathname.startsWith('/admin') && 
     !location.pathname.includes('/login') && 
-    !location.pathname.includes('/setup');
+    !location.pathname.includes('/setup') &&
+    !location.pathname.includes('/verify-email');
   
   if (isProtectedRoute && loading) {
+    console.log('AuthContext - Mostrando pantalla de carga para ruta protegida:', location.pathname);
     return <LoadingScreen />;
   }
 
   if (isProtectedRoute && error) {
+    console.log('AuthContext - Mostrando pantalla de error para ruta protegida:', {
+      path: location.pathname,
+      error
+    });
     return <ErrorScreen message={error} />;
   }
 
