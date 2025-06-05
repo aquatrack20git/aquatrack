@@ -55,20 +55,23 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const isMobile = useMediaQuery('(max-width:600px)');
   
   useEffect(() => {
-    console.log('PrivateRoute - Auth State:', { 
+    console.log('PrivateRoute - Estado de autenticación:', { 
       isAuthenticated, 
       loading, 
       error,
       path: location.pathname,
-      isMobile
+      isMobile,
+      timestamp: new Date().toISOString()
     });
   }, [isAuthenticated, loading, error, location.pathname, isMobile]);
   
   if (error) {
+    console.log('PrivateRoute - Mostrando pantalla de error:', error);
     return <ErrorScreen message={error} />;
   }
   
   if (loading) {
+    console.log('PrivateRoute - Mostrando pantalla de carga');
     return (
       <Box
         sx={{
@@ -85,10 +88,11 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   if (!isAuthenticated) {
-    console.log('PrivateRoute - Redirecting to login');
+    console.log('PrivateRoute - Redirigiendo a login desde:', location.pathname);
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
   
+  console.log('PrivateRoute - Renderizando contenido protegido');
   return <>{children}</>;
 };
 

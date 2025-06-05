@@ -126,10 +126,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let mounted = true;
     
     const checkUser = async () => {
+      console.log('AuthContext - Iniciando verificación de sesión');
       try {
+        console.log('AuthContext - Obteniendo sesión actual');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
+          console.error('AuthContext - Error al obtener sesión:', sessionError);
           if (mounted) {
             setError(`Error de sesión: ${sessionError.message}`);
             setUser(null);
@@ -138,18 +141,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
+        console.log('AuthContext - Estado de sesión:', {
+          tieneSesion: !!session,
+          userId: session?.user?.id,
+          email: session?.user?.email
+        });
+
         if (session?.user) {
+          console.log('AuthContext - Obteniendo rol de usuario');
           const role = await fetchUserRole(session.user.id);
+          console.log('AuthContext - Rol obtenido:', role);
+          
           if (mounted) {
             setUser(session.user);
             setUserRole(role);
             setError(null);
           }
         } else if (mounted) {
+          console.log('AuthContext - No hay sesión activa');
           setUser(null);
           setUserRole(null);
         }
       } catch (error: any) {
+        console.error('AuthContext - Error en checkUser:', error);
         if (mounted) {
           setError(`Error al verificar la sesión: ${error.message}`);
           setUser(null);
@@ -157,6 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } finally {
         if (mounted) {
+          console.log('AuthContext - Finalizando verificación de sesión');
           setLoading(false);
         }
       }
@@ -164,13 +179,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     checkUser();
 
+    console.log('AuthContext - Configurando suscriptor de cambios de autenticación');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('AuthContext - Cambio de estado de autenticación:', {
+        evento: event,
+        tieneSesion: !!session,
+        userId: session?.user?.id
+      });
+
       if (mounted) {
         if (session?.user) {
+          console.log('AuthContext - Obteniendo rol para nuevo estado de sesión');
           const role = await fetchUserRole(session.user.id);
+          console.log('AuthContext - Nuevo rol obtenido:', role);
           setUser(session.user);
           setUserRole(role);
         } else {
+          console.log('AuthContext - Sesión finalizada');
           setUser(null);
           setUserRole(null);
         }
@@ -179,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => {
+      console.log('AuthContext - Limpiando suscriptor de autenticación');
       mounted = false;
       subscription.unsubscribe();
     };
