@@ -85,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setUserRole(null);
     setError(null);
-    localStorage.removeItem('supabase.auth.token');
+    // No eliminar el token de supabase aquí, dejar que supabase lo maneje
   };
 
   // Función para verificar si la sesión ha expirado
@@ -93,7 +93,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!session?.expires_at) return true;
     const expiresAt = new Date(session.expires_at).getTime();
     const now = new Date().getTime();
-    return now >= expiresAt;
+    // Agregar un margen de 5 minutos para evitar problemas de sincronización
+    return now >= (expiresAt - 5 * 60 * 1000);
+  };
+
+  // Función para verificar y establecer el rol del usuario
+  const verifyAndSetUserRole = async (userId: string) => {
+    console.log('AuthContext - Verificando rol de usuario:', userId);
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role, status')
+      .eq('id', userId)
+      .single();
+
+    if (userError) {
+      console.error('AuthContext - Error al obtener rol de usuario:', userError);
+      throw userError;
+    }
+
+    if (!userData) {
+      console.error('AuthContext - No se encontró el usuario en la base de datos');
+      throw new Error('Usuario no encontrado en la base de datos');
+    }
+
+    if (userData.status !== 'active') {
+      console.error('AuthContext - Usuario no está activo:', userData.status);
+      throw new Error('Usuario no está activo');
+    }
+
+    return userData.role;
   };
 
   // Verificar sesión inicial
@@ -122,35 +150,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
 
-          // Obtener el rol del usuario
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('role, status')
-            .eq('id', session.user.id)
-            .single();
-
-          if (userError) {
-            console.error('AuthContext - Error al obtener rol de usuario:', userError);
-            throw userError;
+          try {
+            const role = await verifyAndSetUserRole(session.user.id);
+            setUser(session.user);
+            setUserRole(role);
+            console.log('AuthContext - Sesión inicial verificada:', {
+              email: session.user.email,
+              role,
+              timestamp: new Date().toISOString()
+            });
+          } catch (error: any) {
+            console.error('AuthContext - Error al verificar rol:', error);
+            clearSession();
+            throw error;
           }
-
-          if (!userData) {
-            console.error('AuthContext - No se encontró el usuario en la base de datos');
-            throw new Error('Usuario no encontrado en la base de datos');
-          }
-
-          if (userData.status !== 'active') {
-            console.error('AuthContext - Usuario no está activo:', userData.status);
-            throw new Error('Usuario no está activo');
-          }
-
-          setUser(session.user);
-          setUserRole(userData.role);
-          console.log('AuthContext - Sesión inicial verificada:', {
-            email: session.user.email,
-            role: userData.role,
-            status: userData.status
-          });
         } else {
           console.log('AuthContext - No hay sesión activa');
           clearSession();
@@ -200,36 +213,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
 
-          // Obtener el rol del usuario
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('role, status')
-            .eq('id', session.user.id)
-            .single();
-
-          if (userError) {
-            console.error('AuthContext - Error al obtener rol de usuario:', userError);
-            throw userError;
+          try {
+            const role = await verifyAndSetUserRole(session.user.id);
+            setUser(session.user);
+            setUserRole(role);
+            setError(null);
+            console.log('AuthContext - Sesión actualizada:', {
+              email: session.user.email,
+              role,
+              timestamp: new Date().toISOString()
+            });
+          } catch (error: any) {
+            console.error('AuthContext - Error al verificar rol en cambio de estado:', error);
+            clearSession();
+            throw error;
           }
-
-          if (!userData) {
-            console.error('AuthContext - No se encontró el usuario en la base de datos');
-            throw new Error('Usuario no encontrado en la base de datos');
-          }
-
-          if (userData.status !== 'active') {
-            console.error('AuthContext - Usuario no está activo:', userData.status);
-            throw new Error('Usuario no está activo');
-          }
-
-          setUser(session.user);
-          setUserRole(userData.role);
-          setError(null);
-          console.log('AuthContext - Sesión actualizada:', {
-            email: session.user.email,
-            role: userData.role,
-            status: userData.status
-          });
         }
       } catch (error: any) {
         console.error('AuthContext - Error en cambio de estado:', error);
@@ -285,38 +283,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
+      console.log('AuthContext - Iniciando proceso de login');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('AuthContext - Error en login:', error);
+        throw error;
+      }
 
       if (!data.session) {
+        console.error('AuthContext - No se pudo establecer la sesión');
         throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
       }
 
-      // Obtener el rol del usuario
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role, status')
-        .eq('id', data.user.id)
-        .single();
-
-      if (userError) throw userError;
-
-      if (!userData) {
-        throw new Error('Usuario no encontrado en la base de datos');
+      try {
+        const role = await verifyAndSetUserRole(data.user.id);
+        setUser(data.user);
+        setUserRole(role);
+        setError(null);
+        console.log('AuthContext - Login exitoso:', {
+          email: data.user.email,
+          role,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error: any) {
+        console.error('AuthContext - Error al verificar rol en login:', error);
+        clearSession();
+        throw error;
       }
-
-      if (userData.status !== 'active') {
-        throw new Error('Usuario no está activo');
-      }
-
-      setUser(data.user);
-      setUserRole(userData.role);
-      setError(null);
     } catch (error: any) {
+      console.error('AuthContext - Error en proceso de login:', error);
       setUser(null);
       setUserRole(null);
       throw error;
