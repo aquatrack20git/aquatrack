@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
 
-  const fetchUserRole = async (userId: string) => {
+  const fetchUserRole = async (userId: string, userEmail?: string) => {
     try {
       const { data, error } = await supabase
         .from('users')
@@ -86,11 +86,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
-      return data?.role || null;
+      if (error || !data) {
+        console.warn('No se encontró el usuario en la tabla users o error:', error);
+        // Intentar crear el usuario en la tabla users si no existe
+        if (userId && userEmail) {
+          await supabase.from('users').insert([
+            { id: userId, email: userEmail, role: 'user', status: 'active' }
+          ]);
+        }
+        return 'user'; // Valor por defecto
+      }
+      return data.role || 'user';
     } catch (error) {
       console.error('Error fetching user role:', error);
-      return null;
+      return 'user';
     }
   };
 
@@ -109,13 +118,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
       }
 
-      const role = await fetchUserRole(data.user.id);
+      const role = await fetchUserRole(data.user.id, data.user.email);
       setUser(data.user);
       setUserRole(role);
       setError(null);
     } catch (error: any) {
       setUser(null);
-      setUserRole(null);
+      setUserRole('user');
       throw error;
     } finally {
       setLoading(false);
@@ -133,13 +142,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (mounted) {
             setError(`Error de sesión: ${sessionError.message}`);
             setUser(null);
-            setUserRole(null);
+            setUserRole('user');
           }
           return;
         }
 
         if (session?.user) {
-          const role = await fetchUserRole(session.user.id);
+          const role = await fetchUserRole(session.user.id, session.user.email);
           if (mounted) {
             setUser(session.user);
             setUserRole(role);
@@ -147,13 +156,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else if (mounted) {
           setUser(null);
-          setUserRole(null);
+          setUserRole('user');
         }
       } catch (error: any) {
         if (mounted) {
           setError(`Error al verificar la sesión: ${error.message}`);
           setUser(null);
-          setUserRole(null);
+          setUserRole('user');
         }
       } finally {
         if (mounted) {
@@ -167,12 +176,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
         if (session?.user) {
-          const role = await fetchUserRole(session.user.id);
+          const role = await fetchUserRole(session.user.id, session.user.email);
           setUser(session.user);
           setUserRole(role);
         } else {
           setUser(null);
-          setUserRole(null);
+          setUserRole('user');
         }
         setError(null);
       }
