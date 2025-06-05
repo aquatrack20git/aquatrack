@@ -78,6 +78,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
 
+  // Función para limpiar la sesión
+  const clearSession = () => {
+    console.log('AuthContext - Limpiando sesión');
+    setUser(null);
+    setUserRole(null);
+    setError(null);
+    // Limpiar localStorage
+    localStorage.removeItem('aquatrack-auth-token');
+    localStorage.removeItem('supabase.auth.token');
+  };
+
+  // Verificar si la sesión ha expirado
+  const checkSessionExpiration = (session: any) => {
+    if (!session?.expires_at) return true;
+    const expiresAt = new Date(session.expires_at * 1000);
+    const now = new Date();
+    return now >= expiresAt;
+  };
+
   const fetchUserRole = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -134,9 +153,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sessionError) {
           console.error('AuthContext - Error al obtener sesión:', sessionError);
           if (mounted) {
+            clearSession();
             setError(`Error de sesión: ${sessionError.message}`);
-            setUser(null);
-            setUserRole(null);
+          }
+          return;
+        }
+
+        // Verificar si la sesión ha expirado
+        if (session && checkSessionExpiration(session)) {
+          console.log('AuthContext - Sesión expirada');
+          if (mounted) {
+            clearSession();
+            setError('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
           }
           return;
         }
@@ -144,7 +172,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('AuthContext - Estado de sesión:', {
           tieneSesion: !!session,
           userId: session?.user?.id,
-          email: session?.user?.email
+          email: session?.user?.email,
+          expiraEn: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira'
         });
 
         if (session?.user) {
@@ -159,15 +188,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else if (mounted) {
           console.log('AuthContext - No hay sesión activa');
-          setUser(null);
-          setUserRole(null);
+          clearSession();
         }
       } catch (error: any) {
         console.error('AuthContext - Error en checkUser:', error);
         if (mounted) {
+          clearSession();
           setError(`Error al verificar la sesión: ${error.message}`);
-          setUser(null);
-          setUserRole(null);
         }
       } finally {
         if (mounted) {
@@ -184,11 +211,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('AuthContext - Cambio de estado de autenticación:', {
         evento: event,
         tieneSesion: !!session,
-        userId: session?.user?.id
+        userId: session?.user?.id,
+        expiraEn: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira'
       });
 
       if (mounted) {
         if (session?.user) {
+          // Verificar si la sesión ha expirado
+          if (checkSessionExpiration(session)) {
+            console.log('AuthContext - Sesión expirada en cambio de estado');
+            clearSession();
+            setError('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
+            return;
+          }
+
           console.log('AuthContext - Obteniendo rol para nuevo estado de sesión');
           const role = await fetchUserRole(session.user.id);
           console.log('AuthContext - Nuevo rol obtenido:', role);
@@ -196,8 +232,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUserRole(role);
         } else {
           console.log('AuthContext - Sesión finalizada');
-          setUser(null);
-          setUserRole(null);
+          clearSession();
         }
         setError(null);
       }
@@ -215,8 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      setUser(null);
-      setUserRole(null);
+      clearSession();
     } catch (error: any) {
       throw error;
     } finally {

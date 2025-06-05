@@ -30,15 +30,55 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     flowType: 'pkce',
     storageKey: 'aquatrack-auth-token',
-    storage: window.localStorage,
-    debug: true // Habilitar logs de depuración
+    storage: {
+      getItem: (key) => {
+        try {
+          const value = localStorage.getItem(key);
+          if (!value) return null;
+          
+          // Verificar si la sesión ha expirado
+          const data = JSON.parse(value);
+          if (data?.expires_at) {
+            const expiresAt = new Date(data.expires_at * 1000);
+            const now = new Date();
+            if (now >= expiresAt) {
+              console.log('Supabase - Sesión expirada en storage');
+              localStorage.removeItem(key);
+              return null;
+            }
+          }
+          return value;
+        } catch (error) {
+          console.error('Supabase - Error al obtener sesión del storage:', error);
+          return null;
+        }
+      },
+      setItem: (key, value) => {
+        try {
+          localStorage.setItem(key, value);
+        } catch (error) {
+          console.error('Supabase - Error al guardar sesión en storage:', error);
+        }
+      },
+      removeItem: (key) => {
+        try {
+          localStorage.removeItem(key);
+        } catch (error) {
+          console.error('Supabase - Error al eliminar sesión del storage:', error);
+        }
+      }
+    },
+    debug: true
   },
   db: {
     schema: 'public'
   },
   global: {
     headers: {
-      'x-application-name': 'aquatrack'
+      'x-application-name': 'aquatrack',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     }
   }
 });
@@ -50,10 +90,22 @@ supabase.auth.onAuthStateChange((event, session) => {
     session: session ? {
       user: session.user?.id,
       email: session.user?.email,
-      expires_at: session.expires_at
+      expires_at: session.expires_at,
+      expiraEn: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'no expira'
     } : 'none',
     timestamp: new Date().toISOString()
   });
+
+  // Si la sesión ha expirado, limpiar el storage
+  if (session?.expires_at) {
+    const expiresAt = new Date(session.expires_at * 1000);
+    const now = new Date();
+    if (now >= expiresAt) {
+      console.log('Supabase - Limpiando sesión expirada');
+      localStorage.removeItem('aquatrack-auth-token');
+      localStorage.removeItem('supabase.auth.token');
+    }
+  }
 });
 
 // Configurar políticas de seguridad
