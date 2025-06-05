@@ -28,57 +28,44 @@ const VerifyEmail: React.FC = () => {
 
         const decodedEmail = decodeURIComponent(emailParam);
 
-        // Primero verificar si el usuario existe en auth.users
-        const { data: { users }, error: authError } = await supabase.auth.admin.listUsers();
-        
-        console.log('VerifyEmail - Búsqueda en auth.users:', {
-          foundUsers: users?.length,
-          hasError: !!authError,
-          error: authError
-        });
-
-        if (authError) {
-          throw new Error('Error al verificar el usuario en auth.users');
-        }
-
-        const userExists = users?.some(user => user.email === decodedEmail);
-        
-        if (!userExists) {
-          console.error('VerifyEmail - Usuario no encontrado en auth.users:', decodedEmail);
-          throw new Error('No se encontró una cuenta asociada a este email. Por favor, verifica que el email sea correcto.');
-        }
-
-        // Verificar el código de verificación
-        const { error: verifyError } = await supabase.auth.verifyOtp({
+        // Verificar el código de verificación directamente
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
           email: decodedEmail,
           token: codeParam,
           type: 'email'
         });
 
         console.log('VerifyEmail - Resultado de verificación OTP:', {
+          hasData: !!data,
           hasError: !!verifyError,
-          error: verifyError
+          error: verifyError,
+          user: data?.user?.id
         });
 
         if (verifyError) {
           throw verifyError;
         }
 
+        if (!data?.user) {
+          throw new Error('No se pudo verificar el usuario');
+        }
+
         // Actualizar el estado del usuario en la tabla users
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('id, status')
-          .eq('email', decodedEmail)
+          .eq('id', data.user.id)
           .single();
 
         console.log('VerifyEmail - Estado actual del usuario:', {
           hasData: !!userData,
           status: userData?.status,
           hasError: !!userError,
-          error: userError
+          error: userError,
+          userId: data.user.id
         });
 
-        if (userError) {
+        if (userError && userError.code !== 'PGRST116') {
           console.error('VerifyEmail - Error al obtener usuario:', userError);
           throw new Error('Error al verificar el estado del usuario');
         }
@@ -88,6 +75,7 @@ const VerifyEmail: React.FC = () => {
           const { error: insertError } = await supabase
             .from('users')
             .insert([{
+              id: data.user.id,
               email: decodedEmail,
               status: 'active',
               role: 'user'
@@ -102,7 +90,7 @@ const VerifyEmail: React.FC = () => {
           const { error: updateError } = await supabase
             .from('users')
             .update({ status: 'active' })
-            .eq('email', decodedEmail);
+            .eq('id', data.user.id);
 
           if (updateError) {
             console.error('VerifyEmail - Error al actualizar estado:', updateError);
