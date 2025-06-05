@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Typography, Alert, useMediaQuery, CircularProgress } from '@mui/material';
@@ -63,6 +63,7 @@ const validProtectedRoutes = [
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, loading, error } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery('(max-width:600px)');
   
   useEffect(() => {
@@ -74,10 +75,16 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
       isMobile,
       timestamp: new Date().toISOString()
     });
-  }, [isAuthenticated, loading, error, location.pathname, isMobile]);
 
-  // Verificar si la ruta actual es válida
-  const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
+    // Verificar si la ruta actual es válida cuando el usuario está autenticado
+    if (isAuthenticated && !loading) {
+      const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
+      if (!isValidRoute) {
+        console.log('PrivateRoute - Redirigiendo a dashboard desde ruta inválida:', location.pathname);
+        navigate('/admin/dashboard', { replace: true });
+      }
+    }
+  }, [isAuthenticated, loading, error, location.pathname, isMobile, navigate]);
   
   if (error) {
     console.log('PrivateRoute - Mostrando pantalla de error:', error);
@@ -106,7 +113,8 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
-  // Si la ruta no es válida, redirigir al dashboard
+  // Verificar si la ruta actual es válida
+  const isValidRoute = validProtectedRoutes.some(route => location.pathname === route);
   if (!isValidRoute) {
     console.log('PrivateRoute - Ruta protegida no válida detectada:', location.pathname);
     return <Navigate to="/admin/dashboard" replace />;
