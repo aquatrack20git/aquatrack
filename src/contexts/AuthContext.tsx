@@ -85,16 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setUserRole(null);
     setError(null);
-    // No eliminar el token de supabase aquí, dejar que supabase lo maneje
-  };
-
-  // Función para verificar si la sesión ha expirado
-  const checkSessionExpiration = (session: Session | null) => {
-    if (!session?.expires_at) return true;
-    const expiresAt = new Date(session.expires_at).getTime();
-    const now = new Date().getTime();
-    // Agregar un margen de 5 minutos para evitar problemas de sincronización
-    return now >= (expiresAt - 5 * 60 * 1000);
   };
 
   // Función para verificar y establecer el rol del usuario
@@ -143,13 +133,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             timestamp: new Date().toISOString()
           });
 
-          if (checkSessionExpiration(session)) {
-            console.log('AuthContext - Sesión expirada');
-            clearSession();
-            setInitialCheckComplete(true);
-            return;
-          }
-
           try {
             const role = await verifyAndSetUserRole(session.user.id);
             setUser(session.user);
@@ -161,7 +144,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
           } catch (error: any) {
             console.error('AuthContext - Error al verificar rol:', error);
-            clearSession();
+            // No limpiar la sesión aquí, solo el rol
+            setUserRole(null);
             throw error;
           }
         } else {
@@ -170,8 +154,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error: any) {
         console.error('AuthContext - Error en verificación inicial:', error);
+        // Solo establecer el error, no limpiar la sesión
         setError(error.message);
-        clearSession();
       } finally {
         setInitialCheckComplete(true);
         setLoading(false);
@@ -204,12 +188,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (!session) {
             console.error('AuthContext - Sesión no disponible después de SIGNED_IN/TOKEN_REFRESHED');
-            throw new Error('Error de autenticación: sesión no disponible');
-          }
-
-          if (checkSessionExpiration(session)) {
-            console.log('AuthContext - Sesión expirada en cambio de estado');
-            clearSession();
             return;
           }
 
@@ -225,14 +203,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
           } catch (error: any) {
             console.error('AuthContext - Error al verificar rol en cambio de estado:', error);
-            clearSession();
+            // No limpiar la sesión aquí, solo el rol
+            setUserRole(null);
             throw error;
           }
         }
       } catch (error: any) {
         console.error('AuthContext - Error en cambio de estado:', error);
         setError(error.message);
-        clearSession();
       } finally {
         setLoading(false);
       }
@@ -251,17 +229,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     !location.pathname.includes('/setup') &&
     !location.pathname.includes('/verify-email');
 
-  if (isProtectedRoute && loading) {
-    console.log('AuthContext - Mostrando pantalla de carga para ruta protegida:', {
-      path: location.pathname,
-      initialCheckComplete,
-      loading,
-      hasUser: !!user,
-      hasRole: !!userRole
-    });
+  // Si aún no se ha completado la verificación inicial, mostrar loading
+  if (!initialCheckComplete) {
+    console.log('AuthContext - Esperando verificación inicial');
     return <LoadingScreen />;
   }
 
+  // Solo mostrar error si es una ruta protegida y hay un error
   if (isProtectedRoute && error) {
     console.log('AuthContext - Mostrando pantalla de error para ruta protegida:', {
       path: location.pathname,
@@ -271,12 +245,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasRole: !!userRole
     });
     return <ErrorScreen message={error} />;
-  }
-
-  // Si aún no se ha completado la verificación inicial, mostrar loading
-  if (!initialCheckComplete) {
-    console.log('AuthContext - Esperando verificación inicial');
-    return <LoadingScreen />;
   }
 
   const login = async (email: string, password: string) => {
@@ -316,8 +284,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error: any) {
       console.error('AuthContext - Error en proceso de login:', error);
-      setUser(null);
-      setUserRole(null);
+      clearSession();
       throw error;
     } finally {
       setLoading(false);
