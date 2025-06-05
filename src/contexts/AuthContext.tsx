@@ -98,17 +98,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const fetchUserRole = async (userId: string) => {
+    console.log('AuthContext - Iniciando fetchUserRole para userId:', userId);
     try {
+      if (!userId) {
+        console.error('AuthContext - fetchUserRole: userId es null o undefined');
+        return null;
+      }
+
+      console.log('AuthContext - Consultando rol en base de datos');
       const { data, error } = await supabase
         .from('users')
-        .select('role')
+        .select('role, status')
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
-      return data?.role || null;
-    } catch (error) {
-      console.error('Error fetching user role:', error);
+      if (error) {
+        console.error('AuthContext - Error en fetchUserRole:', error);
+        throw error;
+      }
+
+      if (!data) {
+        console.error('AuthContext - No se encontró el usuario en la base de datos');
+        return null;
+      }
+
+      console.log('AuthContext - Datos de usuario obtenidos:', {
+        role: data.role,
+        status: data.status,
+        userId
+      });
+
+      // Verificar si el usuario está activo
+      if (data.status !== 'active') {
+        console.error('AuthContext - Usuario no está activo:', data.status);
+        throw new Error(`Usuario no está activo (estado: ${data.status})`);
+      }
+
+      return data.role || null;
+    } catch (error: any) {
+      console.error('AuthContext - Error en fetchUserRole:', {
+        error,
+        message: error.message,
+        code: error.code,
+        details: error.details
+      });
+      // No propagar el error, solo retornar null
       return null;
     }
   };
@@ -143,6 +177,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
     
     const checkUser = async () => {
       console.log('AuthContext - Iniciando verificación de sesión');
@@ -179,9 +215,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (session?.user) {
           console.log('AuthContext - Obteniendo rol de usuario');
           const role = await fetchUserRole(session.user.id);
+          
+          if (!role && retryCount < MAX_RETRIES) {
+            console.log(`AuthContext - Reintentando obtener rol (intento ${retryCount + 1}/${MAX_RETRIES})`);
+            retryCount++;
+            // Esperar 1 segundo antes de reintentar
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return checkUser();
+          }
+
           console.log('AuthContext - Rol obtenido:', role);
           
           if (mounted) {
+            if (!role) {
+              console.error('AuthContext - No se pudo obtener el rol después de varios intentos');
+              clearSession();
+              setError('Error al verificar permisos de usuario. Por favor, inicia sesión nuevamente.');
+              return;
+            }
             setUser(session.user);
             setUserRole(role);
             setError(null);
