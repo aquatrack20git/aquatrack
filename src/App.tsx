@@ -101,17 +101,31 @@ const AdminRoutes = () => {
   const location = useLocation();
   const { isAuthenticated, loading } = useAuth();
   
-  // Si estamos en /admin o /admin/, redirigir a /admin/dashboard
-  if (location.pathname === '/admin' || location.pathname === '/admin/') {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
+  console.log('AdminRoutes - Estado actual:', {
+    path: location.pathname,
+    isAuthenticated,
+    loading,
+    timestamp: new Date().toISOString()
+  });
 
   // Lista de rutas públicas que no requieren autenticación
   const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
 
+  // Si estamos en /admin o /admin/, redirigir según el estado de autenticación
+  if (location.pathname === '/admin' || location.pathname === '/admin/') {
+    console.log('AdminRoutes - Redirigiendo desde /admin');
+    if (!isAuthenticated && !loading) {
+      console.log('AdminRoutes - Redirigiendo a login (no autenticado)');
+      return <Navigate to="/admin/login" replace />;
+    }
+    console.log('AdminRoutes - Redirigiendo a dashboard (autenticado)');
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
   // Si no está autenticado y no está en una ruta pública, redirigir a login
   if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
-    return <Navigate to="/admin/login" replace />;
+    console.log('AdminRoutes - Redirigiendo a login desde:', location.pathname);
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
   return (
@@ -135,6 +149,8 @@ const AdminRoutes = () => {
         <Route path="reports/comments" element={<CommentsReport />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
+      {/* Ruta 404 para rutas de admin no encontradas */}
+      <Route path="*" element={<Navigate to="/admin/login" replace />} />
     </Routes>
   );
 };
