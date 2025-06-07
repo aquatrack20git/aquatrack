@@ -2,11 +2,13 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 const siteUrl = import.meta.env.VITE_SITE_URL || 'https://aquatrackapp.vercel.app'
 
 console.log('Supabase Config - Checking environment variables:', {
   hasUrl: !!supabaseUrl,
   hasKey: !!supabaseAnonKey,
+  hasServiceKey: !!supabaseServiceKey,
   hasSiteUrl: !!siteUrl,
   urlLength: supabaseUrl?.length,
   keyLength: supabaseAnonKey?.length,
@@ -22,7 +24,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-console.log('Supabase Config - Creating client');
+console.log('Supabase Config - Creating clients');
+
+// Cliente para operaciones normales (requiere autenticación)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -39,6 +43,22 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'x-application-name': 'aquatrack'
+    }
+  }
+});
+
+// Cliente para operaciones administrativas (no requiere autenticación)
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  },
+  db: {
+    schema: 'public'
+  },
+  global: {
+    headers: {
+      'x-application-name': 'aquatrack-admin'
     }
   }
 });

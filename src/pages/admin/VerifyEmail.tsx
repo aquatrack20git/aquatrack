@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Container, Box, Paper, Typography, Button, CircularProgress, Alert } from '@mui/material';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 
 const VerifyEmail: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -26,9 +26,9 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
-        // Buscar el usuario en la base de datos
+        // Buscar el usuario en la base de datos usando el cliente administrativo
         console.log('Buscando usuario en la base de datos...');
-        const { data: users, error: checkError } = await supabase
+        const { data: users, error: checkError } = await supabaseAdmin
           .from('users')
           .select('id, email, status, email_confirmed_at')
           .eq('email', decodedEmail)
@@ -55,7 +55,7 @@ const VerifyEmail: React.FC = () => {
         // Si el usuario está pendiente, activarlo
         if (users.status === 'pending') {
           console.log('Activando usuario pendiente...');
-          const { error: updateError } = await supabase
+          const { error: updateError } = await supabaseAdmin
             .from('users')
             .update({
               status: 'active',
