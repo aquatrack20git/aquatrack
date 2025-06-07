@@ -23,11 +23,9 @@ import {
   Select,
   MenuItem,
   CircularProgress,
-  Tooltip,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, Download as DownloadIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import { usePermissions } from '../../contexts/PermissionsContext';
 import { v4 as uuidv4 } from 'uuid';
 
 interface User {
@@ -40,7 +38,6 @@ interface User {
 }
 
 const UsersManagement: React.FC = () => {
-  const { canCreate, canEdit, canDelete, canDownload } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -172,110 +169,32 @@ const UsersManagement: React.FC = () => {
           throw new Error('No se pudo crear el usuario');
         }
 
-        // Crear el registro en la tabla de usuarios
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert([
-            {
-            id: authData.user.id,
-            email: formData.email,
-            full_name: formData.full_name,
-            role: formData.role,
-              status: 'pending', // El usuario estará pendiente hasta que verifique su email
-            },
-          ]);
+        showSnackbar('Usuario creado exitosamente');
+      }
 
-        if (insertError) {
-          console.error('Error al crear usuario en la tabla:', insertError);
-          throw new Error(`Error al crear usuario en la base de datos: ${insertError.message}`);
-        }
-
-        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo de verificación.');
       handleClose();
       fetchUsers();
-      }
     } catch (error: any) {
-      console.error('Error completo en handleSubmit:', error);
-      showSnackbar(error.message || 'Error al guardar el usuario', 'error');
+      console.error('Error saving user:', error);
+      setError(error.message);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
+    if (window.confirm('¿Está seguro de eliminar este usuario?')) {
       try {
-        // Primero eliminar el usuario de la tabla users
         const { error } = await supabase
           .from('users')
           .delete()
           .eq('id', id);
 
-        if (error) {
-          console.error('Error al eliminar usuario de la tabla users:', error);
-          throw new Error('Error al eliminar el usuario de la base de datos');
-        }
-
-        // Luego eliminar el usuario de auth.users usando la API pública
-        const { error: authError } = await supabase.rpc('delete_user', { user_id: id });
-        
-        if (authError) {
-          console.error('Error al eliminar usuario de auth:', authError);
-          // Si falla la eliminación en auth.users, intentamos restaurar el usuario en la tabla users
-          const { error: restoreError } = await supabase
-            .from('users')
-            .insert([{ id, email: users.find(u => u.id === id)?.email }]);
-          
-          if (restoreError) {
-            console.error('Error al restaurar usuario en la tabla users:', restoreError);
-          }
-          throw new Error('Error al eliminar el usuario del sistema de autenticación');
-        }
-
+        if (error) throw error;
         showSnackbar('Usuario eliminado exitosamente');
         fetchUsers();
       } catch (error: any) {
         console.error('Error deleting user:', error);
-        showSnackbar(error.message || 'Error al eliminar el usuario', 'error');
+        setError(error.message);
       }
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Convertir datos a CSV
-      const headers = ['ID', 'Email', 'Nombre Completo', 'Rol', 'Estado', 'Fecha de Creación'];
-      const csvData = data.map(user => [
-        user.id,
-        user.email,
-        user.full_name,
-        user.role === 'admin' ? 'Administrador' : 'Usuario',
-        user.status === 'active' ? 'Activo' : 'Inactivo',
-        new Date(user.created_at).toLocaleString()
-      ]);
-
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row.join(','))
-      ].join('\n');
-
-      // Crear y descargar archivo
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `usuarios_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error: any) {
-      console.error('Error al descargar usuarios:', error);
-      setError(error.message);
     }
   };
 
@@ -287,39 +206,13 @@ const UsersManagement: React.FC = () => {
     });
   };
 
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h5" component="h1">
-          Gestión de Usuarios
-        </Typography>
-        <Box>
-          {canDownload && (
-            <Tooltip title="Descargar usuarios">
-              <IconButton onClick={handleDownload} color="primary">
-                <DownloadIcon />
-              </IconButton>
-            </Tooltip>
-          )}
-          {canCreate && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => handleOpen()}
-              sx={{ ml: 1 }}
-            >
-              Nuevo Usuario
-            </Button>
-          )}
-        </Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Gestión de Usuarios</Typography>
+        <Button variant="contained" onClick={() => handleOpen()}>
+          Nuevo Usuario
+        </Button>
       </Box>
 
       {error && (
@@ -337,7 +230,7 @@ const UsersManagement: React.FC = () => {
               <TableCell>Rol</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
-              {(canEdit || canDelete) && <TableCell>Acciones</TableCell>}
+              <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -363,32 +256,14 @@ const UsersManagement: React.FC = () => {
                   <TableCell>
                     {new Date(user.created_at).toLocaleString()}
                   </TableCell>
-                  {(canEdit || canDelete) && (
-                    <TableCell>
-                      {canEdit && (
-                        <Tooltip title="Editar usuario">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleOpen(user)}
-                            color="primary"
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {canDelete && (
-                        <Tooltip title="Eliminar usuario">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDelete(user.id)}
-                            color="error"
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  )}
+                  <TableCell>
+                    <IconButton onClick={() => handleOpen(user)} color="primary">
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton onClick={() => handleDelete(user.id)} color="error">
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -444,8 +319,8 @@ const UsersManagement: React.FC = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained">
-              {editingUser ? 'Actualizar' : 'Crear'}
+            <Button type="submit" variant="contained" color="primary">
+              {editingUser ? 'Actualizar' : 'Guardar'}
             </Button>
           </DialogActions>
         </form>
