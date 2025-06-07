@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -15,6 +15,10 @@ import {
   ListItemText,
   useTheme,
   useMediaQuery,
+  Avatar,
+  Menu,
+  MenuItem,
+  Tooltip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -24,8 +28,11 @@ import {
   Assessment as AssessmentIcon,
   Comment as CommentIcon,
   Logout as LogoutIcon,
+  Settings as SettingsIcon,
+  Key as KeyIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../config/supabase';
 
 const drawerWidth = 240;
 
@@ -40,21 +47,47 @@ const menuItems = [
 
 const AdminLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+  const [userData, setUserData] = useState<{ full_name: string; role: string } | null>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (user) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('full_name, role')
+          .eq('id', user.id)
+          .single();
+        
+        if (!error && data) {
+          setUserData(data);
+        }
+      }
+    };
+
+    fetchUserData();
+  }, [user]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleNavigation = (path: string) => {
-    navigate(path);
-    if (isMobile) {
-      setMobileOpen(false);
-    }
+  const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setUserMenuAnchor(event.currentTarget);
+  };
+
+  const handleUserMenuClose = () => {
+    setUserMenuAnchor(null);
+  };
+
+  const handleChangePassword = () => {
+    handleUserMenuClose();
+    navigate('/admin/change-password');
   };
 
   const handleLogout = async () => {
@@ -63,6 +96,13 @@ const AdminLayout: React.FC = () => {
       navigate('/admin/login');
     } catch (error) {
       console.error('Error logging out:', error);
+    }
+  };
+
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    if (isMobile) {
+      setMobileOpen(false);
     }
   };
 
@@ -93,17 +133,6 @@ const AdminLayout: React.FC = () => {
           </ListItem>
         ))}
       </List>
-      <Divider />
-      <List>
-        <ListItem disablePadding>
-          <ListItemButton onClick={handleLogout}>
-            <ListItemIcon>
-              <LogoutIcon />
-            </ListItemIcon>
-            <ListItemText primary="Cerrar Sesión" />
-          </ListItemButton>
-        </ListItem>
-      </List>
     </div>
   );
 
@@ -126,9 +155,59 @@ const AdminLayout: React.FC = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {getCurrentTitle()}
           </Typography>
+          {user && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title="Opciones de usuario">
+                <IconButton
+                  onClick={handleUserMenuOpen}
+                  size="small"
+                  sx={{ ml: 2 }}
+                  aria-controls="user-menu"
+                  aria-haspopup="true"
+                >
+                  <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                    {userData?.full_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase()}
+                  </Avatar>
+                </IconButton>
+              </Tooltip>
+              <Menu
+                id="user-menu"
+                anchorEl={userMenuAnchor}
+                open={Boolean(userMenuAnchor)}
+                onClose={handleUserMenuClose}
+                onClick={handleUserMenuClose}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+              >
+                <MenuItem disabled>
+                  <Typography variant="body2" color="text.secondary">
+                    {userData?.full_name || user.email}
+                  </Typography>
+                </MenuItem>
+                <MenuItem disabled>
+                  <Typography variant="body2" color="text.secondary">
+                    {userData?.role === 'admin' ? 'Administrador' : 'Usuario'}
+                  </Typography>
+                </MenuItem>
+                <Divider />
+                <MenuItem onClick={handleChangePassword}>
+                  <ListItemIcon>
+                    <KeyIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Cambiar Contraseña</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={handleLogout}>
+                  <ListItemIcon>
+                    <LogoutIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Cerrar Sesión</ListItemText>
+                </MenuItem>
+              </Menu>
+            </Box>
+          )}
         </Toolbar>
       </AppBar>
       <Box
@@ -136,18 +215,26 @@ const AdminLayout: React.FC = () => {
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
       >
         <Drawer
-          variant={isMobile ? 'temporary' : 'permanent'}
+          variant="temporary"
           open={mobileOpen}
           onClose={handleDrawerToggle}
           ModalProps={{
-            keepMounted: true,
+            keepMounted: true, // Better open performance on mobile.
           }}
           sx={{
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: drawerWidth,
-            },
+            display: { xs: 'block', sm: 'none' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
+        >
+          {drawer}
+        </Drawer>
+        <Drawer
+          variant="permanent"
+          sx={{
+            display: { xs: 'none', sm: 'block' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+          }}
+          open
         >
           {drawer}
         </Drawer>
