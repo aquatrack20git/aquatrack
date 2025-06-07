@@ -12,6 +12,10 @@ const VerifyEmail: React.FC = () => {
 
   useEffect(() => {
     const emailParam = searchParams.get('email');
+    const codeParam = searchParams.get('code');
+    
+    console.log('Parámetros de verificación:', { email: emailParam, code: codeParam });
+
     if (!emailParam) {
       setError('No se encontró el email en el enlace de verificación.');
       setVerifying(false);
@@ -19,18 +23,76 @@ const VerifyEmail: React.FC = () => {
     }
 
     const decodedEmail = decodeURIComponent(emailParam);
+    console.log('Email decodificado:', decodedEmail);
 
     const activateUser = async () => {
       try {
+        // Primero verificar si el usuario existe en auth.users
+        console.log('Verificando usuario en auth.users...');
+        const { data: authUser, error: authError } = await supabase.auth.getUser();
+        
+        if (authError) {
+          console.error('Error al verificar usuario en auth:', authError);
+          throw new Error('Error al verificar la autenticación del usuario');
+        }
+
+        console.log('Usuario en auth:', authUser);
+
+        // Buscar el usuario en la tabla public.users
+        console.log('Buscando usuario en public.users...');
         const { data: users, error: checkError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
           .eq('email', decodedEmail)
           .maybeSingle();
 
+        console.log('Resultado de búsqueda en public.users:', { users, error: checkError });
+
         if (checkError) {
           console.error('Error al buscar usuario:', checkError);
           throw new Error('Error al verificar el estado del usuario');
+        }
+
+        // Si no existe en public.users pero existe en auth.users, intentar crearlo
+        if (!users && authUser?.user) {
+          console.log('Usuario no encontrado en public.users pero existe en auth.users, intentando crear...');
+          
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert([
+              {
+                id: authUser.user.id,
+                email: decodedEmail,
+                full_name: authUser.user.user_metadata?.full_name || 'Usuario',
+                role: authUser.user.user_metadata?.role || 'user',
+                status: 'pending',
+              },
+            ]);
+
+          if (insertError) {
+            console.error('Error al crear usuario en public.users:', insertError);
+            throw new Error('Error al crear el registro del usuario');
+          }
+
+          console.log('Usuario creado exitosamente en public.users');
+          
+          // Actualizar el estado a activo
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({
+              status: 'active',
+              email_confirmed_at: new Date().toISOString(),
+              requires_password_change: true
+            })
+            .eq('id', authUser.user.id);
+
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw new Error('Error al activar la cuenta');
+          }
+
+          setSuccess(true);
+          return;
         }
 
         if (!users) {
@@ -39,12 +101,14 @@ const VerifyEmail: React.FC = () => {
 
         // Si el usuario ya está activo, no hacer nada
         if (users.status === 'active') {
+          console.log('Usuario ya está activo');
           setSuccess(true);
           return;
         }
 
         // Si el usuario está pendiente, activarlo
         if (users.status === 'pending') {
+          console.log('Activando usuario pendiente...');
           const { error: updateError } = await supabase
             .from('users')
             .update({
@@ -59,6 +123,7 @@ const VerifyEmail: React.FC = () => {
             throw new Error('Error al activar la cuenta');
           }
 
+          console.log('Usuario activado exitosamente');
           setSuccess(true);
           return;
         }
