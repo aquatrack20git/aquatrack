@@ -27,7 +27,6 @@ import {
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import { v4 as uuidv4 } from 'uuid';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface User {
   id: string;
@@ -39,7 +38,6 @@ interface User {
 }
 
 const UsersManagement: React.FC = () => {
-  const { isAdmin } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -258,11 +256,9 @@ const UsersManagement: React.FC = () => {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Gestión de Usuarios</Typography>
-        {isAdmin && (
-          <Button variant="contained" onClick={() => handleOpen()}>
-            Nuevo Usuario
-          </Button>
-        )}
+        <Button variant="contained" onClick={() => handleOpen()}>
+          Nuevo Usuario
+        </Button>
       </Box>
 
       {error && (
@@ -280,7 +276,7 @@ const UsersManagement: React.FC = () => {
               <TableCell>Rol</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
-              {isAdmin && <TableCell>Acciones</TableCell>}
+              <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -293,78 +289,74 @@ const UsersManagement: React.FC = () => {
                 <TableCell>
                   {new Date(user.created_at).toLocaleDateString()}
                 </TableCell>
-                {isAdmin && (
-                  <TableCell>
-                    <IconButton onClick={() => handleOpen(user)} color="primary">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(user.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                )}
+                <TableCell>
+                  <IconButton onClick={() => handleOpen(user)} color="primary">
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleDelete(user.id)} color="error">
+                    <DeleteIcon />
+                  </IconButton>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
 
-      {isAdmin && (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
-          </DialogTitle>
-          <form onSubmit={handleSubmit}>
-            <DialogContent>
-              <TextField
-                fullWidth
-                label="Email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                margin="normal"
-                required
-                type="email"
-              />
-              <TextField
-                fullWidth
-                label="Nombre Completo"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                margin="normal"
-                required
-              />
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Rol</InputLabel>
-                <Select
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  label="Rol"
-                >
-                  <MenuItem value="admin">Administrador</MenuItem>
-                  <MenuItem value="user">Usuario</MenuItem>
-                </Select>
-              </FormControl>
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Estado</InputLabel>
-                <Select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  label="Estado"
-                >
-                  <MenuItem value="active">Activo</MenuItem>
-                  <MenuItem value="inactive">Inactivo</MenuItem>
-                </Select>
-              </FormControl>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleClose}>Cancelar</Button>
-              <Button type="submit" variant="contained">
-                {editingUser ? 'Actualizar' : 'Crear'}
-              </Button>
-            </DialogActions>
-          </form>
-        </Dialog>
-      )}
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+        </DialogTitle>
+        <form onSubmit={handleSubmit}>
+          <DialogContent>
+            <TextField
+              fullWidth
+              label="Email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              margin="normal"
+              required
+              type="email"
+            />
+            <TextField
+              fullWidth
+              label="Nombre Completo"
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              margin="normal"
+              required
+            />
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Rol</InputLabel>
+              <Select
+                value={formData.role}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                label="Rol"
+              >
+                <MenuItem value="admin">Administrador</MenuItem>
+                <MenuItem value="user">Usuario</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Estado</InputLabel>
+              <Select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                label="Estado"
+              >
+                <MenuItem value="active">Activo</MenuItem>
+                <MenuItem value="inactive">Inactivo</MenuItem>
+              </Select>
+            </FormControl>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose}>Cancelar</Button>
+            <Button type="submit" variant="contained">
+              {editingUser ? 'Actualizar' : 'Crear'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
 
       <Snackbar
         open={snackbar.open}

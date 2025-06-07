@@ -14,65 +14,47 @@ import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 const ChangePassword: React.FC = () => {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [formData, setFormData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const validatePassword = (password: string) => {
-    const minLength = 8;
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumbers = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-    if (password.length < minLength) {
-      return 'La contraseña debe tener al menos 8 caracteres';
-    }
-    if (!hasUpperCase) {
-      return 'La contraseña debe contener al menos una letra mayúscula';
-    }
-    if (!hasLowerCase) {
-      return 'La contraseña debe contener al menos una letra minúscula';
-    }
-    if (!hasNumbers) {
-      return 'La contraseña debe contener al menos un número';
-    }
-    if (!hasSpecialChar) {
-      return 'La contraseña debe contener al menos un carácter especial';
-    }
-    return null;
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
-
-    // Validar que las contraseñas coincidan
-    if (newPassword !== confirmPassword) {
-      setError('Las contraseñas no coinciden');
-      return;
-    }
-
-    // Validar la nueva contraseña
-    const passwordError = validatePassword(newPassword);
-    if (passwordError) {
-      setError(passwordError);
-      return;
-    }
+    setLoading(true);
 
     try {
-      setLoading(true);
+      // Validaciones
+      if (formData.newPassword !== formData.confirmPassword) {
+        throw new Error('Las contraseñas nuevas no coinciden');
+      }
+
+      if (formData.newPassword.length < 6) {
+        throw new Error('La contraseña debe tener al menos 6 caracteres');
+      }
+
+      if (formData.newPassword === formData.currentPassword) {
+        throw new Error('La nueva contraseña debe ser diferente a la actual');
+      }
 
       // Verificar la contraseña actual
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: user?.email || '',
-        password: currentPassword,
+        password: formData.currentPassword,
       });
 
       if (signInError) {
@@ -81,33 +63,25 @@ const ChangePassword: React.FC = () => {
 
       // Actualizar la contraseña
       const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword
+        password: formData.newPassword
       });
 
       if (updateError) {
         throw updateError;
       }
 
-      // Actualizar el estado requires_password_change en la base de datos
-      const { error: dbError } = await supabase
+      // Actualizar el estado en la tabla de usuarios
+      const { error: userUpdateError } = await supabase
         .from('users')
         .update({ requires_password_change: false })
         .eq('id', user?.id);
 
-      if (dbError) {
-        console.error('Error al actualizar el estado de cambio de contraseña:', dbError);
+      if (userUpdateError) {
+        throw userUpdateError;
       }
 
-      setSuccess(true);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-
-      // Redirigir al dashboard después de 2 segundos
-      setTimeout(() => {
-        navigate('/admin/dashboard');
-      }, 2000);
-
+      // Redirigir al dashboard
+      navigate('/admin/dashboard');
     } catch (error: any) {
       setError(error.message || 'Error al cambiar la contraseña');
     } finally {
@@ -117,85 +91,65 @@ const ChangePassword: React.FC = () => {
 
   return (
     <Container component="main" maxWidth="xs">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        <Paper elevation={3} sx={{ padding: 4, width: '100%' }}>
-          <Typography component="h1" variant="h5" gutterBottom align="center">
-            Cambiar Contraseña
+      <Box sx={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Paper elevation={3} sx={{ padding: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+          <Typography variant="h5" component="h1" gutterBottom>
+            Cambio de Contraseña Obligatorio
+          </Typography>
+          <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 3 }}>
+            Por seguridad, debes cambiar tu contraseña antes de continuar.
           </Typography>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Contraseña actualizada exitosamente. Serás redirigido al dashboard.
-            </Alert>
-          )}
-
-          <form onSubmit={handleSubmit}>
+          <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
               margin="normal"
               required
               fullWidth
-              label="Contraseña Actual"
+              label="Contraseña actual"
+              name="currentPassword"
               type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              disabled={loading || success}
+              value={formData.currentPassword}
+              onChange={handleInputChange}
+              disabled={loading}
             />
             <TextField
               margin="normal"
               required
               fullWidth
-              label="Nueva Contraseña"
+              label="Nueva contraseña"
+              name="newPassword"
               type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              disabled={loading || success}
-              helperText="La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial"
+              value={formData.newPassword}
+              onChange={handleInputChange}
+              disabled={loading}
             />
             <TextField
               margin="normal"
               required
               fullWidth
-              label="Confirmar Nueva Contraseña"
+              label="Confirmar nueva contraseña"
+              name="confirmPassword"
               type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={loading || success}
+              value={formData.confirmPassword}
+              onChange={handleInputChange}
+              disabled={loading}
             />
             <Button
               type="submit"
               fullWidth
               variant="contained"
-              sx={{ mt: 3, mb: 2 }}
-              disabled={loading || success}
-            >
-              {loading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : (
-                'Cambiar Contraseña'
-              )}
-            </Button>
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={() => navigate('/admin/dashboard')}
+              sx={{ mt: 3 }}
               disabled={loading}
             >
-              Cancelar
+              {loading ? <CircularProgress size={24} /> : 'Cambiar Contraseña'}
             </Button>
-          </form>
+          </Box>
         </Paper>
       </Box>
     </Container>

@@ -13,17 +13,11 @@
     }
   ],
   "rewrites": [
-    { "source": "/admin", "destination": "/admin/login" },
-    { "source": "/admin/", "destination": "/admin/login" },
     { "source": "/assets/:file*", "destination": "/assets/:file*" },
     { "source": "/:file.js", "destination": "/:file.js" },
     { "source": "/:file.css", "destination": "/:file.css" },
     { "source": "/:file.(png|jpg|jpeg|gif|svg|ico|webp)", "destination": "/:file.$1" },
     { "source": "/:path*", "destination": "/index.html" }
-  ],
-  "redirects": [
-    { "source": "/admin", "destination": "/admin/login", "permanent": false },
-    { "source": "/admin/", "destination": "/admin/login", "permanent": false }
   ],
   "headers": [
     {

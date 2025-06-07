@@ -11,111 +11,71 @@ const VerifyEmail: React.FC = () => {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const verifyEmail = async () => {
+    const emailParam = searchParams.get('email');
+    if (!emailParam) {
+      setError('No se encontró el email en el enlace de verificación.');
+      setVerifying(false);
+      return;
+    }
+
+    const decodedEmail = decodeURIComponent(emailParam);
+
+    const activateUser = async () => {
       try {
-        const emailParam = searchParams.get('email');
-        const codeParam = searchParams.get('code');
-
-        console.log('VerifyEmail - Iniciando verificación:', {
-          email: emailParam,
-          hasCode: !!codeParam,
-          timestamp: new Date().toISOString()
-        });
-
-        if (!emailParam || !codeParam) {
-          throw new Error('Faltan parámetros necesarios para la verificación.');
-        }
-
-        const decodedEmail = decodeURIComponent(emailParam);
-
-        // Verificar el código de verificación directamente
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          email: decodedEmail,
-          token: codeParam,
-          type: 'email'
-        });
-
-        console.log('VerifyEmail - Resultado de verificación OTP:', {
-          hasData: !!data,
-          hasError: !!verifyError,
-          error: verifyError,
-          user: data?.user?.id
-        });
-
-        if (verifyError) {
-          throw verifyError;
-        }
-
-        if (!data?.user) {
-          throw new Error('No se pudo verificar el usuario');
-        }
-
-        // Actualizar el estado del usuario en la tabla users
-        const { data: userData, error: userError } = await supabase
+        const { data: users, error: checkError } = await supabase
           .from('users')
-          .select('id, status')
-          .eq('id', data.user.id)
-          .single();
+          .select('id, email, status, email_confirmed_at')
+          .eq('email', decodedEmail)
+          .maybeSingle();
 
-        console.log('VerifyEmail - Estado actual del usuario:', {
-          hasData: !!userData,
-          status: userData?.status,
-          hasError: !!userError,
-          error: userError,
-          userId: data.user.id
-        });
-
-        if (userError && userError.code !== 'PGRST116') {
-          console.error('VerifyEmail - Error al obtener usuario:', userError);
+        if (checkError) {
+          console.error('Error al buscar usuario:', checkError);
           throw new Error('Error al verificar el estado del usuario');
         }
 
-        if (!userData) {
-          // Si el usuario no existe en la tabla users, crearlo
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert([{
-              id: data.user.id,
-              email: decodedEmail,
-              status: 'active',
-              role: 'user'
-            }]);
-
-          if (insertError) {
-            console.error('VerifyEmail - Error al crear usuario:', insertError);
-            throw new Error('Error al crear el registro del usuario');
-          }
-        } else if (userData.status !== 'active') {
-          // Actualizar el estado del usuario a activo
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({ status: 'active' })
-            .eq('id', data.user.id);
-
-          if (updateError) {
-            console.error('VerifyEmail - Error al actualizar estado:', updateError);
-            throw new Error('Error al activar la cuenta del usuario');
-          }
+        if (!users) {
+          throw new Error('No se encontró una cuenta asociada a este email. Por favor, verifica que el email sea correcto.');
         }
 
-        console.log('VerifyEmail - Verificación exitosa');
-        setSuccess(true);
-        setVerifying(false);
+        // Si el usuario ya está activo, no hacer nada
+        if (users.status === 'active') {
+          setSuccess(true);
+          return;
+        }
 
-        // Redirigir al login después de 3 segundos
-        setTimeout(() => {
-          navigate('/admin/login?verification=success');
-        }, 3000);
+        // Si el usuario está pendiente, activarlo
+        if (users.status === 'pending') {
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({
+              status: 'active',
+              email_confirmed_at: new Date().toISOString(),
+              requires_password_change: true
+            })
+            .eq('id', users.id);
 
-      } catch (error: any) {
-        console.error('VerifyEmail - Error en verificación:', error);
-        setError(error.message || 'Error al verificar el email');
+          if (updateError) {
+            console.error('Error al actualizar estado del usuario:', updateError);
+            throw new Error('Error al activar la cuenta');
+          }
+
+          setSuccess(true);
+          return;
+        }
+
+        // Si el usuario está en otro estado, mostrar error
+        throw new Error(`El usuario se encuentra en un estado inválido: ${users.status}`);
+
+      } catch (e: any) {
+        console.error('Error en activación de usuario:', e);
+        setError(e.message || 'Error al activar el usuario.');
+      } finally {
         setVerifying(false);
       }
     };
 
-    verifyEmail();
-  }, [searchParams, navigate]);
+    activateUser();
+  }, [searchParams]);
 
   if (verifying) {
     return (
@@ -141,12 +101,7 @@ const VerifyEmail: React.FC = () => {
             <Typography variant="body1" align="center" gutterBottom>
               {error}
             </Typography>
-            <Button 
-              variant="outlined" 
-              color="primary" 
-              sx={{ mt: 2 }} 
-              onClick={() => navigate('/admin/login')}
-            >
+            <Button variant="outlined" color="primary" sx={{ mt: 2 }} onClick={() => navigate('/admin/login')}>
               Volver al inicio de sesión
             </Button>
           </Paper>
@@ -164,9 +119,14 @@ const VerifyEmail: React.FC = () => {
               ¡Email verificado exitosamente!
             </Typography>
             <Typography variant="body1" align="center" gutterBottom>
-              Tu cuenta ha sido activada. Serás redirigido al inicio de sesión en unos segundos...
+              Tu cuenta ha sido activada correctamente.
             </Typography>
-            <CircularProgress size={24} sx={{ mt: 2 }} />
+            <Typography variant="body2" align="center" color="text.secondary">
+              Ahora puedes iniciar sesión con tus credenciales.
+            </Typography>
+            <Button variant="contained" color="primary" sx={{ mt: 3 }} onClick={() => navigate('/admin/login')}>
+              Ir a Iniciar Sesión
+            </Button>
           </Paper>
         </Box>
       </Container>

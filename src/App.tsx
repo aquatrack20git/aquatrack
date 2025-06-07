@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Typography, Alert, useMediaQuery, CircularProgress } from '@mui/material';
@@ -49,68 +49,20 @@ const ErrorScreen = ({ message }: { message: string }) => (
   </Box>
 );
 
-// Lista de rutas válidas protegidas
-const validProtectedRoutes = [
-  '/admin/dashboard',
-  '/admin/meters',
-  '/admin/users',
-  '/admin/readings',
-  '/admin/reports/readings',
-  '/admin/reports/comments',
-  '/admin/change-password'
-];
-
-// Lista de rutas públicas
-const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
-
-// Componente para verificar y redirigir rutas
-const RouteGuard = ({ children }: { children: React.ReactNode }) => {
-  const location = useLocation();
-  const { isAuthenticated, loading } = useAuth();
-  
-  // Verificar si la ruta actual es válida
-  const isPublicRoute = publicRoutes.some(route => location.pathname === route);
-  const isValidProtectedRoute = validProtectedRoutes.some(route => location.pathname === route);
-  const isValidRoute = isPublicRoute || isValidProtectedRoute;
-
-  console.log('RouteGuard - Estado:', {
-    path: location.pathname,
-    isAuthenticated,
-    loading,
-    isPublicRoute,
-    isValidProtectedRoute,
-    isValidRoute,
-    timestamp: new Date().toISOString()
-  });
-
-  // Si estamos en /admin o /admin/, redirigir según el estado de autenticación
-  if (location.pathname === '/admin' || location.pathname === '/admin/') {
-    if (!isAuthenticated && !loading) {
-      return <Navigate to="/admin/login" replace />;
-    }
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
-  // Si no está autenticado y no está en una ruta pública, redirigir a login
-  if (!isAuthenticated && !loading && !isPublicRoute) {
-    return <Navigate to="/admin/login" replace />;
-  }
-
-  // Si está autenticado y está en una ruta pública, redirigir al dashboard
-  if (isAuthenticated && !loading && isPublicRoute) {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
-  // Si está autenticado y la ruta no es válida, redirigir al dashboard
-  if (isAuthenticated && !loading && !isValidRoute) {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
-  return <>{children}</>;
-};
-
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, loading, error } = useAuth();
+  const location = useLocation();
+  const isMobile = useMediaQuery('(max-width:600px)');
+  
+  useEffect(() => {
+    console.log('PrivateRoute - Auth State:', { 
+      isAuthenticated, 
+      loading, 
+      error,
+      path: location.pathname,
+      isMobile
+    });
+  }, [isAuthenticated, loading, error, location.pathname, isMobile]);
   
   if (error) {
     return <ErrorScreen message={error} />;
@@ -133,7 +85,8 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
+    console.log('PrivateRoute - Redirecting to login');
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
   
   return <>{children}</>;
@@ -141,31 +94,44 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Componente para las rutas de administración
 const AdminRoutes = () => {
+  const location = useLocation();
+  const { isAuthenticated, loading } = useAuth();
+  
+  // Si estamos en /admin o /admin/, redirigir a /admin/dashboard
+  if (location.pathname === '/admin' || location.pathname === '/admin/') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  // Lista de rutas públicas que no requieren autenticación
+  const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
+
+  // Si no está autenticado y no está en una ruta pública, redirigir a login
+  if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
   return (
-    <RouteGuard>
-      <Routes>
-        <Route path="login" element={<Login />} />
-        <Route path="setup" element={<SetupAdmin />} />
-        <Route path="verify-email" element={<VerifyEmail />} />
-        <Route path="change-password" element={<ChangePassword />} />
-        <Route
-          element={
-            <PrivateRoute>
-              <AdminLayout />
-            </PrivateRoute>
-          }
-        >
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="meters" element={<MetersManagement />} />
-          <Route path="users" element={<UsersManagement />} />
-          <Route path="readings" element={<ReadingsManagement />} />
-          <Route path="reports/readings" element={<ReadingsReport />} />
-          <Route path="reports/comments" element={<CommentsReport />} />
-          <Route index element={<Navigate to="dashboard" replace />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/admin/login" replace />} />
-      </Routes>
-    </RouteGuard>
+    <Routes>
+      <Route path="login" element={<Login />} />
+      <Route path="setup" element={<SetupAdmin />} />
+      <Route path="verify-email" element={<VerifyEmail />} />
+      <Route path="change-password" element={<ChangePassword />} />
+      <Route
+        element={
+          <PrivateRoute>
+            <AdminLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="meters" element={<MetersManagement />} />
+        <Route path="users" element={<UsersManagement />} />
+        <Route path="readings" element={<ReadingsManagement />} />
+        <Route path="reports/readings" element={<ReadingsReport />} />
+        <Route path="reports/comments" element={<CommentsReport />} />
+        <Route index element={<Navigate to="dashboard" replace />} />
+      </Route>
+    </Routes>
   );
 };
 

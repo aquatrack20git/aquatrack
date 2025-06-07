@@ -1,15 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import { Outlet, useLocation, Navigate } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 
 interface AuthContextType {
   user: User | null;
-  userRole: string | null;
   isAuthenticated: boolean;
-  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -73,196 +71,16 @@ const ErrorScreen = ({ message }: { message: string }) => (
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
   const location = useLocation();
-
-  // Función para limpiar la sesión
-  const clearSession = () => {
-    console.log('AuthContext - Limpiando sesión');
-    setUser(null);
-    setUserRole(null);
-    setError(null);
-  };
-
-  // Función para verificar y establecer el rol del usuario
-  const verifyAndSetUserRole = async (userId: string) => {
-    console.log('AuthContext - Iniciando verificación de rol para usuario:', userId);
-    try {
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role, status')
-        .eq('id', userId)
-        .single();
-
-      console.log('AuthContext - Respuesta de verificación de rol:', {
-        hasData: !!userData,
-        hasError: !!userError,
-        data: userData,
-        error: userError
-      });
-
-      if (userError) {
-        console.error('AuthContext - Error al obtener rol de usuario:', userError);
-        // No lanzar error, solo retornar null
-        return null;
-      }
-
-      if (!userData) {
-        console.error('AuthContext - No se encontró el usuario en la base de datos');
-        // No lanzar error, solo retornar null
-        return null;
-      }
-
-      if (userData.status !== 'active') {
-        console.error('AuthContext - Usuario no está activo:', userData.status);
-        // No lanzar error, solo retornar null
-        return null;
-      }
-
-      console.log('AuthContext - Rol verificado exitosamente:', userData.role);
-      return userData.role;
-    } catch (error) {
-      console.error('AuthContext - Error en verificación de rol:', error);
-      // No lanzar error, solo retornar null
-      return null;
-    }
-  };
-
-  // Verificar sesión inicial
-  useEffect(() => {
-    const checkInitialSession = async () => {
-      try {
-        console.log('AuthContext - Verificando sesión inicial');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.error('AuthContext - Error al obtener sesión:', sessionError);
-          clearSession();
-          return;
-        }
-
-        if (session) {
-          console.log('AuthContext - Sesión encontrada:', {
-            user: session.user?.email,
-            expires_at: session.expires_at,
-            timestamp: new Date().toISOString()
-          });
-
-          setUser(session.user);
-          
-          // Intentar obtener el rol, pero no bloquear si falla
-          const role = await verifyAndSetUserRole(session.user.id);
-          setUserRole(role);
-          
-          console.log('AuthContext - Sesión inicial verificada:', {
-            email: session.user.email,
-            role,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          console.log('AuthContext - No hay sesión activa');
-          clearSession();
-        }
-      } catch (error: any) {
-        console.error('AuthContext - Error en verificación inicial:', error);
-        clearSession();
-      } finally {
-        setInitialCheckComplete(true);
-        setLoading(false);
-      }
-    };
-
-    checkInitialSession();
-  }, []);
-
-  // Suscribirse a cambios de autenticación
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('AuthContext - Cambio de estado de autenticación:', {
-        event,
-        hasSession: !!session,
-        userId: session?.user?.id,
-        email: session?.user?.email,
-        timestamp: new Date().toISOString()
-      });
-
-      try {
-        if (event === 'SIGNED_OUT') {
-          console.log('AuthContext - Usuario cerró sesión');
-          clearSession();
-          return;
-        }
-
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (!session) {
-            console.error('AuthContext - Sesión no disponible después de SIGNED_IN/TOKEN_REFRESHED');
-            return;
-          }
-
-          setUser(session.user);
-          
-          // Intentar obtener el rol, pero no bloquear si falla
-          const role = await verifyAndSetUserRole(session.user.id);
-          setUserRole(role);
-          setError(null);
-          
-          console.log('AuthContext - Sesión actualizada:', {
-            email: session.user.email,
-            role,
-            timestamp: new Date().toISOString()
-          });
-        }
-      } catch (error: any) {
-        console.error('AuthContext - Error en cambio de estado:', error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  // Solo mostrar loading durante la verificación inicial
-  if (!initialCheckComplete) {
-    console.log('AuthContext - Esperando verificación inicial');
-    return <LoadingScreen />;
-  }
-
-  // Solo mostrar error si es una ruta protegida y no hay usuario
-  const isProtectedRoute = location.pathname.startsWith('/admin') && 
-    !location.pathname.includes('/login') && 
-    !location.pathname.includes('/setup') &&
-    !location.pathname.includes('/verify-email');
-
-  if (isProtectedRoute && !user) {
-    console.log('AuthContext - Redirigiendo a login:', {
-      path: location.pathname,
-      hasUser: !!user,
-      hasRole: !!userRole
-    });
-    return <Navigate to="/admin/login" replace />;
-  }
-
-  // Si tenemos usuario pero no rol, permitir continuar
-  console.log('AuthContext - Estado actual:', {
-    hasUser: !!user,
-    hasRole: !!userRole,
-    path: location.pathname,
-    loading,
-    error
-  });
 
   const login = async (email: string, password: string) => {
     setLoading(true);
     setError(null);
     try {
-      console.log('AuthContext - Iniciando proceso de login');
+      console.log('AuthContext - Iniciando login para:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -274,40 +92,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!data.session) {
-        console.error('AuthContext - No se pudo establecer la sesión');
+        console.error('AuthContext - No se recibió sesión después del login');
         throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
       }
 
-      try {
-        const role = await verifyAndSetUserRole(data.user.id);
-        setUser(data.user);
-        setUserRole(role);
-        setError(null);
-        console.log('AuthContext - Login exitoso:', {
-          email: data.user.email,
-          role,
-          timestamp: new Date().toISOString()
-        });
-      } catch (error: any) {
-        console.error('AuthContext - Error al verificar rol en login:', error);
-        clearSession();
-        throw error;
-      }
+      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
+      
+      // Actualizar el estado del usuario
+      setUser(data.user);
+      setError(null);
     } catch (error: any) {
-      console.error('AuthContext - Error en proceso de login:', error);
-      clearSession();
+      console.error('AuthContext - Error completo en login:', error);
+      setUser(null);
       throw error;
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const checkUser = async () => {
+      try {
+        console.log('AuthContext - Verificando sesión actual');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('AuthContext - Error al obtener sesión:', sessionError);
+          if (mounted) {
+            setError(`Error de sesión: ${sessionError.message}`);
+            setUser(null);
+          }
+          return;
+        }
+
+        if (mounted) {
+          console.log('AuthContext - Estado de sesión:', { 
+            hasSession: !!session, 
+            userId: session?.user?.id 
+          });
+          setUser(session?.user ?? null);
+          setError(null);
+        }
+      } catch (error: any) {
+        console.error('AuthContext - Error al verificar sesión:', error);
+        if (mounted) {
+          setError(`Error al verificar la sesión: ${error.message}`);
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('AuthContext - Cambio en estado de autenticación:', { event, userId: session?.user?.id });
+      if (mounted) {
+        setUser(session?.user ?? null);
+        setError(null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const logout = async () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      clearSession();
     } catch (error: any) {
       throw error;
     } finally {
@@ -315,12 +176,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Solo mostrar loading/error para rutas protegidas
+  const isProtectedRoute = location.pathname.startsWith('/admin') && 
+    !location.pathname.includes('/login') && 
+    !location.pathname.includes('/setup');
+  
+  if (isProtectedRoute && loading) {
+    return <LoadingScreen />;
+  }
+
+  if (isProtectedRoute && error) {
+    return <ErrorScreen message={error} />;
+  }
+
   return (
     <AuthContext.Provider value={{
       user,
-      userRole,
       isAuthenticated: !!user,
-      isAdmin: userRole === 'admin',
       login,
       logout,
       loading,

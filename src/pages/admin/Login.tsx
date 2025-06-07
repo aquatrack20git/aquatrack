@@ -19,31 +19,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
+  const { login } = useAuth();
   const [searchParams] = useSearchParams();
-
-  // Verificar si ya hay una sesión activa
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.error('Error al verificar sesión:', sessionError);
-          return;
-        }
-
-        if (session && isAuthenticated) {
-          console.log('Sesión activa encontrada, redirigiendo al dashboard');
-          navigate('/admin/dashboard');
-        }
-      } catch (error) {
-        console.error('Error en verificación de sesión:', error);
-      }
-    };
-
-    checkSession();
-  }, [navigate, isAuthenticated]);
 
   useEffect(() => {
     // Verificar si hay un mensaje de verificación exitosa
@@ -55,7 +32,7 @@ const Login: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setError('');
     setLoading(true);
 
     try {
@@ -63,71 +40,127 @@ const Login: React.FC = () => {
       const cleanEmail = email.trim().toLowerCase();
       console.log('Iniciando proceso de login para:', cleanEmail);
       
-      // Intentar el login usando el contexto de autenticación
-      await login(cleanEmail, password);
-      
-      // Si el login es exitoso, verificar el estado del usuario
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Error al obtener sesión después del login:', sessionError);
-        throw sessionError;
+      // Primero intentar la autenticación con Supabase
+      console.log('Intentando autenticación con Supabase...');
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password
+      });
+
+      console.log('Respuesta de autenticación:', {
+        usuario: authData?.user,
+        error: authError,
+        session: authData?.session
+      });
+
+      if (authError) {
+        console.error('Error detallado de autenticación:', {
+          code: authError.code,
+          message: authError.message,
+          status: authError.status
+        });
+        
+        if (authError.message?.includes('Email not confirmed')) {
+          setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
+          return;
+        }
+
+        if (authError.message?.includes('Invalid login credentials')) {
+          setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
+          return;
+        }
+
+        throw authError;
       }
 
-      if (!session) {
-        console.error('No se pudo obtener la sesión después del login');
-        throw new Error('Error al establecer la sesión');
+      if (!authData.user) {
+        console.error('No se recibió usuario en la respuesta de autenticación');
+        throw new Error('Error al obtener la información del usuario');
       }
 
-      // Verificar el estado del usuario en la base de datos
-      const { data: userData, error: userError } = await supabase
+      // Si la autenticación fue exitosa, verificar el estado del usuario
+      console.log('Autenticación exitosa, verificando estado del usuario...');
+      const { data: directUser, error: directError } = await supabase
         .from('users')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('id', authData.user.id)
         .single();
 
-      if (userError) {
-        console.error('Error al verificar usuario:', userError);
-        throw new Error('Error al verificar el estado del usuario');
+      console.log('Resultado de búsqueda en tabla users:', { 
+        usuario: directUser,
+        error: directError,
+        query: `SELECT * FROM users WHERE id = '${authData.user.id}'`
+      });
+
+      if (directError) {
+        console.error('Error detallado al buscar usuario:', {
+          code: directError.code,
+          message: directError.message,
+          details: directError.details,
+          hint: directError.hint
+        });
+        throw new Error('Error al verificar el estado del usuario. Por favor, contacta al administrador.');
       }
 
-      if (!userData) {
-        console.error('Usuario no encontrado en la base de datos');
-        throw new Error('Usuario no encontrado en la base de datos');
+      if (!directUser) {
+        console.error('Usuario no encontrado en tabla users después de autenticación exitosa');
+        throw new Error('Error: Usuario autenticado pero no encontrado en la base de datos. Por favor, contacta al administrador.');
       }
 
       console.log('Estado del usuario:', {
-        id: userData.id,
-        email: userData.email,
-        status: userData.status,
-        role: userData.role
+        id: directUser.id,
+        email: directUser.email,
+        status: directUser.status,
+        role: directUser.role,
+        email_confirmed_at: directUser.email_confirmed_at,
+        requires_password_change: directUser.requires_password_change
       });
 
-      // Verificar el estado del usuario
-      if (userData.status !== 'active') {
-        if (userData.status === 'pending') {
-          throw new Error('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
-        }
-        if (userData.status === 'inactive') {
-          throw new Error('Tu cuenta está inactiva. Por favor, contacta al administrador.');
-        }
-        throw new Error('Estado de usuario no válido');
+      // Primero verificar el estado del usuario
+      if (directUser.status === 'pending') {
+        console.log('Usuario en estado pending');
+        setError('Tu cuenta está pendiente de activación. Por favor, revisa tu correo electrónico para confirmar tu cuenta.');
+        return;
       }
 
-      // Si todo está bien, navegar al dashboard
-      console.log('Login exitoso, redirigiendo al dashboard');
-      navigate('/admin/dashboard');
-    } catch (error: any) {
-      console.error('Error en login:', error);
-      
-      // Manejar errores específicos
-      if (error.message?.includes('Email not confirmed')) {
-        setError('Tu correo electrónico no ha sido confirmado. Por favor, revisa tu bandeja de entrada y confirma tu cuenta.');
-      } else if (error.message?.includes('Invalid login credentials')) {
-        setError('Credenciales inválidas. Por favor, verifica tu correo y contraseña.');
-      } else {
-        setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
+      if (directUser.status === 'inactive') {
+        console.log('Usuario en estado inactive');
+        setError('Tu cuenta está inactiva. Por favor, contacta al administrador.');
+        return;
       }
+
+      // Solo si el usuario está activo, verificar si requiere cambio de contraseña
+      if (directUser.status === 'active') {
+        if (directUser.requires_password_change) {
+          console.log('Usuario activo requiere cambio de contraseña');
+          navigate('/admin/change-password');
+          return;
+        }
+
+        console.log('Login exitoso:', {
+          userId: authData.user.id,
+          email: authData.user.email,
+          status: directUser.status,
+          role: directUser.role,
+          session: authData.session?.access_token ? 'Token presente' : 'Sin token'
+        });
+
+        // Si todo está bien, navegar al dashboard
+        navigate('/admin/dashboard');
+        return;
+      }
+
+      // Si llegamos aquí, hay un estado no manejado
+      throw new Error('Estado de usuario no válido. Por favor, contacta al administrador.');
+    } catch (error: any) {
+      console.error('Error completo en login:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        details: error.details,
+        stack: error.stack
+      });
+      setError(error.message || 'Error al iniciar sesión. Por favor, intenta nuevamente.');
     } finally {
       setLoading(false);
     }
@@ -141,9 +174,41 @@ const Login: React.FC = () => {
 
     setLoading(true);
     try {
+      // Limpiar el email de espacios en blanco
       const cleanEmail = email.trim().toLowerCase();
-      console.log('Reenviando confirmación a:', cleanEmail);
+      console.log('Reenviando confirmación a email limpio:', cleanEmail);
       
+      // Verificar si el usuario existe en la tabla users
+      const { data: users, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', cleanEmail);
+
+      console.log('Verificación de usuario para reenvío:', { 
+        emailBuscado: cleanEmail,
+        usuariosEncontrados: users,
+        error: userError 
+      });
+
+      if (userError) {
+        console.error('Error al verificar usuario para reenvío:', userError);
+        throw new Error('Error al verificar el estado de tu cuenta');
+      }
+
+      if (!users || users.length === 0) {
+        setError('No existe una cuenta con este correo electrónico. Por favor, contacta al administrador para crear una cuenta.');
+        return;
+      }
+
+      const userData = users[0];
+      
+      // Verificar si el usuario ya está activo
+      if (userData.status === 'active') {
+        setError('Tu cuenta ya está activa. Por favor, intenta iniciar sesión.');
+        return;
+      }
+
+      // Intentar reenviar el email de confirmación con opciones específicas
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: cleanEmail,
@@ -161,7 +226,7 @@ const Login: React.FC = () => {
       }
 
       setError('');
-      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. Por favor, revisa tu bandeja de entrada y sigue las instrucciones para activar tu cuenta.');
+      alert('Se ha enviado un nuevo enlace de confirmación a tu correo electrónico. Por favor, revisa tu bandeja de entrada y sigue las instrucciones para activar tu cuenta. El enlace expirará en 24 horas.');
     } catch (error: any) {
       console.error('Error al reenviar confirmación:', error);
       setError(error.message || 'Error al reenviar el enlace de confirmación');
@@ -231,7 +296,6 @@ const Login: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
-              autoComplete="email"
             />
             <TextField
               margin="normal"
@@ -243,7 +307,6 @@ const Login: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
-              autoComplete="current-password"
             />
             <Button
               type="submit"
