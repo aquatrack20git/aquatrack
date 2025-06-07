@@ -25,6 +25,7 @@ import {
   MenuItem,
   TablePagination,
   ButtonGroup,
+  Tooltip,
 } from '@mui/material';
 import { 
   Edit as EditIcon, 
@@ -32,34 +33,30 @@ import {
   Add as AddIcon,
   FileDownload as FileDownloadIcon,
   PictureAsPdf as PdfIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 interface Meter {
-  code_meter: string;
+  id: string;
+  serial_number: string;
   location: string;
-  description: string;
   status: string;
   created_at: string;
-  identification: string | null;
-  email: string | null;
-  contact_number: string | null;
 }
 
 const MetersManagement: React.FC = () => {
+  const { canCreate, canEdit, canDelete, canDownload } = usePermissions();
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filteredMeters, setFilteredMeters] = useState<Meter[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedMeter, setSelectedMeter] = useState<Meter | null>(null);
   const [formData, setFormData] = useState({
-    code_meter: '',
+    serial_number: '',
     location: '',
-    description: '',
     status: 'active',
-    identification: '',
-    email: '',
-    contact_number: '',
   });
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -73,6 +70,7 @@ const MetersManagement: React.FC = () => {
   });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMeters();
@@ -87,10 +85,7 @@ const MetersManagement: React.FC = () => {
       }
 
       const matchesSearch = !searchTerm || 
-        (meter.code_meter && meter.code_meter.toLowerCase().includes(searchTerm)) ||
-        (meter.description && meter.description.toLowerCase().includes(searchTerm)) ||
-        (meter.identification && meter.identification.toLowerCase().includes(searchTerm)) ||
-        (meter.email && meter.email.toLowerCase().includes(searchTerm)) ||
+        (meter.serial_number && meter.serial_number.toLowerCase().includes(searchTerm)) ||
         (meter.location && meter.location.toLowerCase().includes(searchTerm));
       
       const matchesStatus = !filters.status || meter.status === filters.status;
@@ -109,7 +104,7 @@ const MetersManagement: React.FC = () => {
       const { data, error } = await supabase
         .from('meters')
         .select('*')
-        .order('code_meter', { ascending: true });
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching meters:', error);
@@ -129,24 +124,16 @@ const MetersManagement: React.FC = () => {
     if (meter) {
       setSelectedMeter(meter);
       setFormData({
-        code_meter: meter.code_meter,
+        serial_number: meter.serial_number,
         location: meter.location,
-        description: meter.description,
         status: meter.status,
-        identification: meter.identification || '',
-        email: meter.email || '',
-        contact_number: meter.contact_number || '',
       });
     } else {
       setSelectedMeter(null);
       setFormData({
-        code_meter: '',
+        serial_number: '',
         location: '',
-        description: '',
         status: 'active',
-        identification: '',
-        email: '',
-        contact_number: '',
       });
     }
     setOpenDialog(true);
@@ -173,13 +160,9 @@ const MetersManagement: React.FC = () => {
           .from('meters')
           .update({
             location: formData.location,
-            description: formData.description,
             status: formData.status,
-            identification: formData.identification,
-            email: formData.email,
-            contact_number: formData.contact_number,
           })
-          .eq('code_meter', selectedMeter.code_meter);
+          .eq('id', selectedMeter.id);
 
         if (error) throw error;
         showSnackbar('Medidor actualizado exitosamente');
@@ -188,13 +171,9 @@ const MetersManagement: React.FC = () => {
         const { error } = await supabase
           .from('meters')
           .insert([{
-            code_meter: formData.code_meter,
+            serial_number: formData.serial_number,
             location: formData.location,
-            description: formData.description,
             status: formData.status,
-            identification: formData.identification,
-            email: formData.email,
-            contact_number: formData.contact_number,
             created_at: new Date().toISOString(),
           }]);
 
@@ -210,13 +189,13 @@ const MetersManagement: React.FC = () => {
     }
   };
 
-  const handleDelete = async (code_meter: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('¿Está seguro de eliminar este medidor?')) {
       try {
         const { error } = await supabase
           .from('meters')
           .delete()
-          .eq('code_meter', code_meter);
+          .eq('id', id);
 
         if (error) throw error;
         showSnackbar('Medidor eliminado exitosamente');
@@ -248,13 +227,9 @@ const MetersManagement: React.FC = () => {
   const exportToExcel = () => {
     // Preparar los datos para exportar
     const exportData = filteredMeters.map(meter => ({
-      'Código': meter.code_meter,
-      'Apellidos y Nombres': meter.description,
-      'Identificación': meter.identification || '-',
-      'Correo': meter.email || '-',
-      'Contacto': meter.contact_number || '-',
+      'Número de Serie': meter.serial_number,
       'Ubicación': meter.location,
-      'Estado': meter.status,
+      'Estado': meter.status === 'active' ? 'Activo' : 'Inactivo',
       'Fecha de Creación': new Date(meter.created_at).toLocaleDateString(),
     }));
 
@@ -265,11 +240,7 @@ const MetersManagement: React.FC = () => {
 
     // Ajustar el ancho de las columnas
     const wscols = [
-      { wch: 15 }, // Código
-      { wch: 40 }, // Apellidos y Nombres
-      { wch: 20 }, // Identificación
-      { wch: 30 }, // Correo
-      { wch: 15 }, // Contacto
+      { wch: 20 }, // Número de Serie
       { wch: 40 }, // Ubicación
       { wch: 15 }, // Estado
       { wch: 20 }, // Fecha de Creación
@@ -317,11 +288,7 @@ const MetersManagement: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Código</th>
-                <th>Apellidos y Nombres</th>
-                <th>Identificación</th>
-                <th>Correo</th>
-                <th>Contacto</th>
+                <th>Número de Serie</th>
                 <th>Ubicación</th>
                 <th>Estado</th>
                 <th>Fecha de Creación</th>
@@ -330,13 +297,9 @@ const MetersManagement: React.FC = () => {
             <tbody>
               ${filteredMeters.map(meter => `
                 <tr>
-                  <td>${meter.code_meter}</td>
-                  <td>${meter.description}</td>
-                  <td>${meter.identification || '-'}</td>
-                  <td>${meter.email || '-'}</td>
-                  <td>${meter.contact_number || '-'}</td>
+                  <td>${meter.serial_number}</td>
                   <td>${meter.location}</td>
-                  <td>${meter.status}</td>
+                  <td>${meter.status === 'active' ? 'Activo' : 'Inactivo'}</td>
                   <td>${new Date(meter.created_at).toLocaleDateString()}</td>
                 </tr>
               `).join('')}
@@ -359,6 +322,45 @@ const MetersManagement: React.FC = () => {
     printWindow.document.close();
   };
 
+  const handleDownload = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('meters')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Convertir datos a CSV
+      const headers = ['ID', 'Número de Serie', 'Ubicación', 'Estado', 'Fecha de Creación'];
+      const csvData = data.map(meter => [
+        meter.id,
+        meter.serial_number,
+        meter.location,
+        meter.status === 'active' ? 'Activo' : 'Inactivo',
+        new Date(meter.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.join(','))
+      ].join('\n');
+
+      // Crear y descargar archivo
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `medidores_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
+      console.error('Error al descargar medidores:', error);
+      setError(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
@@ -372,29 +374,22 @@ const MetersManagement: React.FC = () => {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Gestión de Medidores</Typography>
         <Box display="flex" gap={2}>
-          <ButtonGroup variant="outlined">
+          {canDownload && (
+            <Tooltip title="Descargar medidores">
+              <IconButton onClick={handleDownload} color="primary">
+                <DownloadIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {canCreate && (
             <Button
-              startIcon={<FileDownloadIcon />}
-              onClick={exportToExcel}
-              title="Exportar a Excel"
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
             >
-              Excel
+              Nuevo Medidor
             </Button>
-            <Button
-              startIcon={<PdfIcon />}
-              onClick={exportToPDF}
-              title="Exportar a PDF"
-            >
-              PDF
-            </Button>
-          </ButtonGroup>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-          >
-            Nuevo Medidor
-          </Button>
+          )}
         </Box>
       </Box>
 
@@ -407,7 +402,7 @@ const MetersManagement: React.FC = () => {
               const value = e.target.value;
               setFilters(prev => ({ ...prev, search: value }));
             }}
-            placeholder="Buscar por código, nombres, identificación, etc."
+            placeholder="Buscar por número de serie o ubicación"
             sx={{ minWidth: 300 }}
             InputProps={{
               autoComplete: 'off',
@@ -426,7 +421,6 @@ const MetersManagement: React.FC = () => {
               <MenuItem value="">Todos</MenuItem>
               <MenuItem value="active">Activo</MenuItem>
               <MenuItem value="inactive">Inactivo</MenuItem>
-              <MenuItem value="maintenance">En Mantenimiento</MenuItem>
             </Select>
           </FormControl>
           <Button
@@ -458,44 +452,48 @@ const MetersManagement: React.FC = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Código</TableCell>
-                <TableCell>Apellidos y Nombres</TableCell>
-                <TableCell>Identificación</TableCell>
-                <TableCell>Correo</TableCell>
-                <TableCell>Contacto</TableCell>
+                <TableCell>Número de Serie</TableCell>
                 <TableCell>Ubicación</TableCell>
                 <TableCell>Estado</TableCell>
                 <TableCell>Fecha de Creación</TableCell>
-                <TableCell>Acciones</TableCell>
+                {(canEdit || canDelete) && <TableCell>Acciones</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredMeters
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((meter) => (
-                  <TableRow key={meter.code_meter}>
-                    <TableCell>{meter.code_meter}</TableCell>
-                    <TableCell>{meter.description}</TableCell>
-                    <TableCell>{meter.identification || '-'}</TableCell>
-                    <TableCell>{meter.email || '-'}</TableCell>
-                    <TableCell>{meter.contact_number || '-'}</TableCell>
+                  <TableRow key={meter.id}>
+                    <TableCell>{meter.serial_number}</TableCell>
                     <TableCell>{meter.location}</TableCell>
-                    <TableCell>{meter.status}</TableCell>
+                    <TableCell>{meter.status === 'active' ? 'Activo' : 'Inactivo'}</TableCell>
                     <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <IconButton
-                        color="primary"
-                        onClick={() => handleOpenDialog(meter)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        onClick={() => handleDelete(meter.code_meter)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
+                    {(canEdit || canDelete) && (
+                      <TableCell>
+                        {canEdit && (
+                          <Tooltip title="Editar medidor">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenDialog(meter)}
+                              color="primary"
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {canDelete && (
+                          <Tooltip title="Eliminar medidor">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDelete(meter.id)}
+                              color="error"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
             </TableBody>
@@ -521,9 +519,9 @@ const MetersManagement: React.FC = () => {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
             <TextField
-              name="code_meter"
-              label="Código del Medidor"
-              value={formData.code_meter}
+              name="serial_number"
+              label="Número de Serie"
+              value={formData.serial_number}
               onChange={handleInputChange}
               fullWidth
               required
@@ -538,40 +536,6 @@ const MetersManagement: React.FC = () => {
               required
             />
             <TextField
-              name="description"
-              label="Apellidos y Nombres"
-              value={formData.description}
-              onChange={handleInputChange}
-              fullWidth
-              multiline
-              rows={3}
-            />
-            <TextField
-              name="identification"
-              label="Identificación (DNI/RUC)"
-              value={formData.identification}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
-              name="email"
-              label="Correo Electrónico"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 255 }}
-            />
-            <TextField
-              name="contact_number"
-              label="Número de Contacto"
-              value={formData.contact_number}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
               name="status"
               label="Estado"
               value={formData.status}
@@ -583,7 +547,6 @@ const MetersManagement: React.FC = () => {
             >
               <option value="active">Activo</option>
               <option value="inactive">Inactivo</option>
-              <option value="maintenance">En Mantenimiento</option>
             </TextField>
           </Box>
         </DialogContent>

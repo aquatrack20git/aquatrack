@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tooltip,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import { 
@@ -34,6 +35,7 @@ import {
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 interface Comment {
   id: number;
@@ -53,6 +55,7 @@ interface Meter {
 
 const CommentsReport: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const { canDownload } = usePermissions();
   const [comments, setComments] = useState<Comment[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filters, setFilters] = useState({
@@ -71,6 +74,7 @@ const CommentsReport: React.FC = () => {
   const [formData, setFormData] = useState({
     notes: '',
   });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMeters();
@@ -119,7 +123,7 @@ const CommentsReport: React.FC = () => {
       setComments(data || []);
     } catch (error: any) {
       console.error('Error fetching comments:', error);
-      showSnackbar(error.message || 'Error al cargar los comentarios', 'error');
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -233,6 +237,48 @@ const CommentsReport: React.FC = () => {
     XLSX.writeFile(wb, 'comentarios.xlsx');
   };
 
+  const handleDownload = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          meter:meters(serial_number, location)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Convertir datos a CSV
+      const headers = ['ID', 'Medidor', 'Ubicación', 'Comentario', 'Fecha de Registro'];
+      const csvData = data.map(comment => [
+        comment.id,
+        comment.meter?.serial_number || 'N/A',
+        comment.meter?.location || 'N/A',
+        comment.notes,
+        new Date(comment.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.join(','))
+      ].join('\n');
+
+      // Crear y descargar archivo
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `comentarios_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
+      console.error('Error al descargar comentarios:', error);
+      setError(error.message);
+    }
+  };
+
   const showSnackbar = (message: string, severity: 'success' | 'error' = 'success') => {
     setSnackbar({
       open: true,
@@ -253,13 +299,13 @@ const CommentsReport: React.FC = () => {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Reporte de Comentarios</Typography>
-        <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          onClick={handleExport}
-        >
-          Exportar a Excel
-        </Button>
+        {canDownload && (
+          <Tooltip title="Descargar comentarios">
+            <IconButton onClick={handleDownload} color="primary">
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -320,32 +366,46 @@ const CommentsReport: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {comments.map((comment) => (
-              <TableRow key={comment.id}>
-                <TableCell>{comment.id}</TableCell>
-                <TableCell>{comment.meter.code_meter}</TableCell>
-                <TableCell>{comment.meter.location}</TableCell>
-                <TableCell>{comment.notes}</TableCell>
-                <TableCell>{new Date(comment.created_at).toLocaleDateString()}</TableCell>
-                <TableCell>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleOpenDialog(comment)}
-                    disabled={!isAuthenticated}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => handleDelete(comment.id)}
-                    disabled={!isAuthenticated}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={4} align="center">
+                  <CircularProgress />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : comments.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} align="center">
+                  No hay comentarios registrados
+                </TableCell>
+              </TableRow>
+            ) : (
+              comments.map((comment) => (
+                <TableRow key={comment.id}>
+                  <TableCell>{comment.id}</TableCell>
+                  <TableCell>{comment.meter.code_meter}</TableCell>
+                  <TableCell>{comment.meter.location}</TableCell>
+                  <TableCell>{comment.notes}</TableCell>
+                  <TableCell>{new Date(comment.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleOpenDialog(comment)}
+                      disabled={!isAuthenticated}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => handleDelete(comment.id)}
+                      disabled={!isAuthenticated}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </TableContainer>

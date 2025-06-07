@@ -16,6 +16,7 @@ import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
 import ChangePassword from './pages/admin/ChangePassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { PermissionsProvider } from './contexts/PermissionsContext';
 import Readings from './pages/Readings';
 import VerifyEmail from './pages/admin/VerifyEmail';
 
@@ -153,17 +154,19 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <Routes>
-          {/* Rutas públicas */}
-          <Route path="/" element={<Home />} />
-          <Route path="/readings" element={<Readings />} />
-          
-          {/* Rutas de administración */}
-          <Route path="/admin/*" element={<AdminRoutes />} />
+        <PermissionsProvider>
+          <Routes>
+            {/* Rutas públicas */}
+            <Route path="/" element={<Home />} />
+            <Route path="/readings" element={<Readings />} />
+            
+            {/* Rutas de administración */}
+            <Route path="/admin/*" element={<AdminRoutes />} />
 
-          {/* Ruta 404 */}
-          <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
-        </Routes>
+            {/* Ruta 404 */}
+            <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
+          </Routes>
+        </PermissionsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

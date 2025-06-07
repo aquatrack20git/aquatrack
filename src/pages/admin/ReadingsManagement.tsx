@@ -19,6 +19,7 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
+  Tooltip,
   FormControl,
   InputLabel,
   Select,
@@ -34,23 +35,23 @@ import {
   FileDownload as FileDownloadIcon,
   Assessment as AssessmentIcon,
   PictureAsPdf as PdfIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 interface Reading {
-  id: number;
+  id: string;
   meter_id: string;
+  reading_date: string;
   value: number;
-  period: string;
-  photo_url: string;
+  status: string;
   created_at: string;
-  meter: {
-    code_meter: string;
+  meter?: {
+    serial_number: string;
     location: string;
   };
-  previous_reading?: number;
-  consumption?: number;
 }
 
 interface Meter {
@@ -59,6 +60,7 @@ interface Meter {
 }
 
 const ReadingsManagement: React.FC = () => {
+  const { canCreate, canEdit, canDelete, canDownload } = usePermissions();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [filteredReadings, setFilteredReadings] = useState<Reading[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
@@ -67,9 +69,9 @@ const ReadingsManagement: React.FC = () => {
   const [editingReading, setEditingReading] = useState<Reading | null>(null);
   const [formData, setFormData] = useState({
     meter_id: '',
+    reading_date: new Date().toISOString().split('T')[0],
     value: '',
-    period: '',
-    photo_url: '',
+    status: 'pending',
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,9 +124,9 @@ const ReadingsManagement: React.FC = () => {
       setEditingReading(null);
       setFormData({
         meter_id: '',
+        reading_date: new Date().toISOString().split('T')[0],
         value: '',
-        period: '',
-        photo_url: '',
+        status: 'pending',
       });
       setError(null);
       setSelectedImage(null);
@@ -197,81 +199,11 @@ const ReadingsManagement: React.FC = () => {
           *,
           meter:meters(code_meter, location)
         `)
-        .order('id', { ascending: false });
+        .order('reading_date', { ascending: false });
 
       if (error) throw error;
-
-      // Mapeo de nombres de meses a números
-      const meses: Record<string, number> = {
-        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
-        'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
-      };
-
-      // Mapeo de números a nombres de meses
-      const mesesNombres: Record<number, string> = {
-        1: 'ENERO', 2: 'FEBRERO', 3: 'MARZO', 4: 'ABRIL', 5: 'MAYO', 6: 'JUNIO',
-        7: 'JULIO', 8: 'AGOSTO', 9: 'SEPTIEMBRE', 10: 'OCTUBRE', 11: 'NOVIEMBRE', 12: 'DICIEMBRE'
-      };
-
-      // Procesar los datos para agregar la lectura del mes anterior
-      const processedData = data?.map((reading) => {
-        // Obtener todas las lecturas del mismo medidor ordenadas por periodo
-        const lecturasDelMedidor = data
-          .filter(r => r.meter_id === reading.meter_id)
-          .sort((a, b) => {
-            const [mesA, añoA] = a.period.split(' ');
-            const [mesB, añoB] = b.period.split(' ');
-            const numMesA = meses[mesA];
-            const numMesB = meses[mesB];
-            const numAñoA = parseInt(añoA);
-            const numAñoB = parseInt(añoB);
-            
-            // Primero comparar por año
-            if (numAñoA !== numAñoB) {
-              return numAñoB - numAñoA; // Años más recientes primero
-            }
-            // Si es el mismo año, comparar por mes
-            return numMesB - numMesA; // Meses más recientes primero
-          });
-
-        // Encontrar la lectura anterior (la siguiente en la lista ordenada)
-        const currentIndex = lecturasDelMedidor.findIndex(r => r.period === reading.period);
-        const previousReading = currentIndex < lecturasDelMedidor.length - 1 ? lecturasDelMedidor[currentIndex + 1] : null;
-
-        // Calcular el consumo
-        let consumption = null;
-        if (previousReading && typeof reading.value === 'number' && typeof previousReading.value === 'number') {
-          consumption = reading.value - previousReading.value;
-        }
-
-        return {
-          ...reading,
-          previous_reading: previousReading?.value,
-          consumption
-        };
-      }) || [];
-
-      // Ordenar todas las lecturas por periodo
-      const sortedData = processedData.sort((a, b) => {
-        const [mesA, añoA] = a.period.split(' ');
-        const [mesB, añoB] = b.period.split(' ');
-        const numMesA = meses[mesA];
-        const numMesB = meses[mesB];
-        const numAñoA = parseInt(añoA);
-        const numAñoB = parseInt(añoB);
-        
-        // Primero comparar por año
-        if (numAñoA !== numAñoB) {
-          return numAñoB - numAñoA; // Años más recientes primero
-        }
-        // Si es el mismo año, comparar por mes
-        return numMesB - numMesA; // Meses más recientes primero
-      });
-
-      console.log('Periodos disponibles:', [...new Set(sortedData.map(r => r.period))]);
-
-      setReadings(sortedData);
-      setFilteredReadings(sortedData);
+      setReadings(data || []);
+      setFilteredReadings(data || []);
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -284,17 +216,17 @@ const ReadingsManagement: React.FC = () => {
       setEditingReading(reading);
       setFormData({
         meter_id: reading.meter_id,
+        reading_date: reading.reading_date.split('T')[0],
         value: reading.value.toString(),
-        period: reading.period,
-        photo_url: reading.photo_url,
+        status: reading.status,
       });
     } else {
       setEditingReading(null);
       setFormData({
         meter_id: '',
+        reading_date: new Date().toISOString().split('T')[0],
         value: '',
-        period: '',
-        photo_url: '',
+        status: 'pending',
       });
     }
     setOpen(true);
@@ -305,9 +237,9 @@ const ReadingsManagement: React.FC = () => {
     setEditingReading(null);
     setFormData({
       meter_id: '',
+      reading_date: new Date().toISOString().split('T')[0],
       value: '',
-      period: '',
-      photo_url: '',
+      status: 'pending',
     });
   };
 
@@ -319,9 +251,9 @@ const ReadingsManagement: React.FC = () => {
           .from('readings')
           .update({
             meter_id: formData.meter_id,
+            reading_date: formData.reading_date,
             value: parseFloat(formData.value),
-            period: formData.period,
-            photo_url: formData.photo_url,
+            status: formData.status,
           })
           .eq('id', editingReading.id);
 
@@ -332,24 +264,25 @@ const ReadingsManagement: React.FC = () => {
           .from('readings')
           .insert([{
             meter_id: formData.meter_id,
+            reading_date: formData.reading_date,
             value: parseFloat(formData.value),
-            period: formData.period,
-            photo_url: formData.photo_url,
-            created_at: new Date().toISOString()
+            status: formData.status,
+            created_at: new Date().toISOString(),
           }]);
 
         if (error) throw error;
-        showSnackbar('Lectura creada exitosamente');
+        showSnackbar('Lectura registrada exitosamente');
       }
       handleClose();
       fetchReadings();
     } catch (error: any) {
-      showSnackbar(error.message || 'Error al guardar la lectura', 'error');
+      console.error('Error saving reading:', error);
+      setError(error.message);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar esta lectura?')) {
+  const handleDelete = async (id: string) => {
+    if (window.confirm('¿Está seguro de eliminar esta lectura?')) {
       try {
         const { error } = await supabase
           .from('readings')
@@ -360,8 +293,53 @@ const ReadingsManagement: React.FC = () => {
         showSnackbar('Lectura eliminada exitosamente');
         fetchReadings();
       } catch (error: any) {
-        showSnackbar(error.message || 'Error al eliminar la lectura', 'error');
+        console.error('Error deleting reading:', error);
+        setError(error.message);
       }
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('readings')
+        .select(`
+          *,
+          meter:meters(serial_number, location)
+        `)
+        .order('reading_date', { ascending: false });
+
+      if (error) throw error;
+
+      // Convertir datos a CSV
+      const headers = ['ID', 'Medidor', 'Ubicación', 'Fecha', 'Valor', 'Estado', 'Fecha de Registro'];
+      const csvData = data.map(reading => [
+        reading.id,
+        reading.meter?.serial_number || 'N/A',
+        reading.meter?.location || 'N/A',
+        new Date(reading.reading_date).toLocaleDateString(),
+        reading.value,
+        reading.status === 'approved' ? 'Aprobado' : 'Pendiente',
+        new Date(reading.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.join(','))
+      ].join('\n');
+
+      // Crear y descargar archivo
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `lecturas_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
+      console.error('Error al descargar lecturas:', error);
+      setError(error.message);
     }
   };
 
@@ -613,9 +591,18 @@ const ReadingsManagement: React.FC = () => {
           >
             Reporte de Consumo
           </Button>
-          <Button variant="contained" onClick={() => handleOpen()}>
-            Nueva Lectura
-          </Button>
+          {canDownload && (
+            <Tooltip title="Descargar lecturas">
+              <IconButton onClick={handleDownload} color="primary">
+                <DownloadIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {canCreate && (
+            <Button variant="contained" onClick={() => handleOpen()}>
+              Nueva Lectura
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -707,12 +694,32 @@ const ReadingsManagement: React.FC = () => {
                     {new Date(reading.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <IconButton onClick={() => handleOpen(reading)} color="primary">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(reading.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
+                    {(canEdit || canDelete) && (
+                      <>
+                        {canEdit && (
+                          <Tooltip title="Editar lectura">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpen(reading)}
+                              color="primary"
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {canDelete && (
+                          <Tooltip title="Eliminar lectura">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDelete(reading.id)}
+                              color="error"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -755,6 +762,16 @@ const ReadingsManagement: React.FC = () => {
             </FormControl>
             <TextField
               fullWidth
+              label="Fecha de Lectura"
+              type="date"
+              value={formData.reading_date}
+              onChange={(e) => setFormData({ ...formData, reading_date: e.target.value })}
+              margin="normal"
+              required
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              fullWidth
               label="Valor"
               type="number"
               value={formData.value}
@@ -763,26 +780,23 @@ const ReadingsManagement: React.FC = () => {
               required
               inputProps={{ step: "0.01" }}
             />
-            <TextField
-              fullWidth
-              label="Período"
-              value={formData.period}
-              onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-              margin="normal"
-              required
-            />
-            <TextField
-              fullWidth
-              label="URL de la Foto"
-              value={formData.photo_url}
-              onChange={(e) => setFormData({ ...formData, photo_url: e.target.value })}
-              margin="normal"
-            />
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Estado</InputLabel>
+              <Select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                label="Estado"
+                required
+              >
+                <MenuItem value="pending">Pendiente</MenuItem>
+                <MenuItem value="approved">Aprobado</MenuItem>
+              </Select>
+            </FormControl>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained">
-              {editingReading ? 'Actualizar' : 'Crear'}
+            <Button type="submit" variant="contained" color="primary">
+              {editingReading ? 'Actualizar' : 'Guardar'}
             </Button>
           </DialogActions>
         </form>

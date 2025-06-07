@@ -23,9 +23,11 @@ import {
   Select,
   MenuItem,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { v4 as uuidv4 } from 'uuid';
 
 interface User {
@@ -38,6 +40,7 @@ interface User {
 }
 
 const UsersManagement: React.FC = () => {
+  const { canCreate, canEdit, canDelete, canDownload } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -236,6 +239,46 @@ const UsersManagement: React.FC = () => {
     }
   };
 
+  const handleDownload = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Convertir datos a CSV
+      const headers = ['ID', 'Email', 'Nombre Completo', 'Rol', 'Estado', 'Fecha de Creación'];
+      const csvData = data.map(user => [
+        user.id,
+        user.email,
+        user.full_name,
+        user.role === 'admin' ? 'Administrador' : 'Usuario',
+        user.status === 'active' ? 'Activo' : 'Inactivo',
+        new Date(user.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.join(','))
+      ].join('\n');
+
+      // Crear y descargar archivo
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `usuarios_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
+      console.error('Error al descargar usuarios:', error);
+      setError(error.message);
+    }
+  };
+
   const showSnackbar = (message: string, severity: 'success' | 'error' = 'success') => {
     setSnackbar({
       open: true,
@@ -254,11 +297,29 @@ const UsersManagement: React.FC = () => {
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Gestión de Usuarios</Typography>
-        <Button variant="contained" onClick={() => handleOpen()}>
-          Nuevo Usuario
-        </Button>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="h5" component="h1">
+          Gestión de Usuarios
+        </Typography>
+        <Box>
+          {canDownload && (
+            <Tooltip title="Descargar usuarios">
+              <IconButton onClick={handleDownload} color="primary">
+                <DownloadIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {canCreate && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpen()}
+              sx={{ ml: 1 }}
+            >
+              Nuevo Usuario
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {error && (
@@ -276,29 +337,61 @@ const UsersManagement: React.FC = () => {
               <TableCell>Rol</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Fecha de Creación</TableCell>
-              <TableCell>Acciones</TableCell>
+              {(canEdit || canDelete) && <TableCell>Acciones</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.full_name}</TableCell>
-                <TableCell>{user.role}</TableCell>
-                <TableCell>{user.status}</TableCell>
-                <TableCell>
-                  {new Date(user.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <IconButton onClick={() => handleOpen(user)} color="primary">
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(user.id)} color="error">
-                    <DeleteIcon />
-                  </IconButton>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  <CircularProgress />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  No hay usuarios registrados
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>{user.full_name}</TableCell>
+                  <TableCell>{user.role === 'admin' ? 'Administrador' : 'Usuario'}</TableCell>
+                  <TableCell>{user.status === 'active' ? 'Activo' : 'Inactivo'}</TableCell>
+                  <TableCell>
+                    {new Date(user.created_at).toLocaleString()}
+                  </TableCell>
+                  {(canEdit || canDelete) && (
+                    <TableCell>
+                      {canEdit && (
+                        <Tooltip title="Editar usuario">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpen(user)}
+                            color="primary"
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {canDelete && (
+                        <Tooltip title="Eliminar usuario">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDelete(user.id)}
+                            color="error"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </TableContainer>
