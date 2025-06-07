@@ -16,8 +16,8 @@ const VerifyEmail: React.FC = () => {
     
     console.log('Parámetros de verificación:', { email: emailParam, code: codeParam });
 
-    if (!emailParam) {
-      setError('No se encontró el email en el enlace de verificación.');
+    if (!emailParam || !codeParam) {
+      setError('Faltan parámetros necesarios en el enlace de verificación.');
       setVerifying(false);
       return;
     }
@@ -27,16 +27,20 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
-        // Primero verificar si el usuario existe en auth.users
-        console.log('Verificando usuario en auth.users...');
-        const { data: authUser, error: authError } = await supabase.auth.getUser();
-        
-        if (authError) {
-          console.error('Error al verificar usuario en auth:', authError);
-          throw new Error('Error al verificar la autenticación del usuario');
+        // Verificar el email usando el código
+        console.log('Verificando email con código...');
+        const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+          email: decodedEmail,
+          token: codeParam,
+          type: 'email'
+        });
+
+        if (verifyError) {
+          console.error('Error al verificar email:', verifyError);
+          throw new Error('Error al verificar el email. El código puede haber expirado.');
         }
 
-        console.log('Usuario en auth:', authUser);
+        console.log('Email verificado en auth:', verifyData);
 
         // Buscar el usuario en la tabla public.users
         console.log('Buscando usuario en public.users...');
@@ -53,18 +57,18 @@ const VerifyEmail: React.FC = () => {
           throw new Error('Error al verificar el estado del usuario');
         }
 
-        // Si no existe en public.users pero existe en auth.users, intentar crearlo
-        if (!users && authUser?.user) {
-          console.log('Usuario no encontrado en public.users pero existe en auth.users, intentando crear...');
+        // Si no existe en public.users pero la verificación fue exitosa, intentar crearlo
+        if (!users && verifyData?.user) {
+          console.log('Usuario no encontrado en public.users pero verificación exitosa, intentando crear...');
           
           const { error: insertError } = await supabase
             .from('users')
             .insert([
               {
-                id: authUser.user.id,
+                id: verifyData.user.id,
                 email: decodedEmail,
-                full_name: authUser.user.user_metadata?.full_name || 'Usuario',
-                role: authUser.user.user_metadata?.role || 'user',
+                full_name: verifyData.user.user_metadata?.full_name || 'Usuario',
+                role: verifyData.user.user_metadata?.role || 'user',
                 status: 'pending',
               },
             ]);
@@ -84,7 +88,7 @@ const VerifyEmail: React.FC = () => {
               email_confirmed_at: new Date().toISOString(),
               requires_password_change: true
             })
-            .eq('id', authUser.user.id);
+            .eq('id', verifyData.user.id);
 
           if (updateError) {
             console.error('Error al actualizar estado del usuario:', updateError);
