@@ -135,7 +135,7 @@ const AdminRoutes = () => {
   );
 };
 
-const App = () => {
+function App() {
   const isMobile = useMediaQuery('(max-width:600px)');
   
   useEffect(() => {
@@ -154,13 +154,19 @@ const App = () => {
       <CssBaseline />
       <AuthProvider>
         <Routes>
+          {/* Rutas públicas */}
           <Route path="/" element={<Home />} />
           <Route path="/readings" element={<Readings />} />
+          
+          {/* Rutas de administración */}
           <Route path="/admin/*" element={<AdminRoutes />} />
+
+          {/* Ruta 404 */}
+          <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
         </Routes>
       </AuthProvider>
     </ThemeProvider>
   );
-};
+}
 
 export default App;

@@ -169,31 +169,69 @@ const UsersManagement: React.FC = () => {
           throw new Error('No se pudo crear el usuario');
         }
 
-        showSnackbar('Usuario creado exitosamente');
-      }
+        // Crear el registro en la tabla de usuarios
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert([
+            {
+            id: authData.user.id,
+            email: formData.email,
+            full_name: formData.full_name,
+            role: formData.role,
+              status: 'pending', // El usuario estará pendiente hasta que verifique su email
+            },
+          ]);
 
+        if (insertError) {
+          console.error('Error al crear usuario en la tabla:', insertError);
+          throw new Error(`Error al crear usuario en la base de datos: ${insertError.message}`);
+        }
+
+        showSnackbar('Usuario creado exitosamente. Se ha enviado un correo de verificación.');
       handleClose();
       fetchUsers();
+      }
     } catch (error: any) {
-      console.error('Error saving user:', error);
-      setError(error.message);
+      console.error('Error completo en handleSubmit:', error);
+      showSnackbar(error.message || 'Error al guardar el usuario', 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('¿Está seguro de eliminar este usuario?')) {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
+        // Primero eliminar el usuario de la tabla users
         const { error } = await supabase
           .from('users')
           .delete()
           .eq('id', id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error al eliminar usuario de la tabla users:', error);
+          throw new Error('Error al eliminar el usuario de la base de datos');
+        }
+
+        // Luego eliminar el usuario de auth.users usando la API pública
+        const { error: authError } = await supabase.rpc('delete_user', { user_id: id });
+        
+        if (authError) {
+          console.error('Error al eliminar usuario de auth:', authError);
+          // Si falla la eliminación en auth.users, intentamos restaurar el usuario en la tabla users
+          const { error: restoreError } = await supabase
+            .from('users')
+            .insert([{ id, email: users.find(u => u.id === id)?.email }]);
+          
+          if (restoreError) {
+            console.error('Error al restaurar usuario en la tabla users:', restoreError);
+          }
+          throw new Error('Error al eliminar el usuario del sistema de autenticación');
+        }
+
         showSnackbar('Usuario eliminado exitosamente');
         fetchUsers();
       } catch (error: any) {
         console.error('Error deleting user:', error);
-        setError(error.message);
+        showSnackbar(error.message || 'Error al eliminar el usuario', 'error');
       }
     }
   };
@@ -205,6 +243,14 @@ const UsersManagement: React.FC = () => {
       severity,
     });
   };
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -234,39 +280,25 @@ const UsersManagement: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <CircularProgress />
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.full_name}</TableCell>
+                <TableCell>{user.role}</TableCell>
+                <TableCell>{user.status}</TableCell>
+                <TableCell>
+                  {new Date(user.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell>
+                  <IconButton onClick={() => handleOpen(user)} color="primary">
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleDelete(user.id)} color="error">
+                    <DeleteIcon />
+                  </IconButton>
                 </TableCell>
               </TableRow>
-            ) : users.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  No hay usuarios registrados
-                </TableCell>
-              </TableRow>
-            ) : (
-              users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.full_name}</TableCell>
-                  <TableCell>{user.role === 'admin' ? 'Administrador' : 'Usuario'}</TableCell>
-                  <TableCell>{user.status === 'active' ? 'Activo' : 'Inactivo'}</TableCell>
-                  <TableCell>
-                    {new Date(user.created_at).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleOpen(user)} color="primary">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(user.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
@@ -319,8 +351,8 @@ const UsersManagement: React.FC = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained" color="primary">
-              {editingUser ? 'Actualizar' : 'Guardar'}
+            <Button type="submit" variant="contained">
+              {editingUser ? 'Actualizar' : 'Crear'}
             </Button>
           </DialogActions>
         </form>
