@@ -12,12 +12,11 @@ const VerifyEmail: React.FC = () => {
 
   useEffect(() => {
     const emailParam = searchParams.get('email');
-    const codeParam = searchParams.get('code');
     
-    console.log('Parámetros de verificación:', { email: emailParam, code: codeParam });
+    console.log('Email recibido:', emailParam);
 
-    if (!emailParam || !codeParam) {
-      setError('Faltan parámetros necesarios en el enlace de verificación.');
+    if (!emailParam) {
+      setError('No se encontró el email en el enlace de verificación.');
       setVerifying(false);
       return;
     }
@@ -27,15 +26,15 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
-        // Primero verificar el estado del usuario en la base de datos
-        console.log('Verificando estado del usuario en la base de datos...');
+        // Buscar el usuario en la base de datos
+        console.log('Buscando usuario en la base de datos...');
         const { data: users, error: checkError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
           .eq('email', decodedEmail)
           .maybeSingle();
 
-        console.log('Estado del usuario:', { users, error: checkError });
+        console.log('Resultado de búsqueda:', { users, error: checkError });
 
         if (checkError) {
           console.error('Error al buscar usuario:', checkError);
@@ -53,26 +52,9 @@ const VerifyEmail: React.FC = () => {
           return;
         }
 
-        // Si el usuario está pendiente, proceder con la verificación
+        // Si el usuario está pendiente, activarlo
         if (users.status === 'pending') {
-          console.log('Usuario en estado pendiente, procediendo con verificación...');
-          
-          // Verificar el email usando el código
-          console.log('Verificando email con código...');
-          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-            email: decodedEmail,
-            token: codeParam,
-            type: 'email'
-          });
-
-          if (verifyError) {
-            console.error('Error al verificar email:', verifyError);
-            throw new Error('Error al verificar el email. Por favor, intenta nuevamente.');
-          }
-
-          console.log('Email verificado exitosamente, actualizando estado del usuario...');
-
-          // Actualizar el estado del usuario a activo
+          console.log('Activando usuario pendiente...');
           const { error: updateError } = await supabase
             .from('users')
             .update({
