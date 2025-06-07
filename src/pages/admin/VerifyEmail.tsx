@@ -27,76 +27,19 @@ const VerifyEmail: React.FC = () => {
 
     const activateUser = async () => {
       try {
-        // Verificar el email usando el código
-        console.log('Verificando email con código...');
-        const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-          email: decodedEmail,
-          token: codeParam,
-          type: 'email'
-        });
-
-        if (verifyError) {
-          console.error('Error al verificar email:', verifyError);
-          throw new Error('Error al verificar el email. El código puede haber expirado.');
-        }
-
-        console.log('Email verificado en auth:', verifyData);
-
-        // Buscar el usuario en la tabla public.users
-        console.log('Buscando usuario en public.users...');
+        // Primero verificar el estado del usuario en la base de datos
+        console.log('Verificando estado del usuario en la base de datos...');
         const { data: users, error: checkError } = await supabase
           .from('users')
           .select('id, email, status, email_confirmed_at')
           .eq('email', decodedEmail)
           .maybeSingle();
 
-        console.log('Resultado de búsqueda en public.users:', { users, error: checkError });
+        console.log('Estado del usuario:', { users, error: checkError });
 
         if (checkError) {
           console.error('Error al buscar usuario:', checkError);
           throw new Error('Error al verificar el estado del usuario');
-        }
-
-        // Si no existe en public.users pero la verificación fue exitosa, intentar crearlo
-        if (!users && verifyData?.user) {
-          console.log('Usuario no encontrado en public.users pero verificación exitosa, intentando crear...');
-          
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert([
-              {
-                id: verifyData.user.id,
-                email: decodedEmail,
-                full_name: verifyData.user.user_metadata?.full_name || 'Usuario',
-                role: verifyData.user.user_metadata?.role || 'user',
-                status: 'pending',
-              },
-            ]);
-
-          if (insertError) {
-            console.error('Error al crear usuario en public.users:', insertError);
-            throw new Error('Error al crear el registro del usuario');
-          }
-
-          console.log('Usuario creado exitosamente en public.users');
-          
-          // Actualizar el estado a activo
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({
-              status: 'active',
-              email_confirmed_at: new Date().toISOString(),
-              requires_password_change: true
-            })
-            .eq('id', verifyData.user.id);
-
-          if (updateError) {
-            console.error('Error al actualizar estado del usuario:', updateError);
-            throw new Error('Error al activar la cuenta');
-          }
-
-          setSuccess(true);
-          return;
         }
 
         if (!users) {
@@ -110,9 +53,26 @@ const VerifyEmail: React.FC = () => {
           return;
         }
 
-        // Si el usuario está pendiente, activarlo
+        // Si el usuario está pendiente, proceder con la verificación
         if (users.status === 'pending') {
-          console.log('Activando usuario pendiente...');
+          console.log('Usuario en estado pendiente, procediendo con verificación...');
+          
+          // Verificar el email usando el código
+          console.log('Verificando email con código...');
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            email: decodedEmail,
+            token: codeParam,
+            type: 'email'
+          });
+
+          if (verifyError) {
+            console.error('Error al verificar email:', verifyError);
+            throw new Error('Error al verificar el email. Por favor, intenta nuevamente.');
+          }
+
+          console.log('Email verificado exitosamente, actualizando estado del usuario...');
+
+          // Actualizar el estado del usuario a activo
           const { error: updateError } = await supabase
             .from('users')
             .update({
