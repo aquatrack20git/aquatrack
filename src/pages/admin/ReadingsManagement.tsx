@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -25,6 +26,7 @@ import {
   MenuItem,
   TablePagination,
   ButtonGroup,
+  Grid,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -37,6 +39,8 @@ import {
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 interface Reading {
   id: number;
@@ -59,6 +63,8 @@ interface Meter {
 }
 
 const ReadingsManagement: React.FC = () => {
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const permissions = usePermissions();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [filteredReadings, setFilteredReadings] = useState<Reading[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
@@ -579,12 +585,16 @@ const ReadingsManagement: React.FC = () => {
     document.head.removeChild(style);
   };
 
-  if (loading) {
+  if (authLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
         <CircularProgress />
       </Box>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/admin/login" replace />;
   }
 
   return (
@@ -606,16 +616,15 @@ const ReadingsManagement: React.FC = () => {
               PDF
             </Button>
           </ButtonGroup>
-          <Button
-            variant="outlined"
-            startIcon={<AssessmentIcon />}
-            onClick={exportConsumptionReport}
-          >
-            Reporte de Consumo
-          </Button>
-          <Button variant="contained" onClick={() => handleOpen()}>
-            Nueva Lectura
-          </Button>
+          {permissions.canCreate('readings') && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpen()}
+            >
+              Nueva Lectura
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -625,9 +634,8 @@ const ReadingsManagement: React.FC = () => {
         </Alert>
       )}
 
-      {/* Controles de búsqueda */}
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" gap={2} alignItems="center">
+        <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
           <TextField
             label="Buscar Medidor"
             value={filters.meter_id}
@@ -659,24 +667,20 @@ const ReadingsManagement: React.FC = () => {
         </Box>
       </Paper>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="subtitle1">
-          Total de registros: {filteredReadings.length}
-        </Typography>
-      </Box>
-
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
+              <TableCell>ID</TableCell>
               <TableCell>Medidor</TableCell>
-              <TableCell>Lectura Anterior</TableCell>
-              <TableCell>Lectura Actual</TableCell>
-              <TableCell>Consumo</TableCell>
+              <TableCell>Ubicación</TableCell>
+              <TableCell>Valor</TableCell>
               <TableCell>Período</TableCell>
-              <TableCell>Foto</TableCell>
               <TableCell>Fecha</TableCell>
-              <TableCell>Acciones</TableCell>
+              <TableCell>Foto</TableCell>
+              {(permissions.canEdit('readings') || permissions.canDelete('readings')) && (
+                <TableCell>Acciones</TableCell>
+              )}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -684,42 +688,46 @@ const ReadingsManagement: React.FC = () => {
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((reading) => (
                 <TableRow key={reading.id}>
-                  <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
-                  <TableCell>{reading.previous_reading || '-'}</TableCell>
+                  <TableCell>{reading.id}</TableCell>
+                  <TableCell>{reading.meter?.code_meter}</TableCell>
+                  <TableCell>{reading.meter?.location}</TableCell>
                   <TableCell>{reading.value}</TableCell>
-                  <TableCell>{reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-'}</TableCell>
                   <TableCell>{reading.period}</TableCell>
+                  <TableCell>
+                    {new Date(reading.created_at).toLocaleDateString()}
+                  </TableCell>
                   <TableCell>
                     {reading.photo_url ? (
                       <IconButton
-                        onClick={() => handleImageClick(reading.photo_url)}
+                        onClick={() => window.open(reading.photo_url, '_blank')}
                         color="primary"
                       >
                         <ImageIcon />
                       </IconButton>
                     ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        Sin foto
-                      </Typography>
+                      '-'
                     )}
                   </TableCell>
-                  <TableCell>
-                    {new Date(reading.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleOpen(reading)} color="primary">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(reading.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
+                  {(permissions.canEdit('readings') || permissions.canDelete('readings')) && (
+                    <TableCell>
+                      {permissions.canEdit('readings') && (
+                        <IconButton onClick={() => handleOpen(reading)} color="primary">
+                          <EditIcon />
+                        </IconButton>
+                      )}
+                      {permissions.canDelete('readings') && (
+                        <IconButton onClick={() => handleDelete(reading.id)} color="error">
+                          <DeleteIcon />
+                        </IconButton>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
           </TableBody>
         </Table>
         <TablePagination
-          rowsPerPageOptions={[10, 25, 50, 100, 200]}
+          rowsPerPageOptions={[10, 25, 50, 100]}
           component="div"
           count={filteredReadings.length}
           rowsPerPage={rowsPerPage}
@@ -727,91 +735,93 @@ const ReadingsManagement: React.FC = () => {
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
           labelRowsPerPage="Registros por página"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
         />
       </TableContainer>
 
-      {/* Diálogo para crear/editar lectura */}
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
         <DialogTitle>
           {editingReading ? 'Editar Lectura' : 'Nueva Lectura'}
         </DialogTitle>
         <form onSubmit={handleSubmit}>
           <DialogContent>
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Medidor</InputLabel>
-              <Select
-                value={formData.meter_id}
-                onChange={(e) => setFormData({ ...formData, meter_id: e.target.value })}
-                label="Medidor"
-                required
-              >
-                {meters.map((meter) => (
-                  <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                    {meter.code_meter}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              fullWidth
-              label="Valor"
-              type="number"
-              value={formData.value}
-              onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-              margin="normal"
-              required
-              inputProps={{ step: "0.01" }}
-            />
-            <TextField
-              fullWidth
-              label="Período"
-              value={formData.period}
-              onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-              margin="normal"
-              required
-            />
-            <TextField
-              fullWidth
-              label="URL de la Foto"
-              value={formData.photo_url}
-              onChange={(e) => setFormData({ ...formData, photo_url: e.target.value })}
-              margin="normal"
-            />
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Medidor</InputLabel>
+                  <Select
+                    value={formData.meter_id}
+                    onChange={(e) => setFormData({ ...formData, meter_id: e.target.value })}
+                    label="Medidor"
+                    required
+                  >
+                    {meters.map((meter) => (
+                      <MenuItem key={meter.code_meter} value={meter.code_meter}>
+                        {meter.code_meter} - {meter.location}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Valor"
+                  type="number"
+                  value={formData.value}
+                  onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                  required
+                  inputProps={{ step: "0.01" }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Período"
+                  value={formData.period}
+                  onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                  required
+                  placeholder="Ej: ENERO 2024"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Button
+                  variant="outlined"
+                  component="label"
+                  fullWidth
+                  sx={{ height: '56px' }}
+                >
+                  {formData.photo_url ? 'Cambiar Foto' : 'Subir Foto'}
+                  <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                  />
+                </Button>
+              </Grid>
+              {selectedImage && (
+                <Grid item xs={12}>
+                  <Box
+                    component="img"
+                    src={selectedImage}
+                    alt="Vista previa"
+                    sx={{
+                      maxWidth: '100%',
+                      maxHeight: '200px',
+                      objectFit: 'contain',
+                    }}
+                  />
+                </Grid>
+              )}
+            </Grid>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained">
-              {editingReading ? 'Actualizar' : 'Crear'}
+            <Button type="submit" variant="contained" color="primary">
+              {editingReading ? 'Guardar Cambios' : 'Crear Lectura'}
             </Button>
           </DialogActions>
         </form>
-      </Dialog>
-
-      {/* Diálogo para mostrar la imagen */}
-      <Dialog
-        open={!!selectedImage}
-        onClose={() => setSelectedImage(null)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogContent>
-          {selectedImage && (
-            <img
-              src={selectedImage}
-              alt="Lectura"
-              style={{
-                width: '100%',
-                height: 'auto',
-                maxHeight: '80vh',
-                objectFit: 'contain',
-              }}
-            />
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSelectedImage(null)}>Cerrar</Button>
-        </DialogActions>
       </Dialog>
 
       <Snackbar
