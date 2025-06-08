@@ -24,13 +24,14 @@ const LoadingScreen = () => (
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      width: '100vw',
+      width: '100%',
       position: 'fixed',
       top: 0,
       left: 0,
-      backgroundColor: 'background.default',
+      right: 0,
+      bottom: 0,
+      bgcolor: 'background.default',
       zIndex: 9999,
-      padding: 2,
     }}
   >
     <CircularProgress size={60} thickness={4} />
@@ -48,13 +49,15 @@ const ErrorScreen = ({ message }: { message: string }) => (
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      width: '100vw',
+      width: '100%',
       position: 'fixed',
       top: 0,
       left: 0,
-      backgroundColor: 'background.default',
+      right: 0,
+      bottom: 0,
+      bgcolor: 'background.default',
       zIndex: 9999,
-      padding: 2,
+      p: 2,
     }}
   >
     <Typography variant="h6" color="error" sx={{ mb: 2, textAlign: 'center' }}>
@@ -69,46 +72,11 @@ const ErrorScreen = ({ message }: { message: string }) => (
   </Box>
 );
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
-
-  const login = async (email: string, password: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      console.log('AuthContext - Iniciando login para:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) {
-        console.error('AuthContext - Error en login:', error);
-        throw error;
-      }
-
-      if (!data.session) {
-        console.error('AuthContext - No se recibió sesión después del login');
-        throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
-      }
-
-      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
-      
-      // Actualizar el estado del usuario
-      setUser(data.user);
-      setError(null);
-    } catch (error: any) {
-      console.error('AuthContext - Error completo en login:', error);
-      setUser(null);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     let mounted = true;
@@ -164,12 +132,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('AuthContext - Iniciando login para:', email);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        console.error('AuthContext - Error en login:', error);
+        throw error;
+      }
+
+      if (!data.session) {
+        console.error('AuthContext - No se recibió sesión después del login');
+        throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
+      }
+
+      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
+      setUser(data.user);
+      setError(null);
+    } catch (error: any) {
+      console.error('AuthContext - Error completo en login:', error);
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      setUser(null);
     } catch (error: any) {
+      console.error('AuthContext - Error en logout:', error);
       throw error;
     } finally {
       setLoading(false);
