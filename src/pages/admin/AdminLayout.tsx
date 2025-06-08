@@ -18,6 +18,7 @@ import {
   Menu,
   MenuItem,
   Avatar,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -55,21 +56,29 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const { isAuthenticated, loading: authLoading, user, signOut } = useAuth();
+  const { isAuthenticated, loading: authLoading, user, logout } = useAuth();
   const { isAdmin } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Mostrar pantalla de carga mientras se verifica la autenticación
   if (authLoading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <Typography>Cargando...</Typography>
+      <Box 
+        display="flex" 
+        justifyContent="center" 
+        alignItems="center" 
+        minHeight="100vh"
+        bgcolor="background.default"
+      >
+        <CircularProgress />
       </Box>
     );
   }
 
+  // Redirigir a login si no está autenticado
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
   const handleDrawerToggle = () => {
@@ -86,7 +95,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      await logout();
       navigate('/admin/login');
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
@@ -94,7 +103,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const drawer = (
-    <Box>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: [1] }}>
         <Typography variant="h6" noWrap component="div">
           AquaTrack
@@ -106,7 +115,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         )}
       </Toolbar>
       <Divider />
-      <List>
+      <List sx={{ flexGrow: 1 }}>
         {menuItems.map((item) => {
           // Mostrar el ítem si no requiere admin o si el usuario es admin
           if (!item.requiresAdmin || isAdmin) {
@@ -134,12 +143,13 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar
         position="fixed"
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
+          zIndex: theme.zIndex.drawer + 1,
         }}
       >
         <Toolbar>
@@ -190,6 +200,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </Menu>
         </Toolbar>
       </AppBar>
+
       <Box
         component="nav"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
@@ -203,7 +214,11 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { 
+              boxSizing: 'border-box', 
+              width: drawerWidth,
+              bgcolor: 'background.paper',
+            },
           }}
         >
           {drawer}
@@ -212,13 +227,18 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { 
+              boxSizing: 'border-box', 
+              width: drawerWidth,
+              bgcolor: 'background.paper',
+            },
           }}
           open
         >
           {drawer}
         </Drawer>
       </Box>
+
       <Box
         component="main"
         sx={{
@@ -226,10 +246,10 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           minHeight: '100vh',
-          backgroundColor: 'background.default',
+          bgcolor: 'background.default',
         }}
       >
-        <Toolbar />
+        <Toolbar /> {/* Espacio para el AppBar */}
         {children}
       </Box>
     </Box>
