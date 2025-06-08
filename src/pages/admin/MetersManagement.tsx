@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -27,15 +28,17 @@ import {
   ButtonGroup,
   Grid,
 } from '@mui/material';
-import { 
-  Edit as EditIcon, 
-  Delete as DeleteIcon, 
+import {
+  Edit as EditIcon,
+  Delete as DeleteIcon,
   Add as AddIcon,
   FileDownload as FileDownloadIcon,
+  Assessment as AssessmentIcon,
   PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
 
@@ -48,14 +51,19 @@ interface Meter {
   identification: string | null;
   email: string | null;
   contact_number: string | null;
+  last_reading?: {
+    value: string;
+    period: string;
+  };
 }
 
 const MetersManagement: React.FC = () => {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const permissions = usePermissions();
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filteredMeters, setFilteredMeters] = useState<Meter[]>([]);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [selectedMeter, setSelectedMeter] = useState<Meter | null>(null);
+  const [open, setOpen] = useState(false);
+  const [editingMeter, setEditingMeter] = useState<Meter | null>(null);
   const [formData, setFormData] = useState({
     code_meter: '',
     location: '',
@@ -130,9 +138,9 @@ const MetersManagement: React.FC = () => {
     }
   };
 
-  const handleOpenDialog = (meter?: Meter) => {
+  const handleOpen = (meter?: Meter) => {
     if (meter) {
-      setSelectedMeter(meter);
+      setEditingMeter(meter);
       setFormData({
         code_meter: meter.code_meter,
         location: meter.location,
@@ -143,7 +151,7 @@ const MetersManagement: React.FC = () => {
         contact_number: meter.contact_number || '',
       });
     } else {
-      setSelectedMeter(null);
+      setEditingMeter(null);
       setFormData({
         code_meter: '',
         location: '',
@@ -154,12 +162,12 @@ const MetersManagement: React.FC = () => {
         contact_number: '',
       });
     }
-    setOpenDialog(true);
+    setOpen(true);
   };
 
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setSelectedMeter(null);
+  const handleClose = () => {
+    setOpen(false);
+    setEditingMeter(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,7 +181,7 @@ const MetersManagement: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (selectedMeter) {
+      if (editingMeter) {
         // Actualizar medidor existente
         const { error } = await supabase
           .from('meters')
@@ -185,7 +193,7 @@ const MetersManagement: React.FC = () => {
             email: formData.email,
             contact_number: formData.contact_number,
           })
-          .eq('code_meter', selectedMeter.code_meter);
+          .eq('code_meter', editingMeter.code_meter);
 
         if (error) throw error;
         showSnackbar('Medidor actualizado exitosamente');
@@ -208,7 +216,7 @@ const MetersManagement: React.FC = () => {
         showSnackbar('Medidor creado exitosamente');
       }
 
-      handleCloseDialog();
+      handleClose();
       fetchMeters();
     } catch (error: any) {
       console.error('Error saving meter:', error);
@@ -365,7 +373,7 @@ const MetersManagement: React.FC = () => {
     printWindow.document.close();
   };
 
-  if (loading) {
+  if (authLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
         <CircularProgress />
@@ -373,22 +381,16 @@ const MetersManagement: React.FC = () => {
     );
   }
 
+  if (!isAuthenticated) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
   return (
     <ProtectedAdminRoute>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Gestión de Medidores</Typography>
-          <Box>
-            {permissions.canCreate('meters') && (
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => handleOpenDialog()}
-                sx={{ mr: 1 }}
-              >
-                Nuevo Medidor
-              </Button>
-            )}
+          <Box display="flex" gap={2}>
             <ButtonGroup variant="outlined">
               <Button
                 startIcon={<FileDownloadIcon />}
@@ -403,6 +405,15 @@ const MetersManagement: React.FC = () => {
                 PDF
               </Button>
             </ButtonGroup>
+            {permissions.canCreate('meters') && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => handleOpen()}
+              >
+                Nuevo Medidor
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -415,26 +426,17 @@ const MetersManagement: React.FC = () => {
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
             <TextField
-              label="Buscar"
+              label="Buscar Medidor"
               value={filters.search}
-              onChange={(e) => {
-                const value = e.target.value;
-                setFilters(prev => ({ ...prev, search: value }));
-              }}
-              placeholder="Buscar por código, nombres, identificación, etc."
-              sx={{ minWidth: 300 }}
-              InputProps={{
-                autoComplete: 'off',
-              }}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              placeholder="Buscar por código o ubicación"
+              sx={{ minWidth: 200 }}
             />
             <FormControl sx={{ minWidth: 200 }}>
               <InputLabel>Estado</InputLabel>
               <Select
                 value={filters.status}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFilters(prev => ({ ...prev, status: value }));
-                }}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
                 label="Estado"
               >
                 <MenuItem value="">Todos</MenuItem>
@@ -445,10 +447,7 @@ const MetersManagement: React.FC = () => {
             </FormControl>
             <Button
               variant="outlined"
-              onClick={() => {
-                setFilters({ search: '', status: '' });
-                setPage(0);
-              }}
+              onClick={() => setFilters({ search: '', status: '' })}
             >
               Limpiar filtros
             </Button>
@@ -474,12 +473,9 @@ const MetersManagement: React.FC = () => {
                 <TableRow>
                   <TableCell>Código</TableCell>
                   <TableCell>Ubicación</TableCell>
-                  <TableCell>Descripción</TableCell>
                   <TableCell>Estado</TableCell>
-                  <TableCell>Identificación</TableCell>
-                  <TableCell>Email</TableCell>
-                  <TableCell>Teléfono</TableCell>
-                  <TableCell>Fecha de Creación</TableCell>
+                  <TableCell>Última Lectura</TableCell>
+                  <TableCell>Último Período</TableCell>
                   {(permissions.canEdit('meters') || permissions.canDelete('meters')) && (
                     <TableCell>Acciones</TableCell>
                   )}
@@ -492,18 +488,25 @@ const MetersManagement: React.FC = () => {
                     <TableRow key={meter.code_meter}>
                       <TableCell>{meter.code_meter}</TableCell>
                       <TableCell>{meter.location}</TableCell>
-                      <TableCell>{meter.description}</TableCell>
-                      <TableCell>{meter.status}</TableCell>
-                      <TableCell>{meter.identification || '-'}</TableCell>
-                      <TableCell>{meter.email || '-'}</TableCell>
-                      <TableCell>{meter.contact_number || '-'}</TableCell>
                       <TableCell>
-                        {new Date(meter.created_at).toLocaleDateString()}
+                        <Typography
+                          sx={{
+                            color: meter.status === 'active' ? 'success.main' :
+                                   meter.status === 'inactive' ? 'error.main' :
+                                   'warning.main'
+                          }}
+                        >
+                          {meter.status === 'active' ? 'Activo' :
+                           meter.status === 'inactive' ? 'Inactivo' :
+                           'En Mantenimiento'}
+                        </Typography>
                       </TableCell>
+                      <TableCell>{meter.last_reading?.value || '-'}</TableCell>
+                      <TableCell>{meter.last_reading?.period || '-'}</TableCell>
                       {(permissions.canEdit('meters') || permissions.canDelete('meters')) && (
                         <TableCell>
                           {permissions.canEdit('meters') && (
-                            <IconButton onClick={() => handleOpenDialog(meter)} color="primary">
+                            <IconButton onClick={() => handleOpen(meter)} color="primary">
                               <EditIcon />
                             </IconButton>
                           )}
@@ -531,9 +534,9 @@ const MetersManagement: React.FC = () => {
           </TableContainer>
         )}
 
-        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
           <DialogTitle>
-            {selectedMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
+            {editingMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
           </DialogTitle>
           <form onSubmit={handleSubmit}>
             <DialogContent>
@@ -541,11 +544,11 @@ const MetersManagement: React.FC = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Código del Medidor"
+                    label="Código"
                     value={formData.code_meter}
-                    onChange={handleInputChange}
+                    onChange={(e) => setFormData({ ...formData, code_meter: e.target.value })}
                     required
-                    disabled={!!selectedMeter}
+                    disabled={!!editingMeter}
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -553,69 +556,31 @@ const MetersManagement: React.FC = () => {
                     fullWidth
                     label="Ubicación"
                     value={formData.location}
-                    onChange={handleInputChange}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     required
                   />
                 </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Descripción"
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    multiline
-                    rows={2}
-                  />
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Estado</InputLabel>
+                    <Select
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      label="Estado"
+                      required
+                    >
+                      <MenuItem value="active">Activo</MenuItem>
+                      <MenuItem value="inactive">Inactivo</MenuItem>
+                      <MenuItem value="maintenance">En Mantenimiento</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Grid>
-                {permissions.canEdit('meters') && (
-                  <>
-                    <Grid item xs={12} sm={6}>
-                      <FormControl fullWidth>
-                        <InputLabel>Estado</InputLabel>
-                        <Select
-                          value={formData.status}
-                          onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                          label="Estado"
-                        >
-                          <MenuItem value="active">Activo</MenuItem>
-                          <MenuItem value="inactive">Inactivo</MenuItem>
-                          <MenuItem value="maintenance">En Mantenimiento</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Identificación"
-                        value={formData.identification || ''}
-                        onChange={handleInputChange}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Email"
-                        type="email"
-                        value={formData.email || ''}
-                        onChange={handleInputChange}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Teléfono"
-                        value={formData.contact_number || ''}
-                        onChange={handleInputChange}
-                      />
-                    </Grid>
-                  </>
-                )}
               </Grid>
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog}>Cancelar</Button>
+              <Button onClick={handleClose}>Cancelar</Button>
               <Button type="submit" variant="contained" color="primary">
-                {selectedMeter ? 'Guardar Cambios' : 'Crear Medidor'}
+                {editingMeter ? 'Guardar Cambios' : 'Crear Medidor'}
               </Button>
             </DialogActions>
           </form>
