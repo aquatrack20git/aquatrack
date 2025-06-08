@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Drawer,
@@ -10,51 +10,67 @@ import {
   Divider,
   IconButton,
   ListItem,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListItemButton,
   useTheme,
   useMediaQuery,
-  Avatar,
   Menu,
   MenuItem,
-  Tooltip,
+  Avatar,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
+  ChevronLeft as ChevronLeftIcon,
   Dashboard as DashboardIcon,
-  WaterDrop as WaterDropIcon,
+  Speed as SpeedIcon,
   People as PeopleIcon,
   Assessment as AssessmentIcon,
   Comment as CommentIcon,
   Logout as LogoutIcon,
-  Settings as SettingsIcon,
-  Key as KeyIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
-import { supabase } from '../../config/supabase';
 
 const drawerWidth = 240;
 
-const menuItems = [
+interface MenuItem {
+  text: string;
+  icon: React.ReactNode;
+  path: string;
+  requiresAdmin: boolean;
+}
+
+const menuItems: MenuItem[] = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard', requiresAdmin: false },
-  { text: 'Medidores', icon: <WaterDropIcon />, path: '/admin/meters', requiresAdmin: false },
-  { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings', requiresAdmin: false },
-  { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/reports/readings', requiresAdmin: false },
-  { text: 'Reporte de Comentarios', icon: <CommentIcon />, path: '/admin/reports/comments', requiresAdmin: false },
+  { text: 'Medidores', icon: <SpeedIcon />, path: '/admin/meters', requiresAdmin: false },
   { text: 'Usuarios', icon: <PeopleIcon />, path: '/admin/users', requiresAdmin: true },
+  { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings', requiresAdmin: false },
+  { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/readings-report', requiresAdmin: false },
+  { text: 'Comentarios', icon: <CommentIcon />, path: '/admin/comments', requiresAdmin: false },
 ];
 
-const AdminLayout: React.FC = () => {
+const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const { isAuthenticated, loading: authLoading, user, signOut } = useAuth();
+  const { isAdmin } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, user, signOut } = useAuth();
-  const permissions = usePermissions();
+
+  if (authLoading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+        <Typography>Cargando...</Typography>
+      </Box>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/admin/login" replace />;
+  }
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -69,40 +85,41 @@ const AdminLayout: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/admin/login');
-  };
-
-  const handleNavigation = (path: string) => {
-    navigate(path);
-    if (isMobile) {
-      setMobileOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isAuthenticated) {
+    try {
+      await signOut();
       navigate('/admin/login');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
     }
-  }, [isAuthenticated, navigate]);
+  };
 
   const drawer = (
     <Box>
-      <Toolbar>
+      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: [1] }}>
         <Typography variant="h6" noWrap component="div">
           AquaTrack
         </Typography>
+        {isMobile && (
+          <IconButton onClick={handleDrawerToggle}>
+            <ChevronLeftIcon />
+          </IconButton>
+        )}
       </Toolbar>
       <Divider />
       <List>
         {menuItems.map((item) => {
-          // Solo mostrar el ítem si el usuario es admin o si el ítem no requiere admin
-          if (!item.requiresAdmin || permissions.isAdmin) {
+          // Mostrar el ítem si no requiere admin o si el usuario es admin
+          if (!item.requiresAdmin || isAdmin) {
             return (
               <ListItem key={item.text} disablePadding>
                 <ListItemButton
                   selected={location.pathname === item.path}
-                  onClick={() => handleNavigation(item.path)}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (isMobile) {
+                      setMobileOpen(false);
+                    }
+                  }}
                 >
                   <ListItemIcon>{item.icon}</ListItemIcon>
                   <ListItemText primary={item.text} />
@@ -115,10 +132,6 @@ const AdminLayout: React.FC = () => {
       </List>
     </Box>
   );
-
-  if (!isAuthenticated) {
-    return null;
-  }
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -139,48 +152,40 @@ const AdminLayout: React.FC = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Box sx={{ flexGrow: 1 }} />
-          <Tooltip title="Configuración de cuenta">
-            <IconButton
-              onClick={handleMenuOpen}
-              size="small"
-              sx={{ ml: 2 }}
-              aria-controls={Boolean(anchorEl) ? 'account-menu' : undefined}
-              aria-haspopup="true"
-              aria-expanded={Boolean(anchorEl) ? 'true' : undefined}
-            >
-              <Avatar sx={{ width: 32, height: 32 }}>
-                {user?.email?.[0].toUpperCase() || 'U'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+            {menuItems.find(item => item.path === location.pathname)?.text || 'AquaTrack'}
+          </Typography>
+          <IconButton
+            onClick={handleMenuOpen}
+            size="small"
+            sx={{ ml: 2 }}
+            aria-controls="menu-appbar"
+            aria-haspopup="true"
+          >
+            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+              {user?.email?.[0].toUpperCase() || 'U'}
+            </Avatar>
+          </IconButton>
           <Menu
+            id="menu-appbar"
             anchorEl={anchorEl}
-            id="account-menu"
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'right',
+            }}
+            keepMounted
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
-            onClick={handleMenuClose}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
           >
-            <MenuItem onClick={() => handleNavigation('/admin/profile')}>
-              <ListItemIcon>
-                <SettingsIcon fontSize="small" />
-              </ListItemIcon>
-              Perfil
-            </MenuItem>
-            <MenuItem onClick={() => handleNavigation('/admin/change-password')}>
-              <ListItemIcon>
-                <KeyIcon fontSize="small" />
-              </ListItemIcon>
-              Cambiar Contraseña
-            </MenuItem>
-            <Divider />
             <MenuItem onClick={handleSignOut}>
               <ListItemIcon>
                 <LogoutIcon fontSize="small" />
               </ListItemIcon>
-              Cerrar Sesión
+              <ListItemText>Cerrar Sesión</ListItemText>
             </MenuItem>
           </Menu>
         </Toolbar>
@@ -220,10 +225,12 @@ const AdminLayout: React.FC = () => {
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          mt: '64px',
+          minHeight: '100vh',
+          backgroundColor: 'background.default',
         }}
       >
-        <Outlet />
+        <Toolbar />
+        {children}
       </Box>
     </Box>
   );

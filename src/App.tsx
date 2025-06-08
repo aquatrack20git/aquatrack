@@ -1,171 +1,61 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import { Box, Typography, Alert, useMediaQuery, CircularProgress } from '@mui/material';
-import { useEffect } from 'react';
-import Home from './pages/Home';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, CssBaseline } from '@mui/material';
 import theme from './theme';
+import { AuthProvider } from './contexts/AuthContext';
+import { PermissionsProvider } from './contexts/PermissionsContext';
+
+// Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
 import Login from './pages/admin/Login';
 import Dashboard from './pages/admin/Dashboard';
 import MetersManagement from './pages/admin/MetersManagement';
-import UsersManagement from './pages/admin/UsersManagement';
 import ReadingsManagement from './pages/admin/ReadingsManagement';
 import ReadingsReport from './pages/admin/ReadingsReport';
 import CommentsReport from './pages/admin/CommentsReport';
-import SetupAdmin from './pages/admin/SetupAdmin';
-import ChangePassword from './pages/admin/ChangePassword';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { PermissionsProvider } from './contexts/PermissionsContext';
-import Readings from './pages/Readings';
+import UsersManagement from './pages/admin/UsersManagement';
 import VerifyEmail from './pages/admin/VerifyEmail';
+import ChangePassword from './pages/admin/ChangePassword';
 
-const ErrorScreen = ({ message }: { message: string }) => (
-  <Box
-    sx={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      p: 3,
-      textAlign: 'center',
-      backgroundColor: 'background.default',
-    }}
-  >
-    <Alert severity="error" sx={{ mb: 2, maxWidth: 600, width: '100%' }}>
-      {message}
-    </Alert>
-    <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-      Por favor, intenta recargar la página o contacta al administrador si el problema persiste.
-    </Typography>
-    <Typography variant="body2" color="text.secondary">
-      Si el problema persiste, intenta:
-      <ul style={{ textAlign: 'left', marginTop: '8px' }}>
-        <li>Limpiar la caché del navegador</li>
-        <li>Usar el modo incógnito</li>
-        <li>Actualizar el navegador a la última versión</li>
-      </ul>
-    </Typography>
-  </Box>
-);
-
-const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading, error } = useAuth();
-  const location = useLocation();
-  const isMobile = useMediaQuery('(max-width:600px)');
-  
-  useEffect(() => {
-    console.log('PrivateRoute - Auth State:', { 
-      isAuthenticated, 
-      loading, 
-      error,
-      path: location.pathname,
-      isMobile
-    });
-  }, [isAuthenticated, loading, error, location.pathname, isMobile]);
-  
-  if (error) {
-    return <ErrorScreen message={error} />;
-  }
-  
-  if (loading) {
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: '100vh',
-          backgroundColor: 'background.default'
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-  
-  if (!isAuthenticated) {
-    console.log('PrivateRoute - Redirecting to login');
-    return <Navigate to="/admin/login" state={{ from: location }} replace />;
-  }
-  
-  return <>{children}</>;
-};
-
-// Componente para las rutas de administración
-const AdminRoutes = () => {
-  const location = useLocation();
-  const { isAuthenticated, loading } = useAuth();
-  
-  // Si estamos en /admin o /admin/, redirigir a /admin/dashboard
-  if (location.pathname === '/admin' || location.pathname === '/admin/') {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
-  // Lista de rutas públicas que no requieren autenticación
-  const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
-
-  // Si no está autenticado y no está en una ruta pública, redirigir a login
-  if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
-    return <Navigate to="/admin/login" replace />;
-  }
-
-  return (
-    <Routes>
-      <Route path="login" element={<Login />} />
-      <Route path="setup" element={<SetupAdmin />} />
-      <Route path="verify-email" element={<VerifyEmail />} />
-      <Route path="change-password" element={<ChangePassword />} />
-      <Route
-        element={
-          <PrivateRoute>
-            <AdminLayout />
-          </PrivateRoute>
-        }
-      >
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="meters" element={<MetersManagement />} />
-        <Route path="users" element={<UsersManagement />} />
-        <Route path="readings" element={<ReadingsManagement />} />
-        <Route path="reports/readings" element={<ReadingsReport />} />
-        <Route path="reports/comments" element={<CommentsReport />} />
-        <Route index element={<Navigate to="dashboard" replace />} />
-      </Route>
-    </Routes>
-  );
-};
+// Protected Routes
+import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 
 const App: React.FC = () => {
-  const isMobile = useMediaQuery('(max-width:600px)');
-  
-  useEffect(() => {
-    console.log('App - Initializing', {
-      isMobile,
-      userAgent: navigator.userAgent,
-      viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight
-      }
-    });
-  }, [isMobile]);
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
         <PermissionsProvider>
-          <Routes>
-            {/* Rutas públicas */}
-            <Route path="/" element={<Home />} />
-            <Route path="/readings" element={<Readings />} />
-            
-            {/* Rutas de administración */}
-            <Route path="/admin/*" element={<AdminRoutes />} />
+          <Router>
+            <Routes>
+              {/* Rutas públicas */}
+              <Route path="/admin/login" element={<Login />} />
+              <Route path="/admin/verify-email" element={<VerifyEmail />} />
+              <Route path="/admin/change-password" element={<ChangePassword />} />
 
-            {/* Ruta 404 */}
-            <Route path="*" element={<ErrorScreen message="Página no encontrada" />} />
-          </Routes>
+              {/* Rutas protegidas con AdminLayout */}
+              <Route path="/admin" element={<AdminLayout><Navigate to="/admin/dashboard" replace /></AdminLayout>} />
+              
+              {/* Rutas que requieren autenticación pero no necesariamente permisos de admin */}
+              <Route path="/admin/dashboard" element={<AdminLayout><Dashboard /></AdminLayout>} />
+              <Route path="/admin/meters" element={<AdminLayout><MetersManagement /></AdminLayout>} />
+              <Route path="/admin/readings" element={<AdminLayout><ReadingsManagement /></AdminLayout>} />
+              <Route path="/admin/readings-report" element={<AdminLayout><ReadingsReport /></AdminLayout>} />
+              <Route path="/admin/comments" element={<AdminLayout><CommentsReport /></AdminLayout>} />
+
+              {/* Rutas que requieren permisos de admin */}
+              <Route path="/admin/users" element={
+                <AdminLayout>
+                  <ProtectedAdminRoute>
+                    <UsersManagement />
+                  </ProtectedAdminRoute>
+                </AdminLayout>
+              } />
+
+              {/* Redirección por defecto */}
+              <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+            </Routes>
+          </Router>
         </PermissionsProvider>
       </AuthProvider>
     </ThemeProvider>
