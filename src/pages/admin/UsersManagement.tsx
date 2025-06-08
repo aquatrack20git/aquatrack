@@ -27,6 +27,8 @@ import {
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import { usePermissions } from '../../contexts/PermissionsContext';
+import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
 
 interface User {
   id: string;
@@ -38,6 +40,7 @@ interface User {
 }
 
 const UsersManagement: React.FC = () => {
+  const permissions = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -253,125 +256,142 @@ const UsersManagement: React.FC = () => {
   }
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Gestión de Usuarios</Typography>
-        <Button variant="contained" onClick={() => handleOpen()}>
-          Nuevo Usuario
-        </Button>
-      </Box>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Email</TableCell>
-              <TableCell>Nombre Completo</TableCell>
-              <TableCell>Rol</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell>Fecha de Creación</TableCell>
-              <TableCell>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.full_name}</TableCell>
-                <TableCell>{user.role}</TableCell>
-                <TableCell>{user.status}</TableCell>
-                <TableCell>
-                  {new Date(user.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <IconButton onClick={() => handleOpen(user)} color="primary">
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(user.id)} color="error">
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
-        </DialogTitle>
-        <form onSubmit={handleSubmit}>
-          <DialogContent>
-            <TextField
-              fullWidth
-              label="Email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              margin="normal"
-              required
-              type="email"
-            />
-            <TextField
-              fullWidth
-              label="Nombre Completo"
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              margin="normal"
-              required
-            />
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Rol</InputLabel>
-              <Select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                label="Rol"
-              >
-                <MenuItem value="admin">Administrador</MenuItem>
-                <MenuItem value="user">Usuario</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Estado</InputLabel>
-              <Select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                label="Estado"
-              >
-                <MenuItem value="active">Activo</MenuItem>
-                <MenuItem value="inactive">Inactivo</MenuItem>
-              </Select>
-            </FormControl>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained">
-              {editingUser ? 'Actualizar' : 'Crear'}
+    <ProtectedAdminRoute>
+      <Box>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h4">Gestión de Usuarios</Typography>
+          {permissions.canCreate('users') && (
+            <Button variant="contained" onClick={() => handleOpen()}>
+              Nuevo Usuario
             </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+          )}
+        </Box>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-      >
-        <Alert
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Email</TableCell>
+                <TableCell>Nombre Completo</TableCell>
+                <TableCell>Rol</TableCell>
+                <TableCell>Estado</TableCell>
+                <TableCell>Fecha de Creación</TableCell>
+                {(permissions.canEdit('users') || permissions.canDelete('users')) && (
+                  <TableCell>Acciones</TableCell>
+                )}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>{user.full_name}</TableCell>
+                  <TableCell>{user.role}</TableCell>
+                  <TableCell>{user.status}</TableCell>
+                  <TableCell>
+                    {new Date(user.created_at).toLocaleDateString()}
+                  </TableCell>
+                  {(permissions.canEdit('users') || permissions.canDelete('users')) && (
+                    <TableCell>
+                      {permissions.canEdit('users') && (
+                        <IconButton onClick={() => handleOpen(user)} color="primary">
+                          <EditIcon />
+                        </IconButton>
+                      )}
+                      {permissions.canDelete('users') && (
+                        <IconButton onClick={() => handleDelete(user.id)} color="error">
+                          <DeleteIcon />
+                        </IconButton>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+          </DialogTitle>
+          <form onSubmit={handleSubmit}>
+            <DialogContent>
+              <TextField
+                fullWidth
+                label="Email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                margin="normal"
+                required
+                type="email"
+                disabled={editingUser !== null}
+              />
+              <TextField
+                fullWidth
+                label="Nombre Completo"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                margin="normal"
+                required
+              />
+              {permissions.canEdit('users') && (
+                <>
+                  <FormControl fullWidth margin="normal">
+                    <InputLabel>Rol</InputLabel>
+                    <Select
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      label="Rol"
+                    >
+                      <MenuItem value="admin">Administrador</MenuItem>
+                      <MenuItem value="user">Usuario</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth margin="normal">
+                    <InputLabel>Estado</InputLabel>
+                    <Select
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      label="Estado"
+                    >
+                      <MenuItem value="active">Activo</MenuItem>
+                      <MenuItem value="inactive">Inactivo</MenuItem>
+                    </Select>
+                  </FormControl>
+                </>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleClose}>Cancelar</Button>
+              <Button type="submit" variant="contained" color="primary">
+                {editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={6000}
           onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </ProtectedAdminRoute>
   );
 };
 

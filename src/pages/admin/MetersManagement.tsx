@@ -25,6 +25,7 @@ import {
   MenuItem,
   TablePagination,
   ButtonGroup,
+  Grid,
 } from '@mui/material';
 import { 
   Edit as EditIcon, 
@@ -35,6 +36,8 @@ import {
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { usePermissions } from '../../contexts/PermissionsContext';
+import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
 
 interface Meter {
   code_meter: string;
@@ -48,6 +51,7 @@ interface Meter {
 }
 
 const MetersManagement: React.FC = () => {
+  const permissions = usePermissions();
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filteredMeters, setFilteredMeters] = useState<Meter[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -73,6 +77,7 @@ const MetersManagement: React.FC = () => {
   });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMeters();
@@ -165,7 +170,8 @@ const MetersManagement: React.FC = () => {
     }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
       if (selectedMeter) {
         // Actualizar medidor existente
@@ -368,247 +374,268 @@ const MetersManagement: React.FC = () => {
   }
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Gestión de Medidores</Typography>
-        <Box display="flex" gap={2}>
-          <ButtonGroup variant="outlined">
-            <Button
-              startIcon={<FileDownloadIcon />}
-              onClick={exportToExcel}
-              title="Exportar a Excel"
-            >
-              Excel
-            </Button>
-            <Button
-              startIcon={<PdfIcon />}
-              onClick={exportToPDF}
-              title="Exportar a PDF"
-            >
-              PDF
-            </Button>
-          </ButtonGroup>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-          >
-            Nuevo Medidor
-          </Button>
+    <ProtectedAdminRoute>
+      <Box>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h4">Gestión de Medidores</Typography>
+          <Box>
+            {permissions.canCreate('meters') && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => handleOpenDialog()}
+                sx={{ mr: 1 }}
+              >
+                Nuevo Medidor
+              </Button>
+            )}
+            <ButtonGroup variant="outlined">
+              <Button
+                startIcon={<FileDownloadIcon />}
+                onClick={exportToExcel}
+              >
+                Excel
+              </Button>
+              <Button
+                startIcon={<PdfIcon />}
+                onClick={exportToPDF}
+              >
+                PDF
+              </Button>
+            </ButtonGroup>
+          </Box>
         </Box>
-      </Box>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
-          <TextField
-            label="Buscar"
-            value={filters.search}
-            onChange={(e) => {
-              const value = e.target.value;
-              setFilters(prev => ({ ...prev, search: value }));
-            }}
-            placeholder="Buscar por código, nombres, identificación, etc."
-            sx={{ minWidth: 300 }}
-            InputProps={{
-              autoComplete: 'off',
-            }}
-          />
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Estado</InputLabel>
-            <Select
-              value={filters.status}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
+            <TextField
+              label="Buscar"
+              value={filters.search}
               onChange={(e) => {
                 const value = e.target.value;
-                setFilters(prev => ({ ...prev, status: value }));
+                setFilters(prev => ({ ...prev, search: value }));
               }}
-              label="Estado"
+              placeholder="Buscar por código, nombres, identificación, etc."
+              sx={{ minWidth: 300 }}
+              InputProps={{
+                autoComplete: 'off',
+              }}
+            />
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Estado</InputLabel>
+              <Select
+                value={filters.status}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFilters(prev => ({ ...prev, status: value }));
+                }}
+                label="Estado"
+              >
+                <MenuItem value="">Todos</MenuItem>
+                <MenuItem value="active">Activo</MenuItem>
+                <MenuItem value="inactive">Inactivo</MenuItem>
+                <MenuItem value="maintenance">En Mantenimiento</MenuItem>
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setFilters({ search: '', status: '' });
+                setPage(0);
+              }}
             >
-              <MenuItem value="">Todos</MenuItem>
-              <MenuItem value="active">Activo</MenuItem>
-              <MenuItem value="inactive">Inactivo</MenuItem>
-              <MenuItem value="maintenance">En Mantenimiento</MenuItem>
-            </Select>
-          </FormControl>
-          <Button
-            variant="outlined"
-            onClick={() => {
-              setFilters({ search: '', status: '' });
-              setPage(0);
-            }}
-          >
-            Limpiar filtros
-          </Button>
-        </Box>
-      </Paper>
-
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="subtitle1">
-          Total de medidores: {filteredMeters.length}
-        </Typography>
-      </Box>
-
-      {filteredMeters.length === 0 ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
-            No se encontraron medidores que coincidan con los criterios de búsqueda.
-          </Typography>
-        </Paper>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Código</TableCell>
-                <TableCell>Apellidos y Nombres</TableCell>
-                <TableCell>Identificación</TableCell>
-                <TableCell>Correo</TableCell>
-                <TableCell>Contacto</TableCell>
-                <TableCell>Ubicación</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Fecha de Creación</TableCell>
-                <TableCell>Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredMeters
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((meter) => (
-                  <TableRow key={meter.code_meter}>
-                    <TableCell>{meter.code_meter}</TableCell>
-                    <TableCell>{meter.description}</TableCell>
-                    <TableCell>{meter.identification || '-'}</TableCell>
-                    <TableCell>{meter.email || '-'}</TableCell>
-                    <TableCell>{meter.contact_number || '-'}</TableCell>
-                    <TableCell>{meter.location}</TableCell>
-                    <TableCell>{meter.status}</TableCell>
-                    <TableCell>{new Date(meter.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <IconButton
-                        color="primary"
-                        onClick={() => handleOpenDialog(meter)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        onClick={() => handleDelete(meter.code_meter)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-          <TablePagination
-            rowsPerPageOptions={[10, 25, 50, 100]}
-            component="div"
-            count={filteredMeters.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelRowsPerPage="Filas por página"
-            labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-          />
-        </TableContainer>
-      )}
-
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {selectedMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField
-              name="code_meter"
-              label="Código del Medidor"
-              value={formData.code_meter}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              disabled={!!selectedMeter}
-            />
-            <TextField
-              name="location"
-              label="Ubicación"
-              value={formData.location}
-              onChange={handleInputChange}
-              fullWidth
-              required
-            />
-            <TextField
-              name="description"
-              label="Apellidos y Nombres"
-              value={formData.description}
-              onChange={handleInputChange}
-              fullWidth
-              multiline
-              rows={3}
-            />
-            <TextField
-              name="identification"
-              label="Identificación (DNI/RUC)"
-              value={formData.identification}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
-              name="email"
-              label="Correo Electrónico"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 255 }}
-            />
-            <TextField
-              name="contact_number"
-              label="Número de Contacto"
-              value={formData.contact_number}
-              onChange={handleInputChange}
-              fullWidth
-              inputProps={{ maxLength: 20 }}
-            />
-            <TextField
-              name="status"
-              label="Estado"
-              value={formData.status}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              select
-              SelectProps={{ native: true }}
-            >
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-              <option value="maintenance">En Mantenimiento</option>
-            </TextField>
+              Limpiar filtros
+            </Button>
           </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancelar</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {selectedMeter ? 'Actualizar' : 'Crear'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        </Paper>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-      >
-        <Alert
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          <Typography variant="subtitle1">
+            Total de medidores: {filteredMeters.length}
+          </Typography>
+        </Box>
+
+        {filteredMeters.length === 0 ? (
+          <Paper sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body1" color="text.secondary">
+              No se encontraron medidores que coincidan con los criterios de búsqueda.
+            </Typography>
+          </Paper>
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Código</TableCell>
+                  <TableCell>Ubicación</TableCell>
+                  <TableCell>Descripción</TableCell>
+                  <TableCell>Estado</TableCell>
+                  <TableCell>Identificación</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Teléfono</TableCell>
+                  <TableCell>Fecha de Creación</TableCell>
+                  {(permissions.canEdit('meters') || permissions.canDelete('meters')) && (
+                    <TableCell>Acciones</TableCell>
+                  )}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredMeters
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((meter) => (
+                    <TableRow key={meter.code_meter}>
+                      <TableCell>{meter.code_meter}</TableCell>
+                      <TableCell>{meter.location}</TableCell>
+                      <TableCell>{meter.description}</TableCell>
+                      <TableCell>{meter.status}</TableCell>
+                      <TableCell>{meter.identification || '-'}</TableCell>
+                      <TableCell>{meter.email || '-'}</TableCell>
+                      <TableCell>{meter.contact_number || '-'}</TableCell>
+                      <TableCell>
+                        {new Date(meter.created_at).toLocaleDateString()}
+                      </TableCell>
+                      {(permissions.canEdit('meters') || permissions.canDelete('meters')) && (
+                        <TableCell>
+                          {permissions.canEdit('meters') && (
+                            <IconButton onClick={() => handleOpenDialog(meter)} color="primary">
+                              <EditIcon />
+                            </IconButton>
+                          )}
+                          {permissions.canDelete('meters') && (
+                            <IconButton onClick={() => handleDelete(meter.code_meter)} color="error">
+                              <DeleteIcon />
+                            </IconButton>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+            <TablePagination
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              component="div"
+              count={filteredMeters.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              labelRowsPerPage="Registros por página"
+            />
+          </TableContainer>
+        )}
+
+        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+          <DialogTitle>
+            {selectedMeter ? 'Editar Medidor' : 'Nuevo Medidor'}
+          </DialogTitle>
+          <form onSubmit={handleSubmit}>
+            <DialogContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Código del Medidor"
+                    value={formData.code_meter}
+                    onChange={handleInputChange}
+                    required
+                    disabled={!!selectedMeter}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ubicación"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Descripción"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    multiline
+                    rows={2}
+                  />
+                </Grid>
+                {permissions.canEdit('meters') && (
+                  <>
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth>
+                        <InputLabel>Estado</InputLabel>
+                        <Select
+                          value={formData.status}
+                          onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                          label="Estado"
+                        >
+                          <MenuItem value="active">Activo</MenuItem>
+                          <MenuItem value="inactive">Inactivo</MenuItem>
+                          <MenuItem value="maintenance">En Mantenimiento</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Identificación"
+                        value={formData.identification || ''}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Email"
+                        type="email"
+                        value={formData.email || ''}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Teléfono"
+                        value={formData.contact_number || ''}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                  </>
+                )}
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseDialog}>Cancelar</Button>
+              <Button type="submit" variant="contained" color="primary">
+                {selectedMeter ? 'Guardar Cambios' : 'Crear Medidor'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={6000}
           onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </ProtectedAdminRoute>
   );
 };
 

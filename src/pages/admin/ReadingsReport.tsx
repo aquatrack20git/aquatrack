@@ -22,6 +22,8 @@ import {
 import { Download as DownloadIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
+import { usePermissions } from '../../contexts/PermissionsContext';
+import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
 
 interface Reading {
   id: number;
@@ -42,6 +44,7 @@ interface Meter {
 }
 
 const ReadingsReport: React.FC = () => {
+  const permissions = usePermissions();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filters, setFilters] = useState({
@@ -149,105 +152,107 @@ const ReadingsReport: React.FC = () => {
   };
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Reporte de Lecturas</Typography>
-        <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          onClick={handleExport}
-        >
-          Exportar a Excel
-        </Button>
-      </Box>
+    <ProtectedAdminRoute>
+      <Box>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h4">Reporte de Lecturas</Typography>
+          <Button
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportar a Excel
+          </Button>
+        </Box>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField
-              name="meter_id"
-              label="Buscar Medidor"
-              value={filters.meter_id}
-              onChange={handleFilterChange}
-              placeholder="Buscar por código o ubicación"
-              fullWidth
-            />
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                name="meter_id"
+                label="Buscar Medidor"
+                value={filters.meter_id}
+                onChange={handleFilterChange}
+                placeholder="Buscar por código o ubicación"
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                name="period"
+                label="Período"
+                value={filters.period}
+                onChange={handleFilterChange}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                name="start_date"
+                label="Fecha Inicio"
+                type="date"
+                value={filters.start_date}
+                onChange={handleFilterChange}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                name="end_date"
+                label="Fecha Fin"
+                type="date"
+                value={filters.end_date}
+                onChange={handleFilterChange}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField
-              name="period"
-              label="Período"
-              value={filters.period}
-              onChange={handleFilterChange}
-              fullWidth
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField
-              name="start_date"
-              label="Fecha Inicio"
-              type="date"
-              value={filters.start_date}
-              onChange={handleFilterChange}
-              fullWidth
-              InputLabelProps={{ shrink: true }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField
-              name="end_date"
-              label="Fecha Fin"
-              type="date"
-              value={filters.end_date}
-              onChange={handleFilterChange}
-              fullWidth
-              InputLabelProps={{ shrink: true }}
-            />
-          </Grid>
-        </Grid>
-      </Paper>
+        </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>ID</TableCell>
-              <TableCell>Código Medidor</TableCell>
-              <TableCell>Ubicación</TableCell>
-              <TableCell>Valor</TableCell>
-              <TableCell>Período</TableCell>
-              <TableCell>Fecha</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {readings.map((reading) => (
-              <TableRow key={reading.id}>
-                <TableCell>{reading.id}</TableCell>
-                <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
-                <TableCell>{reading.meter?.location || '-'}</TableCell>
-                <TableCell>{reading.value}</TableCell>
-                <TableCell>{reading.period}</TableCell>
-                <TableCell>{new Date(reading.created_at).toLocaleDateString()}</TableCell>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>ID</TableCell>
+                <TableCell>Código Medidor</TableCell>
+                <TableCell>Ubicación</TableCell>
+                <TableCell>Valor</TableCell>
+                <TableCell>Período</TableCell>
+                <TableCell>Fecha</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {readings.map((reading) => (
+                <TableRow key={reading.id}>
+                  <TableCell>{reading.id}</TableCell>
+                  <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
+                  <TableCell>{reading.meter?.location || '-'}</TableCell>
+                  <TableCell>{reading.value}</TableCell>
+                  <TableCell>{reading.period}</TableCell>
+                  <TableCell>{new Date(reading.created_at).toLocaleDateString()}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-      >
-        <Alert
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={6000}
           onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </ProtectedAdminRoute>
   );
 };
 
