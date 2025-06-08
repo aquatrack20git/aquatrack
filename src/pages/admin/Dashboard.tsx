@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   Box,
   Grid,
@@ -15,8 +16,7 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import { usePermissions } from '../../contexts/PermissionsContext';
-import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface DashboardData {
   totalMeters: number;
@@ -41,9 +41,8 @@ interface DashboardData {
 }
 
 const Dashboard: React.FC = () => {
-  const permissions = usePermissions();
+  const { isAuthenticated, loading } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,7 +51,6 @@ const Dashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
-      setLoading(true);
       setError(null);
 
       // Obtener total de medidores
@@ -107,8 +105,6 @@ const Dashboard: React.FC = () => {
     } catch (error: any) {
       console.error('Error al cargar datos:', error);
       setError(error.message || 'Error al cargar los datos del dashboard');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -118,6 +114,10 @@ const Dashboard: React.FC = () => {
         <CircularProgress />
       </Box>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/admin/login" replace />;
   }
 
   if (error) {
@@ -133,107 +133,105 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <ProtectedAdminRoute>
-      <Box>
-        <Typography variant="h4" gutterBottom>
-          Dashboard
-        </Typography>
+    <Box>
+      <Typography variant="h4" gutterBottom>
+        Dashboard
+      </Typography>
 
-        {/* Tarjetas de resumen */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-              <WaterDropIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
-              <Box>
-                <Typography variant="h6">Total Medidores</Typography>
-                <Typography variant="h4">{data.totalMeters}</Typography>
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-              <SpeedIcon sx={{ fontSize: 40, color: 'success.main', mr: 2 }} />
-              <Box>
-                <Typography variant="h6">Total Lecturas</Typography>
-                <Typography variant="h4">{data.totalReadings}</Typography>
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-              <CommentIcon sx={{ fontSize: 40, color: 'info.main', mr: 2 }} />
-              <Box>
-                <Typography variant="h6">Total Comentarios</Typography>
-                <Typography variant="h4">{data.totalComments}</Typography>
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-              <WarningIcon sx={{ fontSize: 40, color: 'warning.main', mr: 2 }} />
-              <Box>
-                <Typography variant="h6">Medidores con Problemas</Typography>
-                <Typography variant="h4">{data.metersWithIssues.length}</Typography>
-              </Box>
-            </Paper>
-          </Grid>
+      {/* Tarjetas de resumen */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+            <WaterDropIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+            <Box>
+              <Typography variant="h6">Total Medidores</Typography>
+              <Typography variant="h4">{data.totalMeters}</Typography>
+            </Box>
+          </Paper>
         </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+            <SpeedIcon sx={{ fontSize: 40, color: 'success.main', mr: 2 }} />
+            <Box>
+              <Typography variant="h6">Total Lecturas</Typography>
+              <Typography variant="h4">{data.totalReadings}</Typography>
+            </Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+            <CommentIcon sx={{ fontSize: 40, color: 'info.main', mr: 2 }} />
+            <Box>
+              <Typography variant="h6">Total Comentarios</Typography>
+              <Typography variant="h4">{data.totalComments}</Typography>
+            </Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+            <WarningIcon sx={{ fontSize: 40, color: 'warning.main', mr: 2 }} />
+            <Box>
+              <Typography variant="h6">Medidores con Problemas</Typography>
+              <Typography variant="h4">{data.metersWithIssues.length}</Typography>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
 
-        {/* Lecturas recientes */}
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Lecturas Recientes
-          </Typography>
-          <Grid container spacing={2}>
-            {data.recentReadings.map((reading) => (
-              <Grid item xs={12} sm={6} md={4} key={reading.id}>
-                <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                  <Typography variant="subtitle1">
-                    Medidor: {reading.meter.code_meter}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Ubicación: {reading.meter.location}
-                  </Typography>
-                  <Typography variant="body2">
-                    Valor: {reading.value} m³
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Período: {reading.period}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Fecha: {new Date(reading.created_at).toLocaleDateString()}
-                  </Typography>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-        </Paper>
+      {/* Lecturas recientes */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Lecturas Recientes
+        </Typography>
+        <Grid container spacing={2}>
+          {data.recentReadings.map((reading) => (
+            <Grid item xs={12} sm={6} md={4} key={reading.id}>
+              <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
+                <Typography variant="subtitle1">
+                  Medidor: {reading.meter.code_meter}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Ubicación: {reading.meter.location}
+                </Typography>
+                <Typography variant="body2">
+                  Valor: {reading.value} m³
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Período: {reading.period}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Fecha: {new Date(reading.created_at).toLocaleDateString()}
+                </Typography>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+      </Paper>
 
-        {/* Medidores con problemas */}
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Medidores con Problemas
-          </Typography>
-          <Grid container spacing={2}>
-            {data.metersWithIssues.map((meter) => (
-              <Grid item xs={12} sm={6} md={4} key={meter.code_meter}>
-                <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                  <Typography variant="subtitle1">
-                    Código: {meter.code_meter}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Ubicación: {meter.location}
-                  </Typography>
-                  <Typography variant="body2" color="error">
-                    Estado: {meter.status}
-                  </Typography>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-        </Paper>
-      </Box>
-    </ProtectedAdminRoute>
+      {/* Medidores con problemas */}
+      <Paper sx={{ p: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          Medidores con Problemas
+        </Typography>
+        <Grid container spacing={2}>
+          {data.metersWithIssues.map((meter) => (
+            <Grid item xs={12} sm={6} md={4} key={meter.code_meter}>
+              <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
+                <Typography variant="subtitle1">
+                  Código: {meter.code_meter}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Ubicación: {meter.location}
+                </Typography>
+                <Typography variant="body2" color="error">
+                  Estado: {meter.status}
+                </Typography>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+      </Paper>
+    </Box>
   );
 };
 
