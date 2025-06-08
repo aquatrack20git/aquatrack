@@ -43,6 +43,18 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Componente para rutas que requieren permisos de admin
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const isAdmin = user?.user_metadata?.role === 'admin';
+
+  if (!isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
@@ -54,21 +66,33 @@ const App: React.FC = () => {
             <Route path="/admin/verify-email" element={<VerifyEmail />} />
             <Route path="/admin/change-password" element={<ChangePassword />} />
 
-            {/* Rutas protegidas */}
-            <Route path="/admin" element={
-              <ProtectedRoute>
-                <AdminLayout />
-              </ProtectedRoute>
-            }>
+            {/* Rutas protegidas con AdminLayout */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              {/* Rutas dentro del AdminLayout */}
               <Route index element={<Dashboard />} />
               <Route path="meters" element={<MetersManagement />} />
               <Route path="readings" element={<ReadingsManagement />} />
               <Route path="readings-report" element={<ReadingsReport />} />
               <Route path="comments-report" element={<CommentsReport />} />
-              <Route path="users" element={<UsersManagement />} />
+              <Route
+                path="users"
+                element={
+                  <AdminRoute>
+                    <UsersManagement />
+                  </AdminRoute>
+                }
+              />
             </Route>
 
             {/* Redirección por defecto */}
+            <Route path="/" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </AuthProvider>
