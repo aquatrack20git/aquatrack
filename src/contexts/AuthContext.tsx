@@ -1,216 +1,119 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
-import { Box, CircularProgress, Typography } from '@mui/material';
-import { Outlet, useLocation } from 'react-router-dom';
+import { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  loading: boolean;
-  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LoadingScreen = () => (
-  <Box
-    sx={{
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      width: '100%',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      bgcolor: 'background.default',
-      zIndex: 9999,
-    }}
-  >
-    <CircularProgress size={60} thickness={4} />
-    <Typography variant="body1" sx={{ mt: 2, textAlign: 'center' }}>
-      Cargando aplicación...
-    </Typography>
-  </Box>
-);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
+  }
+  return context;
+};
 
-const ErrorScreen = ({ message }: { message: string }) => (
-  <Box
-    sx={{
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      width: '100%',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      bgcolor: 'background.default',
-      zIndex: 9999,
-      p: 2,
-    }}
-  >
-    <Typography variant="h6" color="error" sx={{ mb: 2, textAlign: 'center' }}>
-      Error al cargar la aplicación
-    </Typography>
-    <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>
-      {message}
-    </Typography>
-    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-      Por favor, intenta recargar la página o contacta al administrador si el problema persiste.
-    </Typography>
-  </Box>
-);
-
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const location = useLocation();
 
   useEffect(() => {
-    let mounted = true;
-    
+    // Verificar sesión actual
     const checkUser = async () => {
       try {
-        console.log('AuthContext - Verificando sesión actual');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
         
-        if (sessionError) {
-          console.error('AuthContext - Error al obtener sesión:', sessionError);
-          if (mounted) {
-            setError(`Error de sesión: ${sessionError.message}`);
-            setUser(null);
-          }
-          return;
+        if (session?.user) {
+          setUser(session.user);
         }
-
-        if (mounted) {
-          console.log('AuthContext - Estado de sesión:', { 
-            hasSession: !!session, 
-            userId: session?.user?.id 
-          });
-          setUser(session?.user ?? null);
-          setError(null);
-        }
-      } catch (error: any) {
-        console.error('AuthContext - Error al verificar sesión:', error);
-        if (mounted) {
-          setError(`Error al verificar la sesión: ${error.message}`);
-          setUser(null);
-        }
+      } catch (error) {
+        console.error('Error al verificar sesión:', error);
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('AuthContext - Cambio en estado de autenticación:', { event, userId: session?.user?.id });
-      if (mounted) {
-        setUser(session?.user ?? null);
-        setError(null);
-      }
+    // Escuchar cambios en la autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
     });
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string) => {
-    setLoading(true);
-    setError(null);
     try {
-      console.log('AuthContext - Iniciando login para:', email);
-      
+      setLoading(true);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       });
-
-      if (error) {
-        console.error('AuthContext - Error en login:', error);
-        throw error;
-      }
-
-      if (!data.session) {
-        console.error('AuthContext - No se recibió sesión después del login');
-        throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
-      }
-
-      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
+      if (error) throw error;
       setUser(data.user);
-      setError(null);
     } catch (error: any) {
-      console.error('AuthContext - Error completo en login:', error);
-      setUser(null);
-      throw error;
+      console.error('Error en login:', error);
+      throw new Error(error.message || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
     }
   };
 
   const logout = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUser(null);
     } catch (error: any) {
-      console.error('AuthContext - Error en logout:', error);
-      throw error;
+      console.error('Error en logout:', error);
+      throw new Error(error.message || 'Error al cerrar sesión');
     } finally {
       setLoading(false);
     }
   };
 
-  // Solo mostrar loading/error para rutas protegidas
-  const isProtectedRoute = location.pathname.startsWith('/admin') && 
-    !location.pathname.includes('/login') && 
-    !location.pathname.includes('/setup');
-  
-  if (isProtectedRoute && loading) {
-    return <LoadingScreen />;
-  }
+  const value = {
+    user,
+    isAuthenticated: !!user,
+    loading,
+    login,
+    logout,
+  };
 
-  if (isProtectedRoute && error) {
-    return <ErrorScreen message={error} />;
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        width: '100%',
+        backgroundColor: '#f5f5f5'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="spinner" style={{ marginBottom: '1rem' }}></div>
+          <p>Cargando...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated: !!user,
-      login,
-      logout,
-      loading,
-      error
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    console.error('useAuth - Used outside of AuthProvider');
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 }; 

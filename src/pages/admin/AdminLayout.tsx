@@ -1,99 +1,63 @@
 import React, { useState } from 'react';
-import { Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
-  Box,
-  Drawer,
   AppBar,
-  Toolbar,
-  List,
-  Typography,
-  Divider,
+  Box,
+  CssBaseline,
+  Drawer,
   IconButton,
+  List,
   ListItem,
   ListItemIcon,
   ListItemText,
-  ListItemButton,
+  Toolbar,
+  Typography,
+  Divider,
   useTheme,
   useMediaQuery,
-  Menu,
-  MenuItem,
-  Avatar,
-  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  ChevronLeft as ChevronLeftIcon,
   Dashboard as DashboardIcon,
   Speed as SpeedIcon,
-  People as PeopleIcon,
   Assessment as AssessmentIcon,
   Comment as CommentIcon,
+  People as PeopleIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
-import { usePermissions } from '../../contexts/PermissionsContext';
 
 const drawerWidth = 240;
 
-interface MenuItem {
-  text: string;
-  icon: React.ReactNode;
-  path: string;
-  requiresAdmin: boolean;
-}
-
-const menuItems: MenuItem[] = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard', requiresAdmin: false },
-  { text: 'Medidores', icon: <SpeedIcon />, path: '/admin/meters', requiresAdmin: false },
-  { text: 'Usuarios', icon: <PeopleIcon />, path: '/admin/users', requiresAdmin: true },
-  { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings', requiresAdmin: false },
-  { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/readings-report', requiresAdmin: false },
-  { text: 'Comentarios', icon: <CommentIcon />, path: '/admin/comments', requiresAdmin: false },
+const menuItems = [
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin' },
+  { text: 'Medidores', icon: <SpeedIcon />, path: '/admin/meters' },
+  { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings' },
+  { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/readings-report' },
+  { text: 'Comentarios', icon: <CommentIcon />, path: '/admin/comments-report' },
+  { text: 'Usuarios', icon: <PeopleIcon />, path: '/admin/users', adminOnly: true },
 ];
 
-const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+const AdminLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const { isAuthenticated, loading: authLoading, user, logout } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Mostrar pantalla de carga mientras se verifica la autenticación
-  if (authLoading) {
-    return (
-      <Box 
-        display="flex" 
-        justifyContent="center" 
-        alignItems="center" 
-        minHeight="100vh"
-        bgcolor="background.default"
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  // Redirigir a login si no está autenticado
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" state={{ from: location }} replace />;
-  }
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    if (isMobile) {
+      setMobileOpen(false);
+    }
   };
 
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleSignOut = async () => {
+  const handleLogout = async () => {
     try {
       await logout();
       navigate('/admin/login');
@@ -102,54 +66,49 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   };
 
+  const isAdmin = user?.user_metadata?.role === 'admin';
+
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: [1] }}>
+    <div>
+      <Toolbar>
         <Typography variant="h6" noWrap component="div">
           AquaTrack
         </Typography>
-        {isMobile && (
-          <IconButton onClick={handleDrawerToggle}>
-            <ChevronLeftIcon />
-          </IconButton>
-        )}
       </Toolbar>
       <Divider />
-      <List sx={{ flexGrow: 1 }}>
-        {menuItems.map((item) => {
-          // Mostrar el ítem si no requiere admin o si el usuario es admin
-          if (!item.requiresAdmin || isAdmin) {
-            return (
-              <ListItem key={item.text} disablePadding>
-                <ListItemButton
-                  selected={location.pathname === item.path}
-                  onClick={() => {
-                    navigate(item.path);
-                    if (isMobile) {
-                      setMobileOpen(false);
-                    }
-                  }}
-                >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItemButton>
-              </ListItem>
-            );
-          }
-          return null;
-        })}
+      <List>
+        {menuItems.map((item) => (
+          (!item.adminOnly || isAdmin) && (
+            <ListItem
+              button
+              key={item.text}
+              onClick={() => handleNavigation(item.path)}
+              selected={location.pathname === item.path}
+            >
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItem>
+          )
+        ))}
       </List>
-    </Box>
+      <Divider />
+      <List>
+        <ListItem button onClick={handleLogout}>
+          <ListItemIcon><LogoutIcon /></ListItemIcon>
+          <ListItemText primary="Cerrar Sesión" />
+        </ListItem>
+      </List>
+    </div>
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex' }}>
+      <CssBaseline />
       <AppBar
         position="fixed"
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
-          zIndex: theme.zIndex.drawer + 1,
         }}
       >
         <Toolbar>
@@ -162,45 +121,11 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" noWrap component="div">
             {menuItems.find(item => item.path === location.pathname)?.text || 'AquaTrack'}
           </Typography>
-          <IconButton
-            onClick={handleMenuOpen}
-            size="small"
-            sx={{ ml: 2 }}
-            aria-controls="menu-appbar"
-            aria-haspopup="true"
-          >
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-              {user?.email?.[0].toUpperCase() || 'U'}
-            </Avatar>
-          </IconButton>
-          <Menu
-            id="menu-appbar"
-            anchorEl={anchorEl}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            keepMounted
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-          >
-            <MenuItem onClick={handleSignOut}>
-              <ListItemIcon>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Cerrar Sesión</ListItemText>
-            </MenuItem>
-          </Menu>
         </Toolbar>
       </AppBar>
-
       <Box
         component="nav"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
@@ -210,15 +135,11 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           open={mobileOpen}
           onClose={handleDrawerToggle}
           ModalProps={{
-            keepMounted: true, // Better open performance on mobile.
+            keepMounted: true,
           }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { 
-              boxSizing: 'border-box', 
-              width: drawerWidth,
-              bgcolor: 'background.paper',
-            },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
         >
           {drawer}
@@ -227,30 +148,23 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { 
-              boxSizing: 'border-box', 
-              width: drawerWidth,
-              bgcolor: 'background.paper',
-            },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
           open
         >
           {drawer}
         </Drawer>
       </Box>
-
       <Box
         component="main"
         sx={{
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          minHeight: '100vh',
-          bgcolor: 'background.default',
+          mt: '64px',
         }}
       >
-        <Toolbar /> {/* Espacio para el AppBar */}
-        {children}
+        <Outlet />
       </Box>
     </Box>
   );
