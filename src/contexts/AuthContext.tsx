@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
-import { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
@@ -25,46 +25,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verificar sesión actual
+    console.log('AuthProvider - Iniciando verificación de sesión');
+    
     const checkUser = async () => {
       try {
+        console.log('AuthProvider - Verificando sesión actual');
         const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
         
+        if (error) {
+          console.error('AuthProvider - Error al obtener sesión:', error);
+          throw error;
+        }
+        
+        console.log('AuthProvider - Estado de sesión:', { 
+          hasSession: !!session, 
+          userId: session?.user?.id 
+        });
+
         if (session?.user) {
           setUser(session.user);
         }
       } catch (error) {
-        console.error('Error al verificar sesión:', error);
+        console.error('AuthProvider - Error en checkUser:', error);
       } finally {
+        console.log('AuthProvider - Finalizando verificación de sesión');
         setLoading(false);
       }
     };
 
     checkUser();
 
-    // Escuchar cambios en la autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('AuthProvider - Cambio en estado de autenticación:', { 
+        event, 
+        userId: session?.user?.id 
+      });
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
     return () => {
+      console.log('AuthProvider - Limpiando suscripción');
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string) => {
+    console.log('AuthProvider - Iniciando login');
     try {
       setLoading(true);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      if (error) throw error;
+      
+      if (error) {
+        console.error('AuthProvider - Error en login:', error);
+        throw error;
+      }
+
+      console.log('AuthProvider - Login exitoso:', { userId: data.user.id });
       setUser(data.user);
     } catch (error: any) {
-      console.error('Error en login:', error);
+      console.error('AuthProvider - Error completo en login:', error);
       throw new Error(error.message || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
@@ -72,13 +95,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    console.log('AuthProvider - Iniciando logout');
     try {
       setLoading(true);
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      if (error) {
+        console.error('AuthProvider - Error en logout:', error);
+        throw error;
+      }
+      console.log('AuthProvider - Logout exitoso');
       setUser(null);
     } catch (error: any) {
-      console.error('Error en logout:', error);
+      console.error('AuthProvider - Error en logout:', error);
       throw new Error(error.message || 'Error al cerrar sesión');
     } finally {
       setLoading(false);
@@ -93,6 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     logout,
   };
 
+  // Mostrar un indicador de carga simple
   if (loading) {
     return (
       <div style={{ 
@@ -104,12 +133,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         backgroundColor: '#f5f5f5'
       }}>
         <div style={{ textAlign: 'center' }}>
-          <div className="spinner" style={{ marginBottom: '1rem' }}></div>
-          <p>Cargando...</p>
+          <div style={{ 
+            width: '40px', 
+            height: '40px', 
+            border: '4px solid #f3f3f3',
+            borderTop: '4px solid #3498db',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 1rem'
+          }}></div>
+          <style>
+            {`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}
+          </style>
+          <p>Cargando aplicación...</p>
         </div>
       </div>
     );
   }
+
+  console.log('AuthProvider - Renderizando con estado:', { 
+    isAuthenticated: !!user, 
+    loading, 
+    userId: user?.id 
+  });
 
   return (
     <AuthContext.Provider value={value}>
