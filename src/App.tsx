@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
-import { theme } from './theme';
+import theme from './theme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/admin/Login';
 import VerifyEmail from './pages/admin/VerifyEmail';
