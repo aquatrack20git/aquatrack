@@ -1,170 +1,213 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { Outlet, useLocation } from 'react-router-dom';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
-  }
-  return context;
-};
+const LoadingScreen = () => (
+  <Box
+    sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      minHeight: '100vh',
+      width: '100vw',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      backgroundColor: 'background.default',
+      zIndex: 9999,
+      padding: 2,
+    }}
+  >
+    <CircularProgress size={60} thickness={4} />
+    <Typography variant="body1" sx={{ mt: 2, textAlign: 'center' }}>
+      Cargando aplicación...
+    </Typography>
+  </Box>
+);
+
+const ErrorScreen = ({ message }: { message: string }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      minHeight: '100vh',
+      width: '100vw',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      backgroundColor: 'background.default',
+      zIndex: 9999,
+      padding: 2,
+    }}
+  >
+    <Typography variant="h6" color="error" sx={{ mb: 2, textAlign: 'center' }}>
+      Error al cargar la aplicación
+    </Typography>
+    <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>
+      {message}
+    </Typography>
+    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+      Por favor, intenta recargar la página o contacta al administrador si el problema persiste.
+    </Typography>
+  </Box>
+);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('AuthContext - Iniciando login para:', email);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        console.error('AuthContext - Error en login:', error);
+        throw error;
+      }
+
+      if (!data.session) {
+        console.error('AuthContext - No se recibió sesión después del login');
+        throw new Error('Error al iniciar sesión: No se pudo establecer la sesión');
+      }
+
+      console.log('AuthContext - Login exitoso:', { userId: data.user.id });
+      
+      // Actualizar el estado del usuario
+      setUser(data.user);
+      setError(null);
+    } catch (error: any) {
+      console.error('AuthContext - Error completo en login:', error);
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    console.log('AuthProvider - Iniciando verificación de sesión');
+    let mounted = true;
     
     const checkUser = async () => {
       try {
-        console.log('AuthProvider - Verificando sesión actual');
-        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('AuthContext - Verificando sesión actual');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error) {
-          console.error('AuthProvider - Error al obtener sesión:', error);
-          throw error;
+        if (sessionError) {
+          console.error('AuthContext - Error al obtener sesión:', sessionError);
+          if (mounted) {
+            setError(`Error de sesión: ${sessionError.message}`);
+            setUser(null);
+          }
+          return;
         }
-        
-        console.log('AuthProvider - Estado de sesión:', { 
-          hasSession: !!session, 
-          userId: session?.user?.id 
-        });
 
-        if (session?.user) {
-          setUser(session.user);
+        if (mounted) {
+          console.log('AuthContext - Estado de sesión:', { 
+            hasSession: !!session, 
+            userId: session?.user?.id 
+          });
+          setUser(session?.user ?? null);
+          setError(null);
         }
-      } catch (error) {
-        console.error('AuthProvider - Error en checkUser:', error);
+      } catch (error: any) {
+        console.error('AuthContext - Error al verificar sesión:', error);
+        if (mounted) {
+          setError(`Error al verificar la sesión: ${error.message}`);
+          setUser(null);
+        }
       } finally {
-        console.log('AuthProvider - Finalizando verificación de sesión');
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('AuthProvider - Cambio en estado de autenticación:', { 
-        event, 
-        userId: session?.user?.id 
-      });
-      setUser(session?.user ?? null);
-      setLoading(false);
+      console.log('AuthContext - Cambio en estado de autenticación:', { event, userId: session?.user?.id });
+      if (mounted) {
+        setUser(session?.user ?? null);
+        setError(null);
+      }
     });
 
     return () => {
-      console.log('AuthProvider - Limpiando suscripción');
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
-    console.log('AuthProvider - Iniciando login');
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
-      if (error) {
-        console.error('AuthProvider - Error en login:', error);
-        throw error;
-      }
-
-      console.log('AuthProvider - Login exitoso:', { userId: data.user.id });
-      setUser(data.user);
-    } catch (error: any) {
-      console.error('AuthProvider - Error completo en login:', error);
-      throw new Error(error.message || 'Error al iniciar sesión');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const logout = async () => {
-    console.log('AuthProvider - Iniciando logout');
+    setLoading(true);
     try {
-      setLoading(true);
       const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('AuthProvider - Error en logout:', error);
-        throw error;
-      }
-      console.log('AuthProvider - Logout exitoso');
-      setUser(null);
+      if (error) throw error;
     } catch (error: any) {
-      console.error('AuthProvider - Error en logout:', error);
-      throw new Error(error.message || 'Error al cerrar sesión');
+      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const value = {
-    user,
-    isAuthenticated: !!user,
-    loading,
-    login,
-    logout,
-  };
-
-  // Mostrar un indicador de carga simple
-  if (loading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        width: '100%',
-        backgroundColor: '#f5f5f5'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '4px solid #f3f3f3',
-            borderTop: '4px solid #3498db',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem'
-          }}></div>
-          <style>
-            {`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}
-          </style>
-          <p>Cargando aplicación...</p>
-        </div>
-      </div>
-    );
+  // Solo mostrar loading/error para rutas protegidas
+  const isProtectedRoute = location.pathname.startsWith('/admin') && 
+    !location.pathname.includes('/login') && 
+    !location.pathname.includes('/setup');
+  
+  if (isProtectedRoute && loading) {
+    return <LoadingScreen />;
   }
 
-  console.log('AuthProvider - Renderizando con estado:', { 
-    isAuthenticated: !!user, 
-    loading, 
-    userId: user?.id 
-  });
+  if (isProtectedRoute && error) {
+    return <ErrorScreen message={error} />;
+  }
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated: !!user,
+      login,
+      logout,
+      loading,
+      error
+    }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    console.error('useAuth - Used outside of AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }; 

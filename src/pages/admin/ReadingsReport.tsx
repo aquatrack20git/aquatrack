@@ -1,70 +1,60 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
 import {
   Box,
-  Button,
   Paper,
+  Typography,
+  Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  TextField,
+  Button,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
   Alert,
-  CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  TablePagination,
-  ButtonGroup,
-  TextField,
+  Snackbar,
 } from '@mui/material';
-import {
-  FileDownload as FileDownloadIcon,
-  PictureAsPdf as PdfIcon,
-} from '@mui/icons-material';
+import { Download as DownloadIcon } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
-import { useAuth } from '../../contexts/AuthContext';
-import { usePermissions } from '../../contexts/PermissionsContext';
-import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
 
 interface Reading {
   id: number;
   meter_id: string;
   value: number;
   period: string;
+  photo_url: string;
   created_at: string;
-  photo_url?: string;
-  meter?: {
+  meter: {
     code_meter: string;
     location: string;
   };
-  previous_reading?: number;
-  consumption?: number;
 }
 
-interface Filters {
-  meter_id: string;
-  period: string;
+interface Meter {
+  code_meter: string;
+  location: string;
 }
 
 const ReadingsReport: React.FC = () => {
-  const { isAuthenticated, loading: authLoading } = useAuth();
-  const permissions = usePermissions();
   const [readings, setReadings] = useState<Reading[]>([]);
-  const [filteredReadings, setFilteredReadings] = useState<Reading[]>([]);
-  const [meters, setMeters] = useState<Array<{ code_meter: string; location: string }>>([]);
-  const [availablePeriods, setAvailablePeriods] = useState<string[]>([]);
-  const [filters, setFilters] = useState<Filters>({
+  const [meters, setMeters] = useState<Meter[]>([]);
+  const [filters, setFilters] = useState({
     meter_id: '',
     period: '',
+    start_date: '',
+    end_date: '',
   });
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [error, setError] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error',
+  });
 
   useEffect(() => {
     fetchMeters();
@@ -99,8 +89,11 @@ const ReadingsReport: React.FC = () => {
       if (filters.period) {
         query = query.eq('period', filters.period);
       }
-      if (filters.meter_id) {
-        query = query.eq('meter_id', filters.meter_id);
+      if (filters.start_date) {
+        query = query.gte('created_at', filters.start_date);
+      }
+      if (filters.end_date) {
+        query = query.lte('created_at', filters.end_date);
       }
 
       const { data, error } = await query;
@@ -117,7 +110,6 @@ const ReadingsReport: React.FC = () => {
       }) || [];
 
       setReadings(filteredData);
-      setFilteredReadings(filteredData);
     } catch (error) {
       console.error('Error fetching readings:', error);
       showSnackbar('Error al cargar las lecturas', 'error');
@@ -149,138 +141,113 @@ const ReadingsReport: React.FC = () => {
   };
 
   const showSnackbar = (message: string, severity: 'success' | 'error' = 'success') => {
-    setError(message);
+    setSnackbar({
+      open: true,
+      message,
+      severity,
+    });
   };
-
-  const handleChangePage = (event: React.MouseEvent<HTMLButtonElement> | null, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  if (authLoading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
-  }
 
   return (
-    <ProtectedAdminRoute>
-      <Box>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h4">Reporte de Lecturas</Typography>
-          <ButtonGroup variant="outlined">
-            <Button
-              startIcon={<FileDownloadIcon />}
-              onClick={handleExport}
-            >
-              Excel
-            </Button>
-            <Button
-              startIcon={<PdfIcon />}
-              onClick={() => {}}
-            >
-              PDF
-            </Button>
-          </ButtonGroup>
-        </Box>
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Reporte de Lecturas</Typography>
+        <Button
+          variant="contained"
+          startIcon={<DownloadIcon />}
+          onClick={handleExport}
+        >
+          Exportar a Excel
+        </Button>
+      </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={3}>
             <TextField
+              name="meter_id"
               label="Buscar Medidor"
               value={filters.meter_id}
-              onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
+              onChange={handleFilterChange}
               placeholder="Buscar por código o ubicación"
-              sx={{ minWidth: 200 }}
+              fullWidth
             />
-            <FormControl sx={{ minWidth: 200 }}>
-              <InputLabel>Período</InputLabel>
-              <Select
-                value={filters.period}
-                onChange={(e) => setFilters({ ...filters, period: e.target.value })}
-                label="Período"
-              >
-                <MenuItem value="">Todos</MenuItem>
-                {meters.map((meter) => (
-                  <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                    {meter.code_meter}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="outlined"
-              onClick={() => setFilters({ meter_id: '', period: '' })}
-            >
-              Limpiar filtros
-            </Button>
-          </Box>
-        </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              name="period"
+              label="Período"
+              value={filters.period}
+              onChange={handleFilterChange}
+              fullWidth
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              name="start_date"
+              label="Fecha Inicio"
+              type="date"
+              value={filters.start_date}
+              onChange={handleFilterChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              name="end_date"
+              label="Fecha Fin"
+              type="date"
+              value={filters.end_date}
+              onChange={handleFilterChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+        </Grid>
+      </Paper>
 
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Medidor</TableCell>
-                <TableCell>Ubicación</TableCell>
-                <TableCell>Lectura Anterior</TableCell>
-                <TableCell>Lectura Actual</TableCell>
-                <TableCell>Consumo</TableCell>
-                <TableCell>Período</TableCell>
-                <TableCell>Fecha</TableCell>
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>ID</TableCell>
+              <TableCell>Código Medidor</TableCell>
+              <TableCell>Ubicación</TableCell>
+              <TableCell>Valor</TableCell>
+              <TableCell>Período</TableCell>
+              <TableCell>Fecha</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {readings.map((reading) => (
+              <TableRow key={reading.id}>
+                <TableCell>{reading.id}</TableCell>
+                <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
+                <TableCell>{reading.meter?.location || '-'}</TableCell>
+                <TableCell>{reading.value}</TableCell>
+                <TableCell>{reading.period}</TableCell>
+                <TableCell>{new Date(reading.created_at).toLocaleDateString()}</TableCell>
               </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredReadings
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((reading) => (
-                  <TableRow key={reading.id}>
-                    <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
-                    <TableCell>{reading.meter?.location || '-'}</TableCell>
-                    <TableCell>{reading.previous_reading || '-'}</TableCell>
-                    <TableCell>{reading.value}</TableCell>
-                    <TableCell>
-                      {reading.consumption !== null && reading.consumption !== undefined
-                        ? reading.consumption
-                        : '-'}
-                    </TableCell>
-                    <TableCell>{reading.period}</TableCell>
-                    <TableCell>
-                      {new Date(reading.created_at).toLocaleDateString()}
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-          <TablePagination
-            rowsPerPageOptions={[10, 25, 50, 100]}
-            component="div"
-            count={filteredReadings.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelRowsPerPage="Registros por página"
-          />
-        </TableContainer>
-      </Box>
-    </ProtectedAdminRoute>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 };
 

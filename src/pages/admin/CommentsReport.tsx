@@ -33,8 +33,7 @@ import {
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
-import { usePermissions } from '../../contexts/PermissionsContext';
-import ProtectedAdminRoute from '../../components/ProtectedAdminRoute';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Comment {
   id: number;
@@ -53,7 +52,7 @@ interface Meter {
 }
 
 const CommentsReport: React.FC = () => {
-  const permissions = usePermissions();
+  const { isAuthenticated } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [filters, setFilters] = useState({
@@ -143,7 +142,7 @@ const CommentsReport: React.FC = () => {
   };
 
   const handleOpenDialog = (comment?: Comment) => {
-    if (!permissions.isAuthenticated) {
+    if (!isAuthenticated) {
       showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
       return;
     }
@@ -169,7 +168,7 @@ const CommentsReport: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!permissions.isAuthenticated) {
+    if (!isAuthenticated) {
       showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
       return;
     }
@@ -197,7 +196,7 @@ const CommentsReport: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!permissions.isAuthenticated) {
+    if (!isAuthenticated) {
       showSnackbar('Debes iniciar sesión para realizar esta acción', 'error');
       return;
     }
@@ -251,154 +250,146 @@ const CommentsReport: React.FC = () => {
   }
 
   return (
-    <ProtectedAdminRoute>
-      <Box>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h4">Reporte de Comentarios</Typography>
-          <Button
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            onClick={handleExport}
-          >
-            Exportar a Excel
-          </Button>
-        </Box>
-
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={4}>
-              <FormControl fullWidth>
-                <InputLabel>Medidor</InputLabel>
-                <Select
-                  name="meter_id"
-                  value={filters.meter_id}
-                  onChange={handleSelectChange}
-                  label="Medidor"
-                >
-                  <MenuItem value="">Todos</MenuItem>
-                  {meters.map((meter) => (
-                    <MenuItem key={meter.code_meter} value={meter.code_meter}>
-                      {meter.code_meter} - {meter.location}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                name="start_date"
-                label="Fecha Inicio"
-                type="date"
-                value={filters.start_date}
-                onChange={handleInputChange}
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                name="end_date"
-                label="Fecha Fin"
-                type="date"
-                value={filters.end_date}
-                onChange={handleInputChange}
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Código Medidor</TableCell>
-                <TableCell>Ubicación</TableCell>
-                <TableCell>Comentario</TableCell>
-                <TableCell>Fecha</TableCell>
-                {(permissions.canEdit('comments') || permissions.canDelete('comments')) && (
-                  <TableCell>Acciones</TableCell>
-                )}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {comments.map((comment) => (
-                <TableRow key={comment.id}>
-                  <TableCell>{comment.id}</TableCell>
-                  <TableCell>{comment.meter.code_meter}</TableCell>
-                  <TableCell>{comment.meter.location}</TableCell>
-                  <TableCell>{comment.notes}</TableCell>
-                  <TableCell>{new Date(comment.created_at).toLocaleDateString()}</TableCell>
-                  {(permissions.canEdit('comments') || permissions.canDelete('comments')) && (
-                    <TableCell>
-                      {permissions.canEdit('comments') && (
-                        <IconButton
-                          size="small"
-                          onClick={() => handleOpenDialog(comment)}
-                        >
-                          <EditIcon />
-                        </IconButton>
-                      )}
-                      {permissions.canDelete('comments') && (
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => handleDelete(comment.id)}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      )}
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            {editingComment ? 'Editar Comentario' : 'Nuevo Comentario'}
-          </DialogTitle>
-          <DialogContent>
-            <Box sx={{ mt: 2 }}>
-              <TextField
-                fullWidth
-                label="Comentario"
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                multiline
-                rows={4}
-                sx={{ mb: 2 }}
-              />
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancelar</Button>
-            <Button onClick={handleSubmit} variant="contained" color="primary">
-              {editingComment ? 'Guardar' : 'Crear'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        <Snackbar
-          open={snackbar.open}
-          autoHideDuration={6000}
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Reporte de Comentarios</Typography>
+        <Button
+          variant="contained"
+          startIcon={<DownloadIcon />}
+          onClick={handleExport}
         >
-          <Alert
-            onClose={() => setSnackbar({ ...snackbar, open: false })}
-            severity={snackbar.severity}
-            sx={{ width: '100%' }}
-          >
-            {snackbar.message}
-          </Alert>
-        </Snackbar>
+          Exportar a Excel
+        </Button>
       </Box>
-    </ProtectedAdminRoute>
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Medidor</InputLabel>
+              <Select
+                name="meter_id"
+                value={filters.meter_id}
+                onChange={handleSelectChange}
+                label="Medidor"
+              >
+                <MenuItem value="">Todos</MenuItem>
+                {meters.map((meter) => (
+                  <MenuItem key={meter.code_meter} value={meter.code_meter}>
+                    {meter.code_meter} - {meter.location}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              name="start_date"
+              label="Fecha Inicio"
+              type="date"
+              value={filters.start_date}
+              onChange={handleInputChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              name="end_date"
+              label="Fecha Fin"
+              type="date"
+              value={filters.end_date}
+              onChange={handleInputChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+        </Grid>
+      </Paper>
+
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>ID</TableCell>
+              <TableCell>Código Medidor</TableCell>
+              <TableCell>Ubicación</TableCell>
+              <TableCell>Comentario</TableCell>
+              <TableCell>Fecha</TableCell>
+              <TableCell>Acciones</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {comments.map((comment) => (
+              <TableRow key={comment.id}>
+                <TableCell>{comment.id}</TableCell>
+                <TableCell>{comment.meter.code_meter}</TableCell>
+                <TableCell>{comment.meter.location}</TableCell>
+                <TableCell>{comment.notes}</TableCell>
+                <TableCell>{new Date(comment.created_at).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleOpenDialog(comment)}
+                    disabled={!isAuthenticated}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleDelete(comment.id)}
+                    disabled={!isAuthenticated}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editingComment ? 'Editar Comentario' : 'Nuevo Comentario'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              label="Comentario"
+              value={formData.notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              multiline
+              rows={4}
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancelar</Button>
+          <Button onClick={handleSubmit} variant="contained" color="primary">
+            {editingComment ? 'Guardar' : 'Crear'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 };
 

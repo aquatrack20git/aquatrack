@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
 import {
   Box,
   Grid,
@@ -16,7 +15,6 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface DashboardData {
   totalMeters: number;
@@ -41,8 +39,8 @@ interface DashboardData {
 }
 
 const Dashboard: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +49,7 @@ const Dashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
       setError(null);
 
       // Obtener total de medidores
@@ -105,6 +104,8 @@ const Dashboard: React.FC = () => {
     } catch (error: any) {
       console.error('Error al cargar datos:', error);
       setError(error.message || 'Error al cargar los datos del dashboard');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -114,10 +115,6 @@ const Dashboard: React.FC = () => {
         <CircularProgress />
       </Box>
     );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
   }
 
   if (error) {
