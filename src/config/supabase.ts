@@ -35,7 +35,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce',
     storageKey: 'aquatrack-auth-token',
     storage: window.localStorage,
-    debug: true // Habilitar logs de depuración
+    debug: import.meta.env.DEV // Solo en desarrollo
   },
   db: {
     schema: 'public'

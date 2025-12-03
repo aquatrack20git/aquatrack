@@ -15,6 +15,9 @@ import ReadingsReport from './pages/admin/ReadingsReport';
 import CommentsReport from './pages/admin/CommentsReport';
 import SetupAdmin from './pages/admin/SetupAdmin';
 import ChangePassword from './pages/admin/ChangePassword';
+import TariffManagement from './pages/admin/TariffManagement';
+import CalculationParams from './pages/admin/CalculationParams';
+import Billing from './pages/admin/Billing';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Readings from './pages/Readings';
 import VerifyEmail from './pages/admin/VerifyEmail';
@@ -129,6 +132,9 @@ const AdminRoutes = () => {
         <Route path="readings" element={<ReadingsManagement />} />
         <Route path="reports/readings" element={<ReadingsReport />} />
         <Route path="reports/comments" element={<CommentsReport />} />
+        <Route path="tariffs" element={<TariffManagement />} />
+        <Route path="calculation-params" element={<CalculationParams />} />
+        <Route path="billing" element={<Billing />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>
