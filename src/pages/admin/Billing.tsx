@@ -98,7 +98,7 @@ const Billing: React.FC = () => {
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
-    severity: 'success' as 'success' | 'error' | 'info',
+    severity: 'success' as 'success' | 'error' | 'info' | 'warning',
   });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
@@ -108,11 +108,11 @@ const Billing: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedPeriod) {
+    if (selectedPeriod && meters.length > 0) {
       fetchReadings();
       fetchBills();
     }
-  }, [selectedPeriod]);
+  }, [selectedPeriod, meters]);
 
   const fetchPeriods = async () => {
     try {
@@ -789,10 +789,13 @@ const Billing: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {bills.map((bill) => (
+                {bills.map((bill) => {
+                  const meter = meters.find(m => m.code_meter === bill.meter_id);
+                  const displayName = bill.meter_description || meter?.description || bill.meter_id;
+                  return (
                   <TableRow key={bill.meter_id} hover>
                     <TableCell>{bill.meter_id}</TableCell>
-                    <TableCell>{bill.meter_description || bill.meter_name}</TableCell>
+                    <TableCell>{displayName}</TableCell>
                     <TableCell>
                       {editingRow === bill.meter_id ? (
                         <TextField
@@ -1058,7 +1061,8 @@ const Billing: React.FC = () => {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
