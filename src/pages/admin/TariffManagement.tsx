@@ -336,19 +336,33 @@ const TariffManagement: React.FC = () => {
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mt: 1 }}>
               <Box>
                 <Typography variant="caption" color="text.secondary">BASE</Typography>
-                <Typography variant="body2" fontWeight="bold">${previewResult.base_amount.toFixed(2)}</Typography>
+                <Typography variant="body2" fontWeight="bold">
+                  ${previewResult.tariff_breakdown?.find((item: any) => item.name === 'BASE')?.amount?.toFixed(2) || previewResult.base_amount.toFixed(2)}
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Rango 16-20</Typography>
-                <Typography variant="body2" fontWeight="bold">${previewResult.range_16_20_amount.toFixed(2)}</Typography>
+                <Typography variant="body2" fontWeight="bold">
+                  ${previewResult.tariff_breakdown?.find((item: any) => 
+                    item.name.includes('16-20') || item.name.includes('Rango 16-20')
+                  )?.amount?.toFixed(2) || previewResult.range_16_20_amount.toFixed(2)}
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Rango 21-25</Typography>
-                <Typography variant="body2" fontWeight="bold">${previewResult.range_21_25_amount.toFixed(2)}</Typography>
+                <Typography variant="body2" fontWeight="bold">
+                  ${previewResult.tariff_breakdown?.find((item: any) => 
+                    item.name.includes('21-25') || item.name.includes('Rango 21-25')
+                  )?.amount?.toFixed(2) || previewResult.range_21_25_amount.toFixed(2)}
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Rango 26+</Typography>
-                <Typography variant="body2" fontWeight="bold">${previewResult.range_26_plus_amount.toFixed(2)}</Typography>
+                <Typography variant="body2" fontWeight="bold">
+                  ${previewResult.tariff_breakdown?.find((item: any) => 
+                    item.name.includes('26+') || item.name.includes('Rango 26+')
+                  )?.amount?.toFixed(2) || previewResult.range_26_plus_amount.toFixed(2)}
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">TOTAL</Typography>
