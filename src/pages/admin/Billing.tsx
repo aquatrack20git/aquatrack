@@ -118,12 +118,31 @@ const Billing: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('readings')
-        .select('period')
-        .order('period', { ascending: false });
+        .select('period');
 
       if (error) throw error;
 
-      const uniquePeriods = [...new Set(data?.map(r => r.period) || [])].sort();
+      // Mapeo de nombres de meses a números (misma lógica que ReadingsManagement)
+      const meses: Record<string, number> = {
+        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
+        'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+      };
+
+      // Extraer periodos únicos y ordenar cronológicamente (más recientes primero)
+      const uniquePeriods = [...new Set(data?.map(r => r.period) || [])].sort((a, b) => {
+        const [mesA, añoA] = a.split(' ');
+        const [mesB, añoB] = b.split(' ');
+        const numMesA = meses[mesA];
+        const numMesB = meses[mesB];
+        const numAñoA = parseInt(añoA);
+        const numAñoB = parseInt(añoB);
+        
+        // Primero comparar por año (más recientes primero)
+        if (numAñoA !== numAñoB) return numAñoB - numAñoA;
+        // Si es el mismo año, comparar por mes (más recientes primero)
+        return numMesB - numMesA;
+      });
+
       setAvailablePeriods(uniquePeriods);
     } catch (error: any) {
       console.error('Error fetching periods:', error);
@@ -533,7 +552,7 @@ const Billing: React.FC = () => {
     ];
     ws['!cols'] = colWidths;
 
-    const fileName = `COBROS ${selectedPeriod} CORRESPONDIENTE A ${selectedPeriod}.xlsx`;
+    const fileName = `FACTURACION CORRESPONDIENTE A ${selectedPeriod}.xlsx`;
     XLSX.writeFile(wb, fileName);
     showSnackbar('Archivo Excel exportado exitosamente', 'success');
   };
