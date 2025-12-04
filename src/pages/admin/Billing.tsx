@@ -37,7 +37,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import { calculateBilling, getPreviousReading, calculateConsumption } from '../../utils/billingUtils';
+import { calculateBilling, calculateConsumption } from '../../utils/billingUtils';
 import * as XLSX from 'xlsx';
 import { getCurrentPeriod } from '../../utils/periodUtils';
 
@@ -52,6 +52,8 @@ interface Reading {
   meter_id: string;
   value: number;
   period: string;
+  previous_reading?: number | null;
+  consumption?: number | null;
 }
 
 interface Bill {
@@ -146,13 +148,62 @@ const Billing: React.FC = () => {
 
   const fetchReadings = async () => {
     try {
+      // Obtener todas las lecturas (no solo del período actual) para poder calcular lectura anterior
       const { data, error } = await supabase
         .from('readings')
         .select('id, meter_id, value, period')
-        .eq('period', selectedPeriod);
+        .order('id', { ascending: false });
 
       if (error) throw error;
-      setReadings(data || []);
+
+      // Mapeo de nombres de meses a números (misma lógica que ReadingsManagement)
+      const meses: Record<string, number> = {
+        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
+        'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+      };
+
+      // Procesar los datos para calcular lectura anterior y consumo (misma lógica que ReadingsManagement)
+      const processedData = data?.map((reading) => {
+        // Obtener todas las lecturas del mismo medidor ordenadas por periodo
+        const lecturasDelMedidor = data
+          .filter(r => r.meter_id === reading.meter_id)
+          .sort((a, b) => {
+            const [mesA, añoA] = a.period.split(' ');
+            const [mesB, añoB] = b.period.split(' ');
+            const numMesA = meses[mesA];
+            const numMesB = meses[mesB];
+            const numAñoA = parseInt(añoA);
+            const numAñoB = parseInt(añoB);
+            
+            // Primero comparar por año
+            if (numAñoA !== numAñoB) {
+              return numAñoB - numAñoA; // Años más recientes primero
+            }
+            // Si es el mismo año, comparar por mes
+            return numMesB - numMesA; // Meses más recientes primero
+          });
+
+        // Encontrar la lectura anterior (la siguiente en la lista ordenada)
+        const currentIndex = lecturasDelMedidor.findIndex(r => r.period === reading.period);
+        const previousReading = currentIndex < lecturasDelMedidor.length - 1 ? lecturasDelMedidor[currentIndex + 1] : null;
+
+        // Calcular el consumo (misma lógica que ReadingsManagement)
+        let consumption = null;
+        if (previousReading && typeof reading.value === 'number' && typeof previousReading.value === 'number') {
+          consumption = reading.value - previousReading.value;
+        }
+
+        return {
+          ...reading,
+          previous_reading: previousReading?.value,
+          consumption: consumption !== null ? consumption : 0
+        };
+      }) || [];
+
+      // Filtrar solo las lecturas del período seleccionado
+      const readingsForPeriod = processedData.filter(r => r.period === selectedPeriod);
+      
+      setReadings(readingsForPeriod);
     } catch (error: any) {
       console.error('Error fetching readings:', error);
       showSnackbar('Error al cargar lecturas', 'error');
@@ -202,11 +253,9 @@ const Billing: React.FC = () => {
 
       for (const reading of readings) {
         try {
-          // Obtener lectura anterior
-          const previousReading = await getPreviousReading(reading.meter_id, selectedPeriod);
-
-          // Calcular consumo
-          let consumption = calculateConsumption(reading.value, previousReading);
+          // Usar lectura anterior y consumo ya calculados (misma lógica que ReadingsManagement)
+          const previousReading = reading.previous_reading ?? null;
+          const consumption = reading.consumption ?? 0;
 
           // Calcular tarifas
           const billingCalc = await calculateBilling(consumption);
