@@ -1,3 +1,12 @@
+-- Función para actualizar updated_at automáticamente (si no existe)
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = TIMEZONE('utc'::text, NOW());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Tabla para guardar facturas/cobros calculados
 CREATE TABLE IF NOT EXISTS bills (
     id BIGSERIAL PRIMARY KEY,
