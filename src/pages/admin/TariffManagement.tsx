@@ -362,11 +362,17 @@ const TariffManagement: React.FC = () => {
                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                   Desglose:
                 </Typography>
-                {previewResult.tariff_breakdown.map((item: any, index: number) => (
-                  <Typography key={index} variant="caption" display="block">
-                    • {item.name}: {item.units} m³ × ${item.unit_price.toFixed(4)} = ${item.amount.toFixed(2)}
-                  </Typography>
-                ))}
+                {previewResult.tariff_breakdown.map((item: any, index: number) => {
+                  // Si es BASE con cargo fijo, mostrar diferente
+                  const isFixedCharge = item.name === 'BASE' && item.units === 1 && item.unit_price === item.amount;
+                  return (
+                    <Typography key={index} variant="caption" display="block">
+                      • {item.name}: {isFixedCharge 
+                        ? `$${item.amount.toFixed(2)} (cargo fijo)`
+                        : `${item.units} m³ × $${item.unit_price.toFixed(4)} = $${item.amount.toFixed(2)}`}
+                    </Typography>
+                  );
+                })}
               </Box>
             )}
           </Box>

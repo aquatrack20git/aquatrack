@@ -62,21 +62,31 @@ export const calculateBilling = async (
   // Aplicar cada tarifa según su orden (acumulativo)
   for (const tariff of tariffs || []) {
     // Calcular monto según el tipo de tarifa
-    if (tariff.fixed_charge > 0) {
+    // Priorizar fixed_charge sobre price_per_unit
+    // Si es BASE (nombre contiene "BASE" o min_consumption = 0), tratar como cargo fijo
+    const isBaseTariff = tariff.name.toUpperCase().includes('BASE') || 
+                         (tariff.min_consumption === 0 && tariff.max_consumption <= 15);
+    
+    if (tariff.fixed_charge > 0 || isBaseTariff) {
       // Tarifa con cargo fijo (BASE) - se aplica siempre que el consumo supere el mínimo
       // Para BASE (0-15), se aplica siempre que consumo >= 0, incluso si supera 15
       if (consumption >= tariff.min_consumption) {
-        base_amount = tariff.fixed_charge;
+        const fixedAmount = tariff.fixed_charge > 0 ? tariff.fixed_charge : 2.00; // Default para BASE
+        base_amount = fixedAmount;
         breakdown.push({
           name: tariff.name,
           min: tariff.min_consumption,
           max: tariff.max_consumption,
           units: 1,
-          unit_price: tariff.fixed_charge,
-          amount: tariff.fixed_charge,
+          unit_price: fixedAmount,
+          amount: fixedAmount,
         });
       }
-    } else if (tariff.price_per_unit > 0) {
+      // Si tiene fixed_charge o es BASE, no procesar como tarifa por unidad
+      continue;
+    }
+    
+    if (tariff.price_per_unit > 0) {
       // Tarifa por unidad - calcular m³ adicionales en este rango
       // Según la tabla: se calculan los m³ que exceden el rango anterior
       let units = 0;
