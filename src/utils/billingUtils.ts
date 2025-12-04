@@ -63,9 +63,9 @@ export const calculateBilling = async (
   for (const tariff of tariffs || []) {
     // Calcular monto según el tipo de tarifa
     if (tariff.fixed_charge > 0) {
-      // Tarifa con cargo fijo (BASE) - solo si el consumo está en el rango
-      if (consumption >= tariff.min_consumption && 
-          (tariff.max_consumption === null || consumption <= tariff.max_consumption)) {
+      // Tarifa con cargo fijo (BASE) - se aplica siempre que el consumo supere el mínimo
+      // Para BASE (0-15), se aplica siempre que consumo >= 0, incluso si supera 15
+      if (consumption >= tariff.min_consumption) {
         base_amount = tariff.fixed_charge;
         breakdown.push({
           name: tariff.name,
@@ -77,7 +77,8 @@ export const calculateBilling = async (
         });
       }
     } else if (tariff.price_per_unit > 0) {
-      // Tarifa por unidad - calcular unidades consumidas en este rango
+      // Tarifa por unidad - calcular m³ adicionales en este rango
+      // Según la tabla: se calculan los m³ que exceden el rango anterior
       let units = 0;
       const minConsumption = tariff.min_consumption;
       const maxConsumption = tariff.max_consumption;
@@ -86,18 +87,25 @@ export const calculateBilling = async (
       if (consumption >= minConsumption) {
         if (maxConsumption === null || maxConsumption === undefined) {
           // Rango sin límite superior (ej: 26+)
-          // Calcular desde el mínimo hasta el consumo actual
-          units = Math.max(0, consumption - minConsumption + 1);
+          // Calcular m³ adicionales desde el límite anterior (25) hasta el consumo actual
+          // Para consumo 30: unidades = 30 - 25 = 5 m³
+          const previousLimit = minConsumption - 1; // 25 para rango 26+
+          units = Math.max(0, consumption - previousLimit);
         } else {
           // Rango con límite superior
-          // Calcular solo las unidades dentro de este rango específico
+          // Calcular m³ adicionales en este rango específico
+          // Ejemplo: rango 16-20, consumo 30
+          // - Límite anterior: 15
+          // - Límite actual: min(30, 20) = 20
+          // - Unidades: 20 - 15 = 5 m³
+          const previousLimit = minConsumption - 1; // 15 para rango 16-20
           const actualMax = Math.min(consumption, maxConsumption);
-          if (actualMax >= minConsumption) {
-            units = actualMax - minConsumption + 1; // +1 porque incluye ambos extremos
+          if (actualMax > previousLimit) {
+            units = actualMax - previousLimit;
           }
         }
         
-        // Si hay límite de unidades, aplicar
+        // Si hay límite de unidades (max_units), aplicar
         if (tariff.max_units !== null && tariff.max_units !== undefined) {
           units = Math.min(units, tariff.max_units);
         }
