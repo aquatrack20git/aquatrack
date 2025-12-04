@@ -80,6 +80,7 @@ interface Bill {
 
 interface BillRow extends Bill {
   meter_name?: string;
+  meter_description?: string; // Apellidos y Nombres (description del medidor)
   meter_location?: string;
   isEditing?: boolean;
 }
@@ -227,6 +228,7 @@ const Billing: React.FC = () => {
         return {
           ...bill,
           meter_name: meter?.code_meter || bill.meter_id,
+          meter_description: meter?.description || '', // Apellidos y Nombres
           meter_location: meter?.location || '',
         };
       });
@@ -322,6 +324,7 @@ const Billing: React.FC = () => {
             total_amount: totalAmount,
             payment_status: 'PENDIENTE',
             meter_name: meter?.code_meter || reading.meter_id,
+            meter_description: meter?.description || '', // Apellidos y Nombres
             meter_location: meter?.location || '',
           });
         } catch (error: any) {
@@ -481,7 +484,7 @@ const Billing: React.FC = () => {
       const meter = meters.find(m => m.code_meter === bill.meter_id);
       return {
         'COD': bill.meter_id,
-        'NOMBRES Y APELLIDOS': meter?.location || bill.meter_location || '',
+        'NOMBRES Y APELLIDOS': meter?.description || bill.meter_description || '',
         'LECTURA ANTERIOR': bill.previous_reading || 0,
         'LECTURA ACTUAL': bill.current_reading,
         'TOTAL CONSUMO': bill.consumption,
@@ -770,7 +773,7 @@ const Billing: React.FC = () => {
                 {bills.map((bill) => (
                   <TableRow key={bill.meter_id} hover>
                     <TableCell>{bill.meter_id}</TableCell>
-                    <TableCell>{bill.meter_location || bill.meter_name}</TableCell>
+                    <TableCell>{bill.meter_description || bill.meter_name}</TableCell>
                     <TableCell>
                       {editingRow === bill.meter_id ? (
                         <TextField
