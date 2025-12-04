@@ -174,27 +174,52 @@ export const getPreviousReading = async (
   currentPeriod: string
 ): Promise<number | null> => {
   try {
-    // Obtener todas las lecturas del medidor ordenadas por período
+    // Obtener todas las lecturas del medidor
     const { data: readings, error } = await supabase
       .from('readings')
       .select('value, period')
-      .eq('meter_id', meterId)
-      .order('period', { ascending: false });
+      .eq('meter_id', meterId);
 
     if (error) throw error;
 
     if (!readings || readings.length === 0) return null;
 
+    // Mapeo de nombres de meses a números para ordenar correctamente
+    const meses: Record<string, number> = {
+      'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
+      'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+    };
+
+    // Ordenar lecturas por período (más recientes primero)
+    const sortedReadings = [...readings].sort((a, b) => {
+      const [mesA, añoA] = a.period.split(' ');
+      const [mesB, añoB] = b.period.split(' ');
+      const numMesA = meses[mesA] || 0;
+      const numMesB = meses[mesB] || 0;
+      const numAñoA = parseInt(añoA) || 0;
+      const numAñoB = parseInt(añoB) || 0;
+      
+      // Primero comparar por año
+      if (numAñoA !== numAñoB) {
+        return numAñoB - numAñoA; // Años más recientes primero
+      }
+      // Si es el mismo año, comparar por mes
+      return numMesB - numMesA; // Meses más recientes primero
+    });
+
     // Encontrar la lectura del período actual
-    const currentIndex = readings.findIndex(r => r.period === currentPeriod);
+    const currentIndex = sortedReadings.findIndex(r => r.period === currentPeriod);
     
-    // Si hay una lectura anterior, retornarla
-    if (currentIndex >= 0 && currentIndex < readings.length - 1) {
-      return readings[currentIndex + 1].value;
+    // Encontrar la lectura anterior (la siguiente en la lista ordenada)
+    // Misma lógica que ReadingsManagement: currentIndex < sortedReadings.length - 1
+    const previousReading = currentIndex < sortedReadings.length - 1 ? sortedReadings[currentIndex + 1] : null;
+    
+    if (previousReading) {
+      return previousReading.value;
     }
 
-    // Si no hay lectura del período actual, retornar la más reciente
-    return readings[0]?.value || null;
+    // Si no hay lectura anterior, retornar null (no hay lectura previa)
+    return null;
   } catch (error) {
     console.error('Error getting previous reading:', error);
     return null;
