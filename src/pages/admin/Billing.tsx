@@ -192,89 +192,100 @@ const Billing: React.FC = () => {
   const calculateAllBills = async () => {
     try {
       setCalculating(true);
+      
+      if (!readings || readings.length === 0) {
+        showSnackbar('No hay lecturas para el período seleccionado', 'warning');
+        return;
+      }
+
       const newBills: BillRow[] = [];
 
       for (const reading of readings) {
-        // Obtener lectura anterior
-        const previousReading = await getPreviousReading(reading.meter_id, selectedPeriod);
+        try {
+          // Obtener lectura anterior
+          const previousReading = await getPreviousReading(reading.meter_id, selectedPeriod);
 
-        // Calcular consumo
-        let consumption = calculateConsumption(reading.value, previousReading);
+          // Calcular consumo
+          let consumption = calculateConsumption(reading.value, previousReading);
 
-        // Calcular tarifas
-        const billingCalc = await calculateBilling(consumption);
+          // Calcular tarifas
+          const billingCalc = await calculateBilling(consumption);
 
-        // Obtener deuda anterior
-        const { data: debtData } = await supabase
-          .from('debts')
-          .select('amount')
-          .eq('meter_id', reading.meter_id)
-          .eq('period', selectedPeriod)
-          .single();
+          // Obtener deuda anterior (usar maybeSingle para evitar errores si no existe)
+          const { data: debtData, error: debtError } = await supabase
+            .from('debts')
+            .select('amount')
+            .eq('meter_id', reading.meter_id)
+            .eq('period', selectedPeriod)
+            .maybeSingle();
 
-        const previousDebt = debtData?.amount || 0;
+          const previousDebt = debtData?.amount || 0;
 
-        // Obtener multas y mora
-        const { data: finesData } = await supabase
-          .from('meter_fines')
-          .select('fines_reuniones, fines_mingas, mora_percentage, mora_amount')
-          .eq('meter_id', reading.meter_id)
-          .eq('period', selectedPeriod)
-          .single();
+          // Obtener multas y mora (usar maybeSingle para evitar errores si no existe)
+          const { data: finesData, error: finesError } = await supabase
+            .from('meter_fines')
+            .select('fines_reuniones, fines_mingas, mora_percentage, mora_amount')
+            .eq('meter_id', reading.meter_id)
+            .eq('period', selectedPeriod)
+            .maybeSingle();
 
-        const finesReuniones = finesData?.fines_reuniones || 0;
-        const finesMingas = finesData?.fines_mingas || 0;
-        const moraAmount = finesData?.mora_amount || (previousDebt * (finesData?.mora_percentage || 0) / 100);
+          const finesReuniones = finesData?.fines_reuniones || 0;
+          const finesMingas = finesData?.fines_mingas || 0;
+          const moraAmount = finesData?.mora_amount || (previousDebt * (finesData?.mora_percentage || 0) / 100);
 
-        // Obtener valor de jardín
-        const { data: gardenData } = await supabase
-          .from('garden_values')
-          .select('amount')
-          .eq('meter_id', reading.meter_id)
-          .eq('period', selectedPeriod)
-          .single();
+          // Obtener valor de jardín (usar maybeSingle para evitar errores si no existe)
+          const { data: gardenData, error: gardenError } = await supabase
+            .from('garden_values')
+            .select('amount')
+            .eq('meter_id', reading.meter_id)
+            .eq('period', selectedPeriod)
+            .maybeSingle();
 
-        const gardenAmount = gardenData?.amount || 0;
+          const gardenAmount = gardenData?.amount || 0;
 
-        // Calcular total
-        const totalAmount = 
-          previousDebt +
-          billingCalc.tariff_total +
-          finesReuniones +
-          finesMingas +
-          moraAmount +
-          gardenAmount;
+          // Calcular total
+          const totalAmount = 
+            previousDebt +
+            billingCalc.tariff_total +
+            finesReuniones +
+            finesMingas +
+            moraAmount +
+            gardenAmount;
 
-        const meter = meters.find(m => m.code_meter === reading.meter_id);
+          const meter = meters.find(m => m.code_meter === reading.meter_id);
 
-        newBills.push({
-          meter_id: reading.meter_id,
-          period: selectedPeriod,
-          previous_reading: previousReading,
-          current_reading: reading.value,
-          consumption,
-          base_amount: billingCalc.base_amount,
-          range_16_20_amount: billingCalc.range_16_20_amount,
-          range_21_25_amount: billingCalc.range_21_25_amount,
-          range_26_plus_amount: billingCalc.range_26_plus_amount,
-          tariff_total: billingCalc.tariff_total,
-          previous_debt: previousDebt,
-          fines_reuniones: finesReuniones,
-          fines_mingas: finesMingas,
-          mora_amount: moraAmount,
-          garden_amount: gardenAmount,
-          total_amount: totalAmount,
-          payment_status: 'PENDIENTE',
-          meter_name: meter?.code_meter || reading.meter_id,
-          meter_location: meter?.location || '',
-        });
+          newBills.push({
+            meter_id: reading.meter_id,
+            period: selectedPeriod,
+            previous_reading: previousReading,
+            current_reading: reading.value,
+            consumption,
+            base_amount: billingCalc.base_amount,
+            range_16_20_amount: billingCalc.range_16_20_amount,
+            range_21_25_amount: billingCalc.range_21_25_amount,
+            range_26_plus_amount: billingCalc.range_26_plus_amount,
+            tariff_total: billingCalc.tariff_total,
+            previous_debt: previousDebt,
+            fines_reuniones: finesReuniones,
+            fines_mingas: finesMingas,
+            mora_amount: moraAmount,
+            garden_amount: gardenAmount,
+            total_amount: totalAmount,
+            payment_status: 'PENDIENTE',
+            meter_name: meter?.code_meter || reading.meter_id,
+            meter_location: meter?.location || '',
+          });
+        } catch (error: any) {
+          console.error(`Error processing reading for ${reading.meter_id}:`, error);
+          // Continuar con el siguiente medidor aunque haya un error
+        }
       }
 
       setBills(newBills);
       showSnackbar(`Se calcularon ${newBills.length} facturas`, 'success');
     } catch (error: any) {
       console.error('Error calculating bills:', error);
-      showSnackbar('Error al calcular facturas', 'error');
+      showSnackbar(error.message || 'Error al calcular facturas', 'error');
     } finally {
       setCalculating(false);
     }
