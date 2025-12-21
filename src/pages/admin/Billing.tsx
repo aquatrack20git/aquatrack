@@ -270,6 +270,16 @@ const Billing: React.FC = () => {
         return;
       }
 
+      // Obtener bills existentes para preservar id y payment_status
+      const { data: existingBills } = await supabase
+        .from('bills')
+        .select('id, meter_id, payment_status, observations')
+        .eq('period', selectedPeriod);
+
+      const existingBillsMap = new Map(
+        (existingBills || []).map(bill => [bill.meter_id, bill])
+      );
+
       const newBills: BillRow[] = [];
 
       for (const reading of readings) {
@@ -323,8 +333,10 @@ const Billing: React.FC = () => {
             gardenAmount;
 
           const meter = meters.find(m => m.code_meter === reading.meter_id);
+          const existingBill = existingBillsMap.get(reading.meter_id);
 
           newBills.push({
+            id: existingBill?.id, // Preservar id si existe
             meter_id: reading.meter_id,
             period: selectedPeriod,
             previous_reading: previousReading,
@@ -339,9 +351,10 @@ const Billing: React.FC = () => {
             fines_reuniones: finesReuniones,
             fines_mingas: finesMingas,
             mora_amount: moraAmount,
-            garden_amount: gardenAmount,
+            garden_amount: gardenAmount, // Incluir el valor de jardín actualizado
             total_amount: totalAmount,
-            payment_status: 'PENDIENTE',
+            payment_status: existingBill?.payment_status || 'PENDIENTE', // Preservar estado de pago
+            observations: existingBill?.observations || undefined, // Preservar observaciones
             meter_name: meter?.code_meter || reading.meter_id,
             meter_description: meter?.description || '', // Apellidos y Nombres
             meter_location: meter?.location || '',
