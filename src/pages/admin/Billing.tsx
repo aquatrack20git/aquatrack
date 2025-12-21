@@ -323,14 +323,13 @@ const Billing: React.FC = () => {
 
           const gardenAmount = gardenData?.amount || 0;
 
-          // Calcular total
+          // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_MINGAS + MORA)
+          // NO incluye MULTAS_REUNIONES ni VALOR_JARDIN
           const totalAmount = 
             previousDebt +
             billingCalc.tariff_total +
-            finesReuniones +
             finesMingas +
-            moraAmount +
-            gardenAmount;
+            moraAmount;
 
           const meter = meters.find(m => m.code_meter === reading.meter_id);
           const existingBill = existingBillsMap.get(reading.meter_id);
@@ -408,14 +407,12 @@ const Billing: React.FC = () => {
         observations: editData.observations || null,
       };
 
-      // Recalcular total siempre
+      // Recalcular total siempre (DEUDA + COBRO + MULTAS_MINGAS + MORA)
       billData.total_amount = 
         billData.previous_debt +
         billData.tariff_total +
-        billData.fines_reuniones +
         billData.fines_mingas +
-        billData.mora_amount +
-        billData.garden_amount;
+        billData.mora_amount;
 
       // Verificar si existe
       const existingBill = bills.find(b => b.meter_id === editingRow && b.id);
@@ -872,10 +869,8 @@ const Billing: React.FC = () => {
                               total_amount: 
                                 (editData.previous_debt ?? bill.previous_debt) +
                                 billingCalc.tariff_total +
-                                (editData.fines_reuniones ?? bill.fines_reuniones) +
                                 (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount) +
-                                (editData.garden_amount ?? bill.garden_amount),
+                                (editData.mora_amount ?? bill.mora_amount),
                             });
                           }}
                           sx={{ width: 100 }}
@@ -902,10 +897,8 @@ const Billing: React.FC = () => {
                               total_amount: 
                                 newDebt +
                                 (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_reuniones ?? bill.fines_reuniones) +
                                 (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount) +
-                                (editData.garden_amount ?? bill.garden_amount),
+                                (editData.mora_amount ?? bill.mora_amount),
                             });
                           }}
                           sx={{ width: 100 }}
@@ -926,13 +919,12 @@ const Billing: React.FC = () => {
                             setEditData({
                               ...editData,
                               fines_reuniones: newFines,
+                              // MULTAS_REUNIONES no se incluye en el total
                               total_amount: 
                                 (editData.previous_debt ?? bill.previous_debt) +
                                 (editData.tariff_total ?? bill.tariff_total) +
-                                newFines +
                                 (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount) +
-                                (editData.garden_amount ?? bill.garden_amount),
+                                (editData.mora_amount ?? bill.mora_amount),
                             });
                           }}
                           sx={{ width: 100 }}
@@ -955,10 +947,8 @@ const Billing: React.FC = () => {
                               total_amount: 
                                 (editData.previous_debt ?? bill.previous_debt) +
                                 (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_reuniones ?? bill.fines_reuniones) +
                                 newFines +
-                                (editData.mora_amount ?? bill.mora_amount) +
-                                (editData.garden_amount ?? bill.garden_amount),
+                                (editData.mora_amount ?? bill.mora_amount),
                             });
                           }}
                           sx={{ width: 100 }}
@@ -981,10 +971,8 @@ const Billing: React.FC = () => {
                               total_amount: 
                                 (editData.previous_debt ?? bill.previous_debt) +
                                 (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_reuniones ?? bill.fines_reuniones) +
                                 (editData.fines_mingas ?? bill.fines_mingas) +
-                                newMora +
-                                (editData.garden_amount ?? bill.garden_amount),
+                                newMora,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -1020,13 +1008,13 @@ const Billing: React.FC = () => {
                             setEditData({
                               ...editData,
                               garden_amount: newGarden,
+                              // El jardín NO se incluye en el total, solo se muestra como información adicional
+                              // DIFERENCIA = TOTAL A PAGAR - VALOR JARDIN
                               total_amount: 
                                 (editData.previous_debt ?? bill.previous_debt) +
                                 (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_reuniones ?? bill.fines_reuniones) +
                                 (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount) +
-                                newGarden,
+                                (editData.mora_amount ?? bill.mora_amount),
                             });
                           }}
                           sx={{ width: 100 }}
