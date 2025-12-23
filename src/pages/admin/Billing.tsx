@@ -241,11 +241,56 @@ const Billing: React.FC = () => {
 
       if (error) throw error;
 
-      // Enriquecer con datos del medidor
-      const enrichedBills = (data || []).map(bill => {
+      // Obtener valores de jardín para este período y actualizar garden_amount en bills
+      const { data: gardenValuesData } = await supabase
+        .from('garden_values')
+        .select('meter_id, amount')
+        .eq('period', selectedPeriod);
+
+      const gardenValuesMap = new Map(
+        (gardenValuesData || []).map(gv => [gv.meter_id, gv.amount])
+      );
+
+      // Actualizar garden_amount en la BD si es diferente
+      const billsToUpdate: Array<{ id: number; garden_amount: number }> = [];
+      let billsData = data || [];
+      
+      for (const bill of billsData) {
+        const gardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
+        if (bill.garden_amount !== gardenAmount) {
+          billsToUpdate.push({ id: bill.id, garden_amount: gardenAmount });
+        }
+      }
+
+      // Actualizar en batch si hay cambios
+      if (billsToUpdate.length > 0) {
+        for (const update of billsToUpdate) {
+          await supabase
+            .from('bills')
+            .update({ garden_amount: update.garden_amount })
+            .eq('id', update.id);
+        }
+        console.log(`Se actualizaron ${billsToUpdate.length} facturas con valores de jardín desde garden_values`);
+        
+        // Refrescar los datos después de actualizar
+        const { data: updatedData, error: refreshError } = await supabase
+          .from('bills')
+          .select('*')
+          .eq('period', selectedPeriod)
+          .order('meter_id');
+        
+        if (!refreshError && updatedData) {
+          billsData = updatedData;
+        }
+      }
+
+      // Enriquecer con datos del medidor y actualizar garden_amount desde garden_values
+      const enrichedBills = billsData.map(bill => {
         const meter = meters.find(m => m.code_meter === bill.meter_id);
+        const gardenAmount = gardenValuesMap.get(bill.meter_id) ?? bill.garden_amount ?? 0;
         return {
           ...bill,
+          garden_amount: gardenAmount, // Usar el valor más reciente de garden_values
           meter_name: meter?.code_meter || bill.meter_id,
           meter_description: meter?.description || '', // Apellidos y Nombres
           meter_location: meter?.location || '',
@@ -778,7 +823,12 @@ const Billing: React.FC = () => {
       );
       
       setImportDialogOpen(false);
-      calculateAllBills(); // Recalcular facturas
+      
+      // Recalcular facturas con los nuevos valores de jardín
+      await calculateAllBills();
+      
+      // Refrescar los bills - fetchBills ahora sincroniza automáticamente garden_amount desde garden_values
+      await fetchBills();
     } catch (error: any) {
       console.error('Error importing garden values:', error);
       showSnackbar(error.message || 'Error al importar valores de jardín', 'error');
