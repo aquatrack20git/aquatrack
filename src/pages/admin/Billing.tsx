@@ -627,7 +627,20 @@ const Billing: React.FC = () => {
         throw new Error('No se encontró la columna de valor. Busque columnas con: Valor, Amount, Monto, Importe, Jardín, Jardin');
       }
 
-      console.log(`Columnas encontradas: Código en índice ${codigoIndex} (${headers[codigoIndex]}), Valor en índice ${valorIndex} (${headers[valorIndex]})`);
+      // Buscar columna de período (opcional, si no existe se usa selectedPeriod)
+      const periodoIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('período') || 
+               headerLower.includes('periodo') ||
+               headerLower.includes('period');
+      });
+
+      console.log(`Columnas encontradas: Código en índice ${codigoIndex} (${headers[codigoIndex]}), Valor en índice ${valorIndex} (${headers[valorIndex]})${periodoIndex !== -1 ? `, Período en índice ${periodoIndex} (${headers[periodoIndex]})` : ', Período no encontrado (usando período seleccionado)'}`);
+      console.log(`Período seleccionado para importación: ${selectedPeriod}`);
+
+      if (!selectedPeriod) {
+        throw new Error('No hay período seleccionado. Por favor, selecciona un período antes de importar.');
+      }
 
       let imported = 0;
       let errors = 0;
@@ -675,26 +688,83 @@ const Billing: React.FC = () => {
         // Permitir valores de 0 o negativos (pueden ser válidos en algunos casos)
         // Si quieres rechazar negativos, puedes agregar: if (amount < 0) continue;
 
-        try {
-          const { error } = await supabase
-            .from('garden_values')
-            .upsert({
-              meter_id: meterCode,
-              period: selectedPeriod,
-              amount: amount,
-              imported_from_excel: true,
-              import_date: new Date().toISOString(),
-            }, {
-              onConflict: 'meter_id,period'
-            });
-
-          if (error) {
-            console.error(`Error importing garden value for ${meterCode}:`, error);
-            throw error;
+        // Obtener período de la fila si existe, sino usar el seleccionado
+        let periodToUse = selectedPeriod;
+        if (periodoIndex !== -1 && row[periodoIndex]) {
+          const periodFromExcel = String(row[periodoIndex]).trim();
+          if (periodFromExcel) {
+            periodToUse = periodFromExcel;
           }
-          imported++;
-        } catch (error) {
-          console.error(`Error importing garden value for ${meterCode}:`, error);
+        }
+
+        try {
+          const upsertData = {
+            meter_id: meterCode,
+            period: periodToUse,
+            amount: amount,
+            imported_from_excel: true,
+            import_date: new Date().toISOString(),
+          };
+
+          console.log(`Importando: ${meterCode}, Período: ${periodToUse}, Valor: ${amount}`);
+
+          // Verificar si ya existe un registro para este medidor y período
+          const { data: existingData, error: checkError } = await supabase
+            .from('garden_values')
+            .select('id')
+            .eq('meter_id', meterCode)
+            .eq('period', periodToUse)
+            .maybeSingle();
+
+          if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+            console.error(`Error checking existing record for ${meterCode} (${periodToUse}):`, checkError);
+            throw checkError;
+          }
+
+          let result;
+          if (existingData) {
+            // Actualizar registro existente
+            const { data, error } = await supabase
+              .from('garden_values')
+              .update({
+                amount: amount,
+                imported_from_excel: true,
+                import_date: new Date().toISOString(),
+              })
+              .eq('meter_id', meterCode)
+              .eq('period', periodToUse)
+              .select();
+
+            result = { data, error };
+            if (data && data.length > 0) {
+              console.log(`✓ Actualizado: ${meterCode} - ${periodToUse} = $${amount}`);
+            }
+          } else {
+            // Insertar nuevo registro
+            const { data, error } = await supabase
+              .from('garden_values')
+              .insert([upsertData])
+              .select();
+
+            result = { data, error };
+            if (data && data.length > 0) {
+              console.log(`✓ Insertado: ${meterCode} - ${periodToUse} = $${amount}`);
+            }
+          }
+
+          if (result.error) {
+            console.error(`Error importing garden value for ${meterCode} (${periodToUse}):`, result.error);
+            throw result.error;
+          }
+
+          if (result.data && result.data.length > 0) {
+            imported++;
+          } else {
+            console.warn(`⚠ No se pudo confirmar la importación de ${meterCode} - ${periodToUse}`);
+            errors++;
+          }
+        } catch (error: any) {
+          console.error(`Error importing garden value for ${meterCode} (${periodToUse}):`, error);
           errors++;
         }
       }
