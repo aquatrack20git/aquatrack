@@ -597,31 +597,83 @@ const Billing: React.FC = () => {
       }
 
       const headers = jsonData[headerRowIndex] as string[];
-      const codigoIndex = headers.findIndex(h => 
-        String(h).toLowerCase().includes('código') || 
-        String(h).toLowerCase().includes('codigo')
-      );
-      const valorIndex = headers.findIndex(h => 
-        String(h).toLowerCase().includes('valor') || 
-        String(h).toLowerCase().includes('amount')
-      );
+      
+      // Buscar columna de código con múltiples variaciones
+      const codigoIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('código') || 
+               headerLower.includes('codigo') ||
+               headerLower.includes('code') ||
+               headerLower.includes('medidor') ||
+               headerLower.includes('meter');
+      });
+      
+      // Buscar columna de valor con múltiples variaciones
+      const valorIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('valor') || 
+               headerLower.includes('amount') ||
+               headerLower.includes('monto') ||
+               headerLower.includes('importe') ||
+               headerLower.includes('jardín') ||
+               headerLower.includes('jardin');
+      });
 
-      if (codigoIndex === -1 || valorIndex === -1) {
-        throw new Error('No se encontraron las columnas necesarias (Código, Valor)');
+      if (codigoIndex === -1) {
+        throw new Error('No se encontró la columna de código. Busque columnas con: Código, Codigo, Code, Medidor, Meter');
       }
+      
+      if (valorIndex === -1) {
+        throw new Error('No se encontró la columna de valor. Busque columnas con: Valor, Amount, Monto, Importe, Jardín, Jardin');
+      }
+
+      console.log(`Columnas encontradas: Código en índice ${codigoIndex} (${headers[codigoIndex]}), Valor en índice ${valorIndex} (${headers[valorIndex]})`);
 
       let imported = 0;
       let errors = 0;
+      let skipped = 0;
 
       // Procesar filas de datos
       for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        if (!Array.isArray(row) || !row[codigoIndex] || !row[valorIndex]) continue;
+        
+        // Verificar que la fila sea un array válido
+        if (!Array.isArray(row)) {
+          skipped++;
+          continue;
+        }
 
-        const meterCode = String(row[codigoIndex]).trim();
-        const amount = parseFloat(row[valorIndex]) || 0;
+        // Obtener código y valor, manejando valores vacíos, nulos o undefined
+        const codigoCell = row[codigoIndex];
+        const valorCell = row[valorIndex];
 
-        if (!meterCode || amount <= 0) continue;
+        // Si ambos están vacíos, nulos o undefined, saltar la fila
+        if ((codigoCell === undefined || codigoCell === null || codigoCell === '') &&
+            (valorCell === undefined || valorCell === null || valorCell === '')) {
+          skipped++;
+          continue;
+        }
+
+        // Convertir código a string y limpiar
+        const meterCode = codigoCell ? String(codigoCell).trim() : '';
+        
+        // Si no hay código, saltar
+        if (!meterCode) {
+          skipped++;
+          continue;
+        }
+
+        // Convertir valor a número, permitiendo 0
+        let amount: number;
+        if (valorCell === undefined || valorCell === null || valorCell === '') {
+          amount = 0;
+        } else {
+          const parsed = parseFloat(String(valorCell));
+          amount = isNaN(parsed) ? 0 : parsed;
+        }
+
+        // Permitir valores de 0 o negativos (pueden ser válidos en algunos casos)
+        // Si quieres rechazar negativos, puedes agregar: if (amount < 0) continue;
 
         try {
           const { error } = await supabase
@@ -636,7 +688,10 @@ const Billing: React.FC = () => {
               onConflict: 'meter_id,period'
             });
 
-          if (error) throw error;
+          if (error) {
+            console.error(`Error importing garden value for ${meterCode}:`, error);
+            throw error;
+          }
           imported++;
         } catch (error) {
           console.error(`Error importing garden value for ${meterCode}:`, error);
@@ -644,8 +699,11 @@ const Billing: React.FC = () => {
         }
       }
 
+      console.log(`Importación completada: ${imported} importados, ${errors} errores, ${skipped} filas omitidas`);
+
+      const message = `Se importaron ${imported} valores de jardín${errors > 0 ? `. ${errors} errores` : ''}${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
       showSnackbar(
-        `Se importaron ${imported} valores de jardín${errors > 0 ? `. ${errors} errores` : ''}`,
+        message,
         errors > 0 ? 'warning' : 'success'
       );
       
