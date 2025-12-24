@@ -431,6 +431,28 @@ const Billing: React.FC = () => {
     if (!editingRow) return;
 
     try {
+      // Validar que el meter_id existe en la tabla meters
+      const { data: meterData, error: meterError } = await supabase
+        .from('meters')
+        .select('code_meter, status')
+        .eq('code_meter', editingRow)
+        .maybeSingle();
+
+      if (meterError) {
+        console.error(`Error validating meter ${editingRow}:`, meterError);
+        showSnackbar(`Error al validar el medidor ${editingRow}`, 'error');
+        return;
+      }
+
+      if (!meterData) {
+        showSnackbar(`El medidor ${editingRow} no existe en la tabla de medidores`, 'error');
+        return;
+      }
+
+      if (meterData.status !== 'active') {
+        console.warn(`Meter ${editingRow} no está activo (status: ${meterData.status})`);
+      }
+
       const billData = {
         meter_id: editingRow,
         period: selectedPeriod,
@@ -495,6 +517,30 @@ const Billing: React.FC = () => {
 
       for (const bill of bills) {
         try {
+          // Validar que el meter_id existe en la tabla meters
+          const { data: meterData, error: meterError } = await supabase
+            .from('meters')
+            .select('code_meter, status')
+            .eq('code_meter', bill.meter_id)
+            .maybeSingle();
+
+          if (meterError) {
+            console.error(`Error validating meter ${bill.meter_id}:`, meterError);
+            errors++;
+            continue;
+          }
+
+          if (!meterData) {
+            console.error(`Meter ${bill.meter_id} no existe en la tabla meters`);
+            errors++;
+            continue;
+          }
+
+          if (meterData.status !== 'active') {
+            console.warn(`Meter ${bill.meter_id} no está activo (status: ${meterData.status})`);
+            // Continuar de todas formas, pero registrar la advertencia
+          }
+
           const billData = {
             meter_id: bill.meter_id,
             period: bill.period,
@@ -584,8 +630,9 @@ const Billing: React.FC = () => {
         }
       }
 
+      const errorDetails = errors > 0 ? `. ${errors} error(es) - revisa la consola para más detalles` : '';
       showSnackbar(
-        `Se guardaron ${saved} facturas${errors > 0 ? `. ${errors} errores` : ''}`,
+        `Se guardaron ${saved} facturas${errorDetails}`,
         errors > 0 ? 'warning' : 'success'
       );
       fetchBills();
