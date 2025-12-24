@@ -517,23 +517,67 @@ const Billing: React.FC = () => {
           };
 
           if (bill.id) {
-            const { error } = await supabase
+            // Intentar actualizar primero
+            const { data: updateData, error: updateError } = await supabase
               .from('bills')
               .update(billData)
-              .eq('id', bill.id);
+              .eq('id', bill.id)
+              .select();
 
-            if (error) throw error;
+            if (updateError) {
+              console.error(`Error updating bill ${bill.id} for ${bill.meter_id}:`, updateError);
+              throw updateError;
+            }
+
+            // Si no se actualizó ninguna fila, el registro podría no existir
+            if (!updateData || updateData.length === 0) {
+              console.warn(`Bill ${bill.id} for ${bill.meter_id} not found, attempting insert/upsert`);
+              // Intentar upsert usando meter_id y period como clave única
+              const { data: upsertData, error: upsertError } = await supabase
+                .from('bills')
+                .upsert(billData, {
+                  onConflict: 'meter_id,period'
+                })
+                .select();
+
+              if (upsertError) {
+                console.error(`Error upserting bill for ${bill.meter_id}:`, upsertError);
+                throw upsertError;
+              }
+
+              if (upsertData && upsertData.length > 0) {
+                console.log(`✓ Upserted bill for ${bill.meter_id} (${bill.period})`);
+                saved++;
+              } else {
+                console.warn(`⚠ No se pudo confirmar el guardado de ${bill.meter_id}`);
+                errors++;
+              }
+            } else {
+              console.log(`✓ Updated bill ${bill.id} for ${bill.meter_id} (${bill.period})`);
+              saved++;
+            }
           } else {
-            const { error } = await supabase
+            // No tiene ID, intentar insertar o upsert si ya existe
+            const { data: insertData, error: insertError } = await supabase
               .from('bills')
-              .insert([billData])
-              .select()
-              .single();
+              .upsert(billData, {
+                onConflict: 'meter_id,period'
+              })
+              .select();
 
-            if (error) throw error;
+            if (insertError) {
+              console.error(`Error inserting bill for ${bill.meter_id}:`, insertError);
+              throw insertError;
+            }
+
+            if (insertData && insertData.length > 0) {
+              console.log(`✓ Inserted/Upserted bill for ${bill.meter_id} (${bill.period})`);
+              saved++;
+            } else {
+              console.warn(`⚠ No se pudo confirmar el guardado de ${bill.meter_id}`);
+              errors++;
+            }
           }
-
-          saved++;
         } catch (error) {
           console.error(`Error saving bill for ${bill.meter_id}:`, error);
           errors++;
