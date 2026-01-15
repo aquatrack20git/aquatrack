@@ -39,7 +39,7 @@ import {
 import { supabase } from '../../config/supabase';
 import { calculateBilling, calculateConsumption } from '../../utils/billingUtils';
 import * as XLSX from 'xlsx';
-import { getCurrentPeriod } from '../../utils/periodUtils';
+import { getCurrentPeriod, getPreviousPeriod } from '../../utils/periodUtils';
 
 interface Meter {
   code_meter: string;
@@ -336,15 +336,35 @@ const Billing: React.FC = () => {
           // Calcular tarifas
           const billingCalc = await calculateBilling(consumption);
 
-          // Obtener deuda anterior (usar maybeSingle para evitar errores si no existe)
-          const { data: debtData, error: debtError } = await supabase
+          // Obtener período anterior
+          const previousPeriod = getPreviousPeriod(selectedPeriod);
+          
+          // Obtener deuda del mes anterior: siempre usar el total_amount del bill del período anterior
+          // (sin considerar el estado de pago)
+          let previousDebt = 0;
+          if (previousPeriod) {
+            const { data: previousBillData } = await supabase
+              .from('bills')
+              .select('total_amount')
+              .eq('meter_id', reading.meter_id)
+              .eq('period', previousPeriod)
+              .maybeSingle();
+
+            if (previousBillData) {
+              previousDebt = previousBillData.total_amount || 0;
+            }
+          }
+
+          // Sumar deudas manuales adicionales (si existen) del período actual
+          const { data: debtData } = await supabase
             .from('debts')
             .select('amount')
             .eq('meter_id', reading.meter_id)
             .eq('period', selectedPeriod)
             .maybeSingle();
 
-          const previousDebt = debtData?.amount || 0;
+          const additionalDebt = debtData?.amount || 0;
+          previousDebt = previousDebt + additionalDebt;
 
           // Obtener multas y mora (usar maybeSingle para evitar errores si no existe)
           const { data: finesData, error: finesError } = await supabase

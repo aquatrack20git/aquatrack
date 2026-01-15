@@ -31,4 +31,40 @@ export const getPeriodFromDate = (date: Date): string => {
   }
   
   return format(subMonths(date, 1), 'MMMM yyyy', { locale: es }).toUpperCase();
+};
+
+/**
+ * Obtiene el período anterior basado en el período actual
+ * @param currentPeriod - Período en formato "MES AÑO" (ej: "DICIEMBRE 2025")
+ * @returns Período anterior en el mismo formato
+ */
+export const getPreviousPeriod = (currentPeriod: string): string | null => {
+  const meses: Record<string, number> = {
+    'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
+    'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+  };
+  
+  const mesesNombres: Record<number, string> = {
+    1: 'ENERO', 2: 'FEBRERO', 3: 'MARZO', 4: 'ABRIL', 5: 'MAYO', 6: 'JUNIO',
+    7: 'JULIO', 8: 'AGOSTO', 9: 'SEPTIEMBRE', 10: 'OCTUBRE', 11: 'NOVIEMBRE', 12: 'DICIEMBRE'
+  };
+
+  const [mesStr, añoStr] = currentPeriod.split(' ');
+  const mes = meses[mesStr] || 0;
+  const año = parseInt(añoStr) || 0;
+
+  if (mes === 0 || año === 0) {
+    return null;
+  }
+
+  // Calcular mes y año anterior
+  let mesAnterior = mes - 1;
+  let añoAnterior = año;
+
+  if (mesAnterior < 1) {
+    mesAnterior = 12;
+    añoAnterior = año - 1;
+  }
+
+  return `${mesesNombres[mesAnterior]} ${añoAnterior}`;
 }; 
