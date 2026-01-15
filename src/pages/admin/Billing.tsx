@@ -353,18 +353,18 @@ const Billing: React.FC = () => {
             if (previousBillData) {
               previousDebt = previousBillData.total_amount || 0;
             }
+
+            // Sumar deudas manuales del período anterior (si existen)
+            const { data: previousDebtData } = await supabase
+              .from('debts')
+              .select('amount')
+              .eq('meter_id', reading.meter_id)
+              .eq('period', previousPeriod)
+              .maybeSingle();
+
+            const previousPeriodDebt = previousDebtData?.amount || 0;
+            previousDebt = previousDebt + previousPeriodDebt;
           }
-
-          // Sumar deudas manuales adicionales (si existen) del período actual
-          const { data: debtData } = await supabase
-            .from('debts')
-            .select('amount')
-            .eq('meter_id', reading.meter_id)
-            .eq('period', selectedPeriod)
-            .maybeSingle();
-
-          const additionalDebt = debtData?.amount || 0;
-          previousDebt = previousDebt + additionalDebt;
 
           // Obtener multas y mora (usar maybeSingle para evitar errores si no existe)
           const { data: finesData, error: finesError } = await supabase
