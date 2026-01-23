@@ -39,7 +39,7 @@ import {
 import { supabase } from '../../config/supabase';
 import { calculateBilling, calculateConsumption } from '../../utils/billingUtils';
 import * as XLSX from 'xlsx';
-import { getCurrentPeriod } from '../../utils/periodUtils';
+import { getCurrentPeriod, getPreviousPeriod } from '../../utils/periodUtils';
 
 interface Meter {
   code_meter: string;
@@ -310,8 +310,8 @@ const Billing: React.FC = () => {
     try {
       setCalculating(true);
       
-      if (!readings || readings.length === 0) {
-        showSnackbar('No hay lecturas para el período seleccionado', 'warning');
+      if (meters.length === 0) {
+        showSnackbar('No hay medidores disponibles', 'warning');
         return;
       }
 
@@ -325,48 +325,196 @@ const Billing: React.FC = () => {
         (existingBills || []).map(bill => [bill.meter_id, bill])
       );
 
+      // Obtener período anterior
+      const previousPeriod = getPreviousPeriod(selectedPeriod);
+
+      // Obtener TODAS las lecturas de una vez (para todos los medidores)
+      const { data: allReadingsData } = await supabase
+        .from('readings')
+        .select('id, meter_id, value, period')
+        .order('id', { ascending: false });
+
+      const allReadings = allReadingsData || [];
+
+      // Mapeo de meses para ordenar períodos
+      const meses: Record<string, number> = {
+        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
+        'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+      };
+
+      // Función helper para obtener la última lectura anterior a un período
+      const getLastReadingBeforePeriod = (meterId: string, period: string): number | null => {
+        const meterReadings = allReadings
+          .filter(r => r.meter_id === meterId)
+          .sort((a, b) => {
+            const [mesA, añoA] = a.period.split(' ');
+            const [mesB, añoB] = b.period.split(' ');
+            const numMesA = meses[mesA] || 0;
+            const numMesB = meses[mesB] || 0;
+            const numAñoA = parseInt(añoA) || 0;
+            const numAñoB = parseInt(añoB) || 0;
+            
+            if (numAñoA !== numAñoB) {
+              return numAñoB - numAñoA;
+            }
+            return numMesB - numMesA;
+          })
+          .filter(r => {
+            // Filtrar lecturas anteriores al período actual
+            const [mesR, añoR] = r.period.split(' ');
+            const [mesP, añoP] = period.split(' ');
+            const numMesR = meses[mesR] || 0;
+            const numMesP = meses[mesP] || 0;
+            const numAñoR = parseInt(añoR) || 0;
+            const numAñoP = parseInt(añoP) || 0;
+            
+            if (numAñoR < numAñoP) return true;
+            if (numAñoR === numAñoP && numMesR < numMesP) return true;
+            return false;
+          });
+
+        return meterReadings.length > 0 ? meterReadings[0].value : null;
+      };
+
+      // Obtener TODOS los datos necesarios en batch (una sola consulta por tabla)
+      const meterIds = meters.map(m => m.code_meter);
+
+      // Consulta batch: bills del período anterior (necesitamos total_amount y garden_amount para calcular diferencia)
+      const { data: previousBillsData } = previousPeriod
+        ? await supabase
+            .from('bills')
+            .select('meter_id, total_amount, garden_amount')
+            .eq('period', previousPeriod)
+            .in('meter_id', meterIds)
+        : { data: [] };
+
+      // Mapa con la diferencia del período anterior: total_amount - garden_amount
+      const previousBillsDifferenceMap = new Map(
+        (previousBillsData || []).map(bill => {
+          const totalAmount = bill.total_amount || 0;
+          const gardenAmount = bill.garden_amount || 0;
+          const diferencia = totalAmount - gardenAmount;
+          return [bill.meter_id, diferencia];
+        })
+      );
+
+      // Consulta batch: deudas manuales del período anterior
+      const { data: previousDebtsData } = previousPeriod
+        ? await supabase
+            .from('debts')
+            .select('meter_id, amount')
+            .eq('period', previousPeriod)
+            .in('meter_id', meterIds)
+        : { data: [] };
+
+      const previousDebtsMap = new Map(
+        (previousDebtsData || []).map(debt => [debt.meter_id, debt.amount || 0])
+      );
+
+      // Consulta batch: multas y mora del período actual
+      const { data: finesDataAll } = await supabase
+        .from('meter_fines')
+        .select('meter_id, fines_reuniones, fines_mingas, mora_percentage, mora_amount')
+        .eq('period', selectedPeriod)
+        .in('meter_id', meterIds);
+
+      const finesMap = new Map(
+        (finesDataAll || []).map(fine => [fine.meter_id, fine])
+      );
+
+      // Consulta batch: valores de jardín del período actual
+      const { data: gardenDataAll } = await supabase
+        .from('garden_values')
+        .select('meter_id, amount')
+        .eq('period', selectedPeriod)
+        .in('meter_id', meterIds);
+
+      const gardenMap = new Map(
+        (gardenDataAll || []).map(garden => [garden.meter_id, garden.amount || 0])
+      );
+
       const newBills: BillRow[] = [];
 
-      for (const reading of readings) {
+      // Iterar sobre TODOS los medidores activos (no solo los que tienen lectura)
+      for (const meter of meters) {
         try {
-          // Usar lectura anterior y consumo ya calculados (misma lógica que ReadingsManagement)
-          const previousReading = reading.previous_reading ?? null;
-          const consumption = reading.consumption ?? 0;
+          // Buscar si tiene lectura en el período seleccionado
+          const readingForPeriod = allReadings.find(r => 
+            r.meter_id === meter.code_meter && r.period === selectedPeriod
+          );
+          
+          let currentReading: number;
+          let previousReading: number | null = null;
+          let consumption = 0;
+
+          if (readingForPeriod) {
+            // Si tiene lectura, calcular lectura anterior y consumo
+            const meterReadings = allReadings
+              .filter(r => r.meter_id === meter.code_meter)
+              .sort((a, b) => {
+                const [mesA, añoA] = a.period.split(' ');
+                const [mesB, añoB] = b.period.split(' ');
+                const numMesA = meses[mesA] || 0;
+                const numMesB = meses[mesB] || 0;
+                const numAñoA = parseInt(añoA) || 0;
+                const numAñoB = parseInt(añoB) || 0;
+                
+                if (numAñoA !== numAñoB) {
+                  return numAñoB - numAñoA;
+                }
+                return numMesB - numMesA;
+              });
+
+            const currentIndex = meterReadings.findIndex(r => r.period === selectedPeriod);
+            const previousReadingData = currentIndex < meterReadings.length - 1 
+              ? meterReadings[currentIndex + 1] 
+              : null;
+
+            currentReading = readingForPeriod.value;
+            previousReading = previousReadingData?.value || null;
+            consumption = previousReading !== null 
+              ? Math.max(0, currentReading - previousReading) 
+              : 0;
+          } else {
+            // Si NO tiene lectura, usar la última lectura anterior como lectura actual
+            const lastReading = getLastReadingBeforePeriod(meter.code_meter, selectedPeriod);
+            if (lastReading !== null) {
+              currentReading = lastReading;
+              previousReading = lastReading;
+              consumption = 0; // No hay consumo porque la lectura no cambió
+            } else {
+              // Si no hay ninguna lectura anterior, usar 0
+              currentReading = 0;
+              previousReading = null;
+              consumption = 0;
+            }
+          }
 
           // Calcular tarifas
           const billingCalc = await calculateBilling(consumption);
+          
+          // Obtener deuda del mes anterior:
+          // 1. Primero buscar en la tabla debts del período anterior
+          // 2. Si no existe en debts, usar la diferencia del bill del período anterior (total_amount - garden_amount)
+          let previousDebt = 0;
+          const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
+          
+          if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
+            // Existe en la tabla debts, usar ese valor
+            previousDebt = debtFromDebtsTable;
+          } else {
+            // No existe en debts, usar la diferencia del bill del período anterior (total_amount - garden_amount)
+            previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
+          }
 
-          // Obtener deuda anterior (usar maybeSingle para evitar errores si no existe)
-          const { data: debtData, error: debtError } = await supabase
-            .from('debts')
-            .select('amount')
-            .eq('meter_id', reading.meter_id)
-            .eq('period', selectedPeriod)
-            .maybeSingle();
-
-          const previousDebt = debtData?.amount || 0;
-
-          // Obtener multas y mora (usar maybeSingle para evitar errores si no existe)
-          const { data: finesData, error: finesError } = await supabase
-            .from('meter_fines')
-            .select('fines_reuniones, fines_mingas, mora_percentage, mora_amount')
-            .eq('meter_id', reading.meter_id)
-            .eq('period', selectedPeriod)
-            .maybeSingle();
-
+          // Obtener multas y mora desde el mapa (ya cargado en batch)
+          const finesData = finesMap.get(meter.code_meter);
           const finesReuniones = finesData?.fines_reuniones || 0;
           const finesMingas = finesData?.fines_mingas || 0;
           const moraAmount = finesData?.mora_amount || (previousDebt * (finesData?.mora_percentage || 0) / 100);
 
-          // Obtener valor de jardín (usar maybeSingle para evitar errores si no existe)
-          const { data: gardenData, error: gardenError } = await supabase
-            .from('garden_values')
-            .select('amount')
-            .eq('meter_id', reading.meter_id)
-            .eq('period', selectedPeriod)
-            .maybeSingle();
-
-          const gardenAmount = gardenData?.amount || 0;
+          // Obtener valor de jardín desde el mapa (ya cargado en batch)
+          const gardenAmount = gardenMap.get(meter.code_meter) || 0;
 
           // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_MINGAS + MORA)
           // NO incluye MULTAS_REUNIONES ni VALOR_JARDIN
@@ -376,15 +524,14 @@ const Billing: React.FC = () => {
             finesMingas +
             moraAmount;
 
-          const meter = meters.find(m => m.code_meter === reading.meter_id);
-          const existingBill = existingBillsMap.get(reading.meter_id);
+          const existingBill = existingBillsMap.get(meter.code_meter);
 
           newBills.push({
             id: existingBill?.id, // Preservar id si existe
-            meter_id: reading.meter_id,
+            meter_id: meter.code_meter,
             period: selectedPeriod,
             previous_reading: previousReading,
-            current_reading: reading.value,
+            current_reading: currentReading,
             consumption,
             base_amount: billingCalc.base_amount,
             range_16_20_amount: billingCalc.range_16_20_amount,
@@ -395,16 +542,16 @@ const Billing: React.FC = () => {
             fines_reuniones: finesReuniones,
             fines_mingas: finesMingas,
             mora_amount: moraAmount,
-            garden_amount: gardenAmount, // Incluir el valor de jardín actualizado
+            garden_amount: gardenAmount,
             total_amount: totalAmount,
             payment_status: existingBill?.payment_status || 'PENDIENTE', // Preservar estado de pago
             observations: existingBill?.observations || undefined, // Preservar observaciones
-            meter_name: meter?.code_meter || reading.meter_id,
-            meter_description: meter?.description || '', // Apellidos y Nombres
-            meter_location: meter?.location || '',
+            meter_name: meter.code_meter,
+            meter_description: meter.description || '', // Apellidos y Nombres
+            meter_location: meter.location || '',
           });
         } catch (error: any) {
-          console.error(`Error processing reading for ${reading.meter_id}:`, error);
+          console.error(`Error processing meter ${meter.code_meter}:`, error);
           // Continuar con el siguiente medidor aunque haya un error
         }
       }
@@ -755,8 +902,18 @@ const Billing: React.FC = () => {
       }
 
       let imported = 0;
-      let errors = 0;
       let skipped = 0;
+
+      // Procesar todas las filas en memoria primero (sin consultas a BD)
+      const gardenValuesToUpsert: Array<{
+        meter_id: string;
+        period: string;
+        amount: number;
+        imported_from_excel: boolean;
+        import_date: string;
+      }> = [];
+
+      const importDate = new Date().toISOString();
 
       // Procesar filas de datos
       for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
@@ -797,9 +954,6 @@ const Billing: React.FC = () => {
           amount = isNaN(parsed) ? 0 : parsed;
         }
 
-        // Permitir valores de 0 o negativos (pueden ser válidos en algunos casos)
-        // Si quieres rechazar negativos, puedes agregar: if (amount < 0) continue;
-
         // Obtener período de la fila si existe, sino usar el seleccionado
         let periodToUse = selectedPeriod;
         if (periodoIndex !== -1 && row[periodoIndex]) {
@@ -809,90 +963,100 @@ const Billing: React.FC = () => {
           }
         }
 
-        try {
-          const upsertData = {
-            meter_id: meterCode,
-            period: periodToUse,
-            amount: amount,
-            imported_from_excel: true,
-            import_date: new Date().toISOString(),
-          };
-
-          console.log(`Importando: ${meterCode}, Período: ${periodToUse}, Valor: ${amount}`);
-
-          // Verificar si ya existe un registro para este medidor y período
-          const { data: existingData, error: checkError } = await supabase
-            .from('garden_values')
-            .select('id')
-            .eq('meter_id', meterCode)
-            .eq('period', periodToUse)
-            .maybeSingle();
-
-          if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-            console.error(`Error checking existing record for ${meterCode} (${periodToUse}):`, checkError);
-            throw checkError;
-          }
-
-          let result;
-          if (existingData) {
-            // Actualizar registro existente
-            const { data, error } = await supabase
-              .from('garden_values')
-              .update({
-                amount: amount,
-                imported_from_excel: true,
-                import_date: new Date().toISOString(),
-              })
-              .eq('meter_id', meterCode)
-              .eq('period', periodToUse)
-              .select();
-
-            result = { data, error };
-            if (data && data.length > 0) {
-              console.log(`✓ Actualizado: ${meterCode} - ${periodToUse} = $${amount}`);
-            }
-          } else {
-            // Insertar nuevo registro
-            const { data, error } = await supabase
-              .from('garden_values')
-              .insert([upsertData])
-              .select();
-
-            result = { data, error };
-            if (data && data.length > 0) {
-              console.log(`✓ Insertado: ${meterCode} - ${periodToUse} = $${amount}`);
-            }
-          }
-
-          if (result.error) {
-            console.error(`Error importing garden value for ${meterCode} (${periodToUse}):`, result.error);
-            throw result.error;
-          }
-
-          if (result.data && result.data.length > 0) {
-            imported++;
-          } else {
-            console.warn(`⚠ No se pudo confirmar la importación de ${meterCode} - ${periodToUse}`);
-            errors++;
-          }
-        } catch (error: any) {
-          console.error(`Error importing garden value for ${meterCode} (${periodToUse}):`, error);
-          errors++;
-        }
+        // Agregar a la lista para upsert batch
+        gardenValuesToUpsert.push({
+          meter_id: meterCode,
+          period: periodToUse,
+          amount: amount,
+          imported_from_excel: true,
+          import_date: importDate,
+        });
       }
 
-      console.log(`Importación completada: ${imported} importados, ${errors} errores, ${skipped} filas omitidas`);
+      // Hacer upsert batch de todos los valores de jardín de una vez
+      if (gardenValuesToUpsert.length > 0) {
+        console.log(`Importando ${gardenValuesToUpsert.length} valores de jardín en batch...`);
+        
+        const { data: upsertedData, error: upsertError } = await supabase
+          .from('garden_values')
+          .upsert(gardenValuesToUpsert, { 
+            onConflict: 'meter_id,period',
+            ignoreDuplicates: false 
+          })
+          .select('meter_id, period, amount');
 
-      const message = `Se importaron ${imported} valores de jardín${errors > 0 ? `. ${errors} errores` : ''}${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
+        if (upsertError) {
+          console.error('Error al hacer upsert batch de garden_values:', upsertError);
+          throw upsertError;
+        }
+
+        imported = upsertedData?.length || 0;
+        console.log(`✓ Se importaron ${imported} valores de jardín en batch`);
+      }
+
+      console.log(`Importación completada: ${imported} importados, ${skipped} filas omitidas`);
+
+      const message = `Se importaron ${imported} valores de jardín${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
       showSnackbar(
         message,
-        errors > 0 ? 'warning' : 'success'
+        'success'
       );
       
       setImportDialogOpen(false);
       
       // Recalcular facturas con los nuevos valores de jardín
       await calculateAllBills();
+      
+      // Actualizar payment_status a ACREDITADO para los registros que tienen valores de jardín
+      // Obtener los valores de jardín importados para este período
+      const { data: gardenValuesData } = await supabase
+        .from('garden_values')
+        .select('meter_id, amount')
+        .eq('period', selectedPeriod);
+
+      if (gardenValuesData && gardenValuesData.length > 0) {
+        // Obtener bills existentes después del recálculo
+        const { data: existingBills } = await supabase
+          .from('bills')
+          .select('id, meter_id, payment_status, garden_amount')
+          .eq('period', selectedPeriod);
+
+        if (existingBills && existingBills.length > 0) {
+          const gardenValuesMap = new Map(
+            gardenValuesData.map(gv => [gv.meter_id, gv.amount || 0])
+          );
+
+          const billsToUpdateIds: number[] = [];
+          
+          // Identificar bills que tienen valores de jardín mayores a 0
+          for (const bill of existingBills) {
+            const gardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
+            // Si tiene valor de jardín mayor a 0, marcar como ACREDITADO
+            if (gardenAmount > 0) {
+              billsToUpdateIds.push(bill.id);
+            }
+          }
+
+          // Actualizar en batch: payment_status a ACREDITADO para registros con valores de jardín
+          if (billsToUpdateIds.length > 0) {
+            const paymentDate = new Date().toISOString();
+            const { error: updateError } = await supabase
+              .from('bills')
+              .update({ 
+                payment_status: 'ACREDITADO',
+                payment_date: paymentDate
+              })
+              .in('id', billsToUpdateIds);
+
+            if (updateError) {
+              console.error('Error al actualizar payment_status en batch:', updateError);
+              // No lanzar error, solo registrar
+            } else {
+              console.log(`Se marcaron ${billsToUpdateIds.length} facturas como ACREDITADO por tener valores de jardín`);
+            }
+          }
+        }
+      }
       
       // Refrescar los bills - fetchBills ahora sincroniza automáticamente garden_amount desde garden_values
       await fetchBills();

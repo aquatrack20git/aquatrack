@@ -31,4 +31,30 @@ export const getPeriodFromDate = (date: Date): string => {
   }
   
   return format(subMonths(date, 1), 'MMMM yyyy', { locale: es }).toUpperCase();
+};
+
+export const getPreviousPeriod = (currentPeriod: string): string | null => {
+  const meses: Record<string, number> = {
+    'ENERO': 0, 'FEBRERO': 1, 'MARZO': 2, 'ABRIL': 3, 'MAYO': 4, 'JUNIO': 5,
+    'JULIO': 6, 'AGOSTO': 7, 'SEPTIEMBRE': 8, 'OCTUBRE': 9, 'NOVIEMBRE': 10, 'DICIEMBRE': 11
+  };
+  const [mesStr, añoStr] = currentPeriod.split(' ');
+  const mesNum = meses[mesStr];
+  const añoNum = parseInt(añoStr);
+
+  if (isNaN(mesNum) || isNaN(añoNum)) {
+    console.error('Formato de período inválido:', currentPeriod);
+    return null;
+  }
+
+  let previousMesNum = mesNum - 1;
+  let previousAñoNum = añoNum;
+
+  if (previousMesNum < 0) {
+    previousMesNum = 11; // Diciembre
+    previousAñoNum--;
+  }
+
+  const previousDate = new Date(previousAñoNum, previousMesNum, 1);
+  return format(previousDate, 'MMMM yyyy', { locale: es }).toUpperCase();
 }; 
