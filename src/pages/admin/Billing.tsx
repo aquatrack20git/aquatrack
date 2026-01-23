@@ -512,129 +512,105 @@ const Billing: React.FC = () => {
   const handleSaveAll = async () => {
     try {
       setLoading(true);
-      let saved = 0;
-      let errors = 0;
+      
+      // Validar todos los medidores de una vez (batch query)
+      const meterIds = [...new Set(bills.map(b => b.meter_id))];
+      const { data: allMetersData, error: metersError } = await supabase
+        .from('meters')
+        .select('code_meter, status')
+        .in('code_meter', meterIds);
 
-      for (const bill of bills) {
-        try {
-          // Validar que el meter_id existe en la tabla meters
-          const { data: meterData, error: meterError } = await supabase
-            .from('meters')
-            .select('code_meter, status')
-            .eq('code_meter', bill.meter_id)
-            .maybeSingle();
-
-          if (meterError) {
-            console.error(`Error validating meter ${bill.meter_id}:`, meterError);
-            errors++;
-            continue;
-          }
-
-          if (!meterData) {
-            console.error(`Meter ${bill.meter_id} no existe en la tabla meters`);
-            errors++;
-            continue;
-          }
-
-          if (meterData.status !== 'active') {
-            console.warn(`Meter ${bill.meter_id} no está activo (status: ${meterData.status})`);
-            // Continuar de todas formas, pero registrar la advertencia
-          }
-
-          const billData = {
-            meter_id: bill.meter_id,
-            period: bill.period,
-            previous_reading: bill.previous_reading,
-            current_reading: bill.current_reading,
-            consumption: bill.consumption,
-            base_amount: bill.base_amount,
-            range_16_20_amount: bill.range_16_20_amount,
-            range_21_25_amount: bill.range_21_25_amount,
-            range_26_plus_amount: bill.range_26_plus_amount,
-            tariff_total: bill.tariff_total,
-            previous_debt: bill.previous_debt,
-            fines_reuniones: bill.fines_reuniones,
-            fines_mingas: bill.fines_mingas,
-            mora_amount: bill.mora_amount,
-            garden_amount: bill.garden_amount,
-            total_amount: bill.total_amount,
-            payment_status: bill.payment_status,
-            observations: bill.observations || null,
-          };
-
-          if (bill.id) {
-            // Intentar actualizar primero
-            const { data: updateData, error: updateError } = await supabase
-              .from('bills')
-              .update(billData)
-              .eq('id', bill.id)
-              .select();
-
-            if (updateError) {
-              console.error(`Error updating bill ${bill.id} for ${bill.meter_id}:`, updateError);
-              throw updateError;
-            }
-
-            // Si no se actualizó ninguna fila, el registro podría no existir
-            if (!updateData || updateData.length === 0) {
-              console.warn(`Bill ${bill.id} for ${bill.meter_id} not found, attempting insert/upsert`);
-              // Intentar upsert usando meter_id y period como clave única
-              const { data: upsertData, error: upsertError } = await supabase
-                .from('bills')
-                .upsert(billData, {
-                  onConflict: 'meter_id,period'
-                })
-                .select();
-
-              if (upsertError) {
-                console.error(`Error upserting bill for ${bill.meter_id}:`, upsertError);
-                throw upsertError;
-              }
-
-              if (upsertData && upsertData.length > 0) {
-                console.log(`✓ Upserted bill for ${bill.meter_id} (${bill.period})`);
-                saved++;
-              } else {
-                console.warn(`⚠ No se pudo confirmar el guardado de ${bill.meter_id}`);
-                errors++;
-              }
-            } else {
-              console.log(`✓ Updated bill ${bill.id} for ${bill.meter_id} (${bill.period})`);
-              saved++;
-            }
-          } else {
-            // No tiene ID, intentar insertar o upsert si ya existe
-            const { data: insertData, error: insertError } = await supabase
-              .from('bills')
-              .upsert(billData, {
-                onConflict: 'meter_id,period'
-              })
-              .select();
-
-            if (insertError) {
-              console.error(`Error inserting bill for ${bill.meter_id}:`, insertError);
-              throw insertError;
-            }
-
-            if (insertData && insertData.length > 0) {
-              console.log(`✓ Inserted/Upserted bill for ${bill.meter_id} (${bill.period})`);
-              saved++;
-            } else {
-              console.warn(`⚠ No se pudo confirmar el guardado de ${bill.meter_id}`);
-              errors++;
-            }
-          }
-        } catch (error) {
-          console.error(`Error saving bill for ${bill.meter_id}:`, error);
-          errors++;
-        }
+      if (metersError) {
+        console.error('Error validating meters:', metersError);
+        showSnackbar('Error al validar medidores', 'error');
+        return;
       }
 
-      const errorDetails = errors > 0 ? `. ${errors} error(es) - revisa la consola para más detalles` : '';
-      showSnackbar(
-        `Se guardaron ${saved} facturas${errorDetails}`,
-        errors > 0 ? 'warning' : 'success'
-      );
+      const validMetersSet = new Set((allMetersData || []).map(m => m.code_meter));
+      const inactiveMeters = (allMetersData || [])
+        .filter(m => m.status !== 'active')
+        .map(m => m.code_meter);
+
+      if (inactiveMeters.length > 0) {
+        console.warn(`Medidores inactivos encontrados: ${inactiveMeters.join(', ')}`);
+      }
+
+      // Filtrar facturas con medidores válidos
+      const validBills = bills.filter(bill => {
+        if (!validMetersSet.has(bill.meter_id)) {
+          console.error(`Meter ${bill.meter_id} no existe en la tabla meters`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validBills.length === 0) {
+        showSnackbar('No hay facturas válidas para guardar', 'warning');
+        return;
+      }
+
+      // Preparar todos los datos para upsert en batch
+      // IMPORTANTE: NO incluir 'id' en el objeto de datos para evitar errores de constraint
+      // Usaremos onConflict para que Supabase maneje los updates automáticamente
+      const billsData = validBills.map(bill => ({
+        meter_id: bill.meter_id,
+        period: bill.period,
+        previous_reading: bill.previous_reading,
+        current_reading: bill.current_reading,
+        consumption: bill.consumption,
+        base_amount: bill.base_amount,
+        range_16_20_amount: bill.range_16_20_amount,
+        range_21_25_amount: bill.range_21_25_amount,
+        range_26_plus_amount: bill.range_26_plus_amount,
+        tariff_total: bill.tariff_total,
+        previous_debt: bill.previous_debt,
+        fines_reuniones: bill.fines_reuniones,
+        fines_mingas: bill.fines_mingas,
+        mora_amount: bill.mora_amount,
+        garden_amount: bill.garden_amount,
+        total_amount: bill.total_amount,
+        payment_status: bill.payment_status,
+        observations: bill.observations || null,
+        // NO incluir 'id' aquí - Supabase lo manejará automáticamente con onConflict
+      }));
+
+      // Usar upsert en batch (una sola operación para todas las facturas)
+      // onConflict usa 'meter_id,period' como clave única para actualizar registros existentes
+      const { data: upsertedData, error: upsertError } = await supabase
+        .from('bills')
+        .upsert(billsData, {
+          onConflict: 'meter_id,period'
+        })
+        .select();
+
+      if (upsertError) {
+        console.error('Error upserting bills:', upsertError);
+        console.error('Error details:', {
+          message: upsertError.message,
+          details: upsertError.details,
+          hint: upsertError.hint,
+          code: upsertError.code
+        });
+        showSnackbar(
+          `Error al guardar facturas: ${upsertError.message || 'Error desconocido'}`,
+          'error'
+        );
+        return;
+      }
+
+      const saved = upsertedData?.length || 0;
+      const errors = validBills.length - saved;
+      const skipped = bills.length - validBills.length;
+
+      let message = `Se guardaron ${saved} facturas`;
+      if (errors > 0) {
+        message += `. ${errors} error(es)`;
+      }
+      if (skipped > 0) {
+        message += `. ${skipped} factura(s) omitida(s) por medidores inválidos`;
+      }
+
+      showSnackbar(message, errors > 0 ? 'warning' : 'success');
       fetchBills();
     } catch (error: any) {
       console.error('Error saving all bills:', error);
