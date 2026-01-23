@@ -29,22 +29,12 @@ export interface BillingCalculation {
 }
 
 /**
- * Calcula el monto de facturación basado en el consumo y las tarifas
+ * Calcula el monto de facturación basado en el consumo y las tarifas (sin consultar BD)
  */
-export const calculateBilling = async (
-  consumption: number
-): Promise<BillingCalculation> => {
-  // Obtener tarifas activas ordenadas por order_index
-  const { data: tariffs, error } = await supabase
-    .from('tariffs')
-    .select('*')
-    .eq('status', 'active')
-    .order('order_index', { ascending: true });
-
-  if (error) {
-    console.error('Error fetching tariffs:', error);
-    throw error;
-  }
+export const calculateBillingWithTariffs = (
+  consumption: number,
+  tariffs: Tariff[]
+): BillingCalculation => {
 
   let base_amount = 0;
   let range_16_20_amount = 0;
@@ -60,7 +50,7 @@ export const calculateBilling = async (
   }> = [];
 
   // Aplicar cada tarifa según su orden (acumulativo)
-  for (const tariff of tariffs || []) {
+  for (const tariff of tariffs) {
     // Calcular monto según el tipo de tarifa
     // Priorizar fixed_charge sobre price_per_unit
     // Si es BASE (nombre contiene "BASE" o min_consumption = 0), tratar como cargo fijo
@@ -164,6 +154,28 @@ export const calculateBilling = async (
     tariff_total,
     tariff_breakdown: breakdown,
   };
+};
+
+/**
+ * Calcula el monto de facturación basado en el consumo y las tarifas (con consulta a BD)
+ * @deprecated Usar calculateBillingWithTariffs cuando se tienen las tarifas ya cargadas
+ */
+export const calculateBilling = async (
+  consumption: number
+): Promise<BillingCalculation> => {
+  // Obtener tarifas activas ordenadas por order_index
+  const { data: tariffs, error } = await supabase
+    .from('tariffs')
+    .select('*')
+    .eq('status', 'active')
+    .order('order_index', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching tariffs:', error);
+    throw error;
+  }
+
+  return calculateBillingWithTariffs(consumption, tariffs || []);
 };
 
 /**

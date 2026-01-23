@@ -37,7 +37,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
-import { calculateBilling, calculateConsumption } from '../../utils/billingUtils';
+import { calculateBilling, calculateBillingWithTariffs, calculateConsumption } from '../../utils/billingUtils';
 import * as XLSX from 'xlsx';
 import { getCurrentPeriod, getPreviousPeriod } from '../../utils/periodUtils';
 
@@ -328,6 +328,20 @@ const Billing: React.FC = () => {
       // Obtener período anterior
       const previousPeriod = getPreviousPeriod(selectedPeriod);
 
+      // Obtener tarifas UNA VEZ antes del loop (evitar N+1 queries)
+      const { data: tariffsData, error: tariffsError } = await supabase
+        .from('tariffs')
+        .select('*')
+        .eq('status', 'active')
+        .order('order_index', { ascending: true });
+
+      if (tariffsError) {
+        console.error('Error fetching tariffs:', tariffsError);
+        throw tariffsError;
+      }
+
+      const tariffs = tariffsData || [];
+
       // Obtener TODAS las lecturas de una vez (para todos los medidores)
       const { data: allReadingsData } = await supabase
         .from('readings')
@@ -490,8 +504,8 @@ const Billing: React.FC = () => {
             }
           }
 
-          // Calcular tarifas
-          const billingCalc = await calculateBilling(consumption);
+          // Calcular tarifas (usar tarifas ya cargadas, sin consultar BD)
+          const billingCalc = calculateBillingWithTariffs(consumption, tariffs);
           
           // Obtener deuda del mes anterior:
           // 1. Primero buscar en la tabla debts del período anterior
