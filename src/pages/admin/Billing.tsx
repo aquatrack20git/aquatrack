@@ -531,11 +531,12 @@ const Billing: React.FC = () => {
           // Obtener valor de jardín desde el mapa (ya cargado en batch)
           const gardenAmount = gardenMap.get(meter.code_meter) || 0;
 
-          // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_MINGAS + MORA)
-          // NO incluye MULTAS_REUNIONES ni VALOR_JARDIN
+          // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + MORA)
+          // NO incluye VALOR_JARDIN
           const totalAmount = 
             previousDebt +
             billingCalc.tariff_total +
+            finesReuniones +
             finesMingas +
             moraAmount;
 
@@ -636,10 +637,11 @@ const Billing: React.FC = () => {
         observations: editData.observations || null,
       };
 
-      // Recalcular total siempre (DEUDA + COBRO + MULTAS_MINGAS + MORA)
+      // Recalcular total siempre (DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + MORA)
       billData.total_amount = 
         billData.previous_debt +
         billData.tariff_total +
+        billData.fines_reuniones +
         billData.fines_mingas +
         billData.mora_amount;
 
@@ -1054,7 +1056,7 @@ const Billing: React.FC = () => {
         // Obtener bills existentes del período
         const { data: existingBills } = await supabase
           .from('bills')
-          .select('id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_mingas, mora_amount')
+          .select('id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_reuniones, fines_mingas, mora_amount')
           .eq('period', selectedPeriod);
 
         if (existingBills && existingBills.length > 0) {
@@ -1077,11 +1079,12 @@ const Billing: React.FC = () => {
             
             // Solo actualizar si el valor cambió
             if (newGardenAmount !== oldGardenAmount) {
-              // Recalcular total_amount: previous_debt + tariff_total + fines_mingas + mora_amount
+              // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
               // (garden_amount no se suma al total, solo se registra)
               const newTotalAmount = 
                 (bill.previous_debt || 0) +
                 (bill.tariff_total || 0) +
+                (bill.fines_reuniones || 0) +
                 (bill.fines_mingas || 0) +
                 (bill.mora_amount || 0);
               
@@ -1407,11 +1410,11 @@ const Billing: React.FC = () => {
             if (newFinesReuniones !== oldFinesReuniones || 
                 newFinesMingas !== oldFinesMingas || 
                 newMoraAmount !== oldMoraAmount) {
-              // Recalcular total_amount: previous_debt + tariff_total + fines_mingas + mora_amount
-              // (fines_reuniones no se suma al total, solo se registra)
+              // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
               const newTotalAmount = 
                 (bill.previous_debt || 0) +
                 (bill.tariff_total || 0) +
+                newFinesReuniones +
                 newFinesMingas +
                 newMoraAmount;
               
