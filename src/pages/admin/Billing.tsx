@@ -967,6 +967,20 @@ const Billing: React.FC = () => {
         excelValuesMap.set(meterCode, amount);
       }
 
+      // Validar que todos los medidores del Excel existan en la base de datos
+      if (excelValuesMap.size > 0) {
+        const excelMeterCodes = Array.from(excelValuesMap.keys());
+        const allActiveMeters = meters.map(m => m.code_meter);
+        const invalidMeters = excelMeterCodes.filter(code => !allActiveMeters.includes(code));
+        
+        if (invalidMeters.length > 0) {
+          const invalidMetersList = invalidMeters.join(', ');
+          throw new Error(
+            `Se encontraron ${invalidMeters.length} medidor(es) en el Excel que no existen en la base de datos: ${invalidMetersList}. Por favor, verifica los códigos e intenta nuevamente.`
+          );
+        }
+      }
+
       // Ahora crear la lista completa de valores para upsert:
       // - Medidores que están en el Excel: usar el valor del Excel
       // - Medidores que NO están en el Excel: establecer valor en 0
@@ -993,20 +1007,6 @@ const Billing: React.FC = () => {
           imported_from_excel: true,
           import_date: importDate,
         });
-      }
-
-      // También incluir medidores que están en el Excel pero no en la lista de medidores activos
-      // (por si hay medidores nuevos o con código diferente)
-      for (const [meterId, amount] of excelValuesMap.entries()) {
-        if (!allActiveMeters.includes(meterId)) {
-          gardenValuesToUpsert.push({
-            meter_id: meterId,
-            period: selectedPeriod,
-            amount: amount,
-            imported_from_excel: true,
-            import_date: importDate,
-          });
-        }
       }
 
       // Hacer upsert batch de todos los valores de jardín de una vez
