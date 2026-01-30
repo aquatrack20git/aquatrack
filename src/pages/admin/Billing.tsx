@@ -426,7 +426,7 @@ const Billing: React.FC = () => {
         (previousDebtsData || []).map(debt => [debt.meter_id, debt.amount || 0])
       );
 
-      // Consulta batch: multas y mora del período actual
+      // Consulta batch: multas y costo reconexión del período actual
       const { data: finesDataAll } = await supabase
         .from('meter_fines')
         .select('meter_id, fines_reuniones, fines_mingas, mora_percentage, mora_amount')
@@ -522,7 +522,7 @@ const Billing: React.FC = () => {
             previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
           }
 
-          // Obtener multas y mora desde el mapa (ya cargado en batch)
+          // Obtener multas y costo reconexión desde el mapa (ya cargado en batch)
           const finesData = finesMap.get(meter.code_meter);
           const finesReuniones = finesData?.fines_reuniones || 0;
           const finesMingas = finesData?.fines_mingas || 0;
@@ -531,7 +531,7 @@ const Billing: React.FC = () => {
           // Obtener valor de jardín desde el mapa (ya cargado en batch)
           const gardenAmount = gardenMap.get(meter.code_meter) || 0;
 
-          // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + MORA)
+          // Calcular total (según fórmula: DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + COSTO_RECONEXION)
           // NO incluye VALOR_JARDIN
           const totalAmount = 
             previousDebt +
@@ -637,7 +637,7 @@ const Billing: React.FC = () => {
         observations: editData.observations || null,
       };
 
-      // Recalcular total siempre (DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + MORA)
+      // Recalcular total siempre (DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + COSTO_RECONEXION)
       billData.total_amount = 
         billData.previous_debt +
         billData.tariff_total +
@@ -801,7 +801,7 @@ const Billing: React.FC = () => {
         'COBRO OCTUBRE': bill.tariff_total.toFixed(2),
         'MULTAS REUNIONES': bill.fines_reuniones.toFixed(2),
         'MULTAS MINGAS': bill.fines_mingas.toFixed(2),
-        'MORA': bill.mora_amount.toFixed(2),
+        'COSTO RECONEXIÓN': bill.mora_amount.toFixed(2),
         'TOTAL A PAGAR': bill.total_amount.toFixed(2),
         'CONCEPTO': bill.payment_status,
         'VALOR JARDIN': bill.garden_amount.toFixed(2),
@@ -829,7 +829,7 @@ const Billing: React.FC = () => {
       { wch: 15 }, // COBRO
       { wch: 15 }, // MULTAS REUNIONES
       { wch: 15 }, // MULTAS MINGAS
-      { wch: 10 }, // MORA
+      { wch: 15 }, // COSTO RECONEXIÓN
       { wch: 15 }, // TOTAL A PAGAR
       { wch: 15 }, // CONCEPTO
       { wch: 15 }, // VALOR JARDIN
@@ -1442,7 +1442,7 @@ const Billing: React.FC = () => {
             if (newFinesReuniones !== oldFinesReuniones || 
                 newFinesMingas !== oldFinesMingas || 
                 newMoraAmount !== oldMoraAmount) {
-              // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
+              // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + costo_reconexion
               const newTotalAmount = 
                 (bill.previous_debt || 0) +
                 (bill.tariff_total || 0) +
@@ -1638,7 +1638,7 @@ const Billing: React.FC = () => {
                   <TableCell>COBRO</TableCell>
                   <TableCell>MULTAS REUNIONES</TableCell>
                   <TableCell>MULTAS MINGAS</TableCell>
-                  <TableCell>MORA</TableCell>
+                  <TableCell>COSTO RECONEXIÓN</TableCell>
                   <TableCell>TOTAL A PAGAR</TableCell>
                   <TableCell>CONCEPTO</TableCell>
                   <TableCell>VALOR JARDIN</TableCell>
