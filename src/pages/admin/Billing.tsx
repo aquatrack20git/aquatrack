@@ -1045,7 +1045,33 @@ const Billing: React.FC = () => {
       
       setImportDialogOpen(false);
       
-      // Actualizar solo los bills existentes con los nuevos valores de jardín (más eficiente que recalcular todo)
+      // PRIMERO: Actualizar todos los bills del período a PENDIENTE
+      const { data: allBillsForPeriod } = await supabase
+        .from('bills')
+        .select('id')
+        .eq('period', selectedPeriod);
+
+      if (allBillsForPeriod && allBillsForPeriod.length > 0) {
+        const allBillIds = allBillsForPeriod.map(b => b.id);
+        console.log(`Actualizando ${allBillIds.length} facturas a PENDIENTE antes de importar jardín...`);
+        
+        const { error: updatePendingError } = await supabase
+          .from('bills')
+          .update({ 
+            payment_status: 'PENDIENTE',
+            payment_date: null
+          })
+          .in('id', allBillIds);
+
+        if (updatePendingError) {
+          console.error('Error al actualizar bills a PENDIENTE:', updatePendingError);
+          throw updatePendingError;
+        }
+        
+        console.log(`✓ Se actualizaron ${allBillIds.length} facturas a PENDIENTE`);
+      }
+      
+      // SEGUNDO: Actualizar solo los bills existentes con los nuevos valores de jardín (más eficiente que recalcular todo)
       // Obtener los valores de jardín importados para este período
       const { data: gardenValuesData } = await supabase
         .from('garden_values')
@@ -1075,42 +1101,39 @@ const Billing: React.FC = () => {
           // Identificar bills que necesitan actualización
           for (const bill of existingBills) {
             const newGardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
-            const oldGardenAmount = bill.garden_amount || 0;
             
-            // Solo actualizar si el valor cambió
-            if (newGardenAmount !== oldGardenAmount) {
-              // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
-              // (garden_amount no se suma al total, solo se registra)
-              const newTotalAmount = 
-                (bill.previous_debt || 0) +
-                (bill.tariff_total || 0) +
-                (bill.fines_reuniones || 0) +
-                (bill.fines_mingas || 0) +
-                (bill.mora_amount || 0);
-              
-              const updateData: {
-                id: number;
-                garden_amount: number;
-                total_amount: number;
-                payment_status: string;
-                payment_date?: string;
-              } = {
-                id: bill.id,
-                garden_amount: newGardenAmount,
-                total_amount: newTotalAmount,
-                payment_status: newGardenAmount > 0 ? 'ACREDITADO' : (bill.payment_status || 'PENDIENTE'),
-              };
-              
-              // Si tiene valor de jardín mayor a 0, agregar payment_date
-              if (newGardenAmount > 0) {
-                updateData.payment_date = new Date().toISOString();
-              }
-              
-              billsToUpdate.push(updateData);
+            // Actualizar todos los bills (ya que todos fueron puestos en PENDIENTE)
+            // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
+            // (garden_amount no se suma al total, solo se registra)
+            const newTotalAmount = 
+              (bill.previous_debt || 0) +
+              (bill.tariff_total || 0) +
+              (bill.fines_reuniones || 0) +
+              (bill.fines_mingas || 0) +
+              (bill.mora_amount || 0);
+            
+            const updateData: {
+              id: number;
+              garden_amount: number;
+              total_amount: number;
+              payment_status: string;
+              payment_date?: string;
+            } = {
+              id: bill.id,
+              garden_amount: newGardenAmount,
+              total_amount: newTotalAmount,
+              payment_status: newGardenAmount > 0 ? 'ACREDITADO' : 'PENDIENTE',
+            };
+            
+            // Si tiene valor de jardín mayor a 0, agregar payment_date
+            if (newGardenAmount > 0) {
+              updateData.payment_date = new Date().toISOString();
             }
+            
+            billsToUpdate.push(updateData);
           }
 
-          // Actualizar en batch todos los bills afectados (en paralelo para mayor velocidad)
+          // Actualizar en batch todos los bills (en paralelo para mayor velocidad)
           if (billsToUpdate.length > 0) {
             console.log(`Actualizando ${billsToUpdate.length} facturas con nuevos valores de jardín...`);
             
