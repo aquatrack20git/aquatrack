@@ -39,12 +39,13 @@ import {
 import { supabase } from '../../config/supabase';
 import { calculateBilling, calculateBillingWithTariffs, calculateConsumption } from '../../utils/billingUtils';
 import * as XLSX from 'xlsx';
-import { getCurrentPeriod, getPreviousPeriod } from '../../utils/periodUtils';
+import { getCurrentPeriod, getPreviousPeriod, getPeriodFromDate } from '../../utils/periodUtils';
 
 interface Meter {
   code_meter: string;
   location: string;
   description: string | null;
+  created_at?: string;
 }
 
 interface Reading {
@@ -155,7 +156,7 @@ const Billing: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('meters')
-        .select('code_meter, location, description')
+        .select('code_meter, location, description, created_at')
         .eq('status', 'active')
         .order('code_meter');
 
@@ -357,6 +358,23 @@ const Billing: React.FC = () => {
         'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
       };
 
+      // Función helper para comparar períodos
+      // Retorna: -1 si period1 < period2, 0 si son iguales, 1 si period1 > period2
+      const comparePeriods = (period1: string, period2: string): number => {
+        const [mes1, año1] = period1.split(' ');
+        const [mes2, año2] = period2.split(' ');
+        const numMes1 = meses[mes1] || 0;
+        const numMes2 = meses[mes2] || 0;
+        const numAño1 = parseInt(año1) || 0;
+        const numAño2 = parseInt(año2) || 0;
+        
+        if (numAño1 < numAño2) return -1;
+        if (numAño1 > numAño2) return 1;
+        if (numMes1 < numMes2) return -1;
+        if (numMes1 > numMes2) return 1;
+        return 0;
+      };
+
       // Función helper para obtener la última lectura anterior a un período
       const getLastReadingBeforePeriod = (meterId: string, period: string): number | null => {
         const meterReadings = allReadings
@@ -453,6 +471,21 @@ const Billing: React.FC = () => {
       // Iterar sobre TODOS los medidores activos (no solo los que tienen lectura)
       for (const meter of meters) {
         try {
+          // Obtener período de creación del medidor
+          const meterCreationPeriod = meter.created_at 
+            ? getPeriodFromDate(new Date(meter.created_at))
+            : null;
+          
+          // Si el período seleccionado es anterior al de creación, saltar este medidor
+          if (meterCreationPeriod && comparePeriods(selectedPeriod, meterCreationPeriod) < 0) {
+            console.log(`Medidor ${meter.code_meter} creado en ${meterCreationPeriod}, omitiendo facturación para ${selectedPeriod}`);
+            continue; // No facturar este medidor
+          }
+          
+          // Verificar si el medidor se creó en el mismo período
+          const isCreatedInSamePeriod = meterCreationPeriod && 
+            comparePeriods(selectedPeriod, meterCreationPeriod) === 0;
+          
           // Buscar si tiene lectura en el período seleccionado
           const readingForPeriod = allReadings.find(r => 
             r.meter_id === meter.code_meter && r.period === selectedPeriod
@@ -463,45 +496,60 @@ const Billing: React.FC = () => {
           let consumption = 0;
 
           if (readingForPeriod) {
-            // Si tiene lectura, calcular lectura anterior y consumo
-            const meterReadings = allReadings
-              .filter(r => r.meter_id === meter.code_meter)
-              .sort((a, b) => {
-                const [mesA, añoA] = a.period.split(' ');
-                const [mesB, añoB] = b.period.split(' ');
-                const numMesA = meses[mesA] || 0;
-                const numMesB = meses[mesB] || 0;
-                const numAñoA = parseInt(añoA) || 0;
-                const numAñoB = parseInt(añoB) || 0;
-                
-                if (numAñoA !== numAñoB) {
-                  return numAñoB - numAñoA;
-                }
-                return numMesB - numMesA;
-              });
-
-            const currentIndex = meterReadings.findIndex(r => r.period === selectedPeriod);
-            const previousReadingData = currentIndex < meterReadings.length - 1 
-              ? meterReadings[currentIndex + 1] 
-              : null;
-
             currentReading = readingForPeriod.value;
-            previousReading = previousReadingData?.value || null;
-            consumption = previousReading !== null 
-              ? Math.max(0, currentReading - previousReading) 
-              : 0;
-          } else {
-            // Si NO tiene lectura, usar la última lectura anterior como lectura actual
-            const lastReading = getLastReadingBeforePeriod(meter.code_meter, selectedPeriod);
-            if (lastReading !== null) {
-              currentReading = lastReading;
-              previousReading = lastReading;
-              consumption = 0; // No hay consumo porque la lectura no cambió
+            
+            // Si el medidor se creó en el mismo período, lectura anterior = 0
+            if (isCreatedInSamePeriod) {
+              previousReading = 0;
+              consumption = currentReading; // Consumo total desde cero
             } else {
-              // Si no hay ninguna lectura anterior, usar 0
+              // Lógica normal: buscar lectura anterior
+              const meterReadings = allReadings
+                .filter(r => r.meter_id === meter.code_meter)
+                .sort((a, b) => {
+                  const [mesA, añoA] = a.period.split(' ');
+                  const [mesB, añoB] = b.period.split(' ');
+                  const numMesA = meses[mesA] || 0;
+                  const numMesB = meses[mesB] || 0;
+                  const numAñoA = parseInt(añoA) || 0;
+                  const numAñoB = parseInt(añoB) || 0;
+                  
+                  if (numAñoA !== numAñoB) {
+                    return numAñoB - numAñoA;
+                  }
+                  return numMesB - numMesA;
+                });
+
+              const currentIndex = meterReadings.findIndex(r => r.period === selectedPeriod);
+              const previousReadingData = currentIndex < meterReadings.length - 1 
+                ? meterReadings[currentIndex + 1] 
+                : null;
+
+              previousReading = previousReadingData?.value || null;
+              consumption = previousReading !== null 
+                ? Math.max(0, currentReading - previousReading) 
+                : 0;
+            }
+          } else {
+            // Si NO tiene lectura en el período actual
+            if (isCreatedInSamePeriod) {
+              // Medidor creado en este período pero sin lectura: usar 0
               currentReading = 0;
-              previousReading = null;
+              previousReading = 0;
               consumption = 0;
+            } else {
+              // Lógica normal: usar última lectura anterior
+              const lastReading = getLastReadingBeforePeriod(meter.code_meter, selectedPeriod);
+              if (lastReading !== null) {
+                currentReading = lastReading;
+                previousReading = lastReading;
+                consumption = 0; // No hay consumo porque la lectura no cambió
+              } else {
+                // Si no hay ninguna lectura anterior, usar 0
+                currentReading = 0;
+                previousReading = null;
+                consumption = 0;
+              }
             }
           }
 
