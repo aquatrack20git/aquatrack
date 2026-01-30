@@ -286,8 +286,14 @@ const Billing: React.FC = () => {
         }
       }
 
+      // Obtener IDs de medidores activos para filtrar
+      const activeMeterIds = new Set(meters.map(m => m.code_meter));
+      
+      // Filtrar bills para mostrar solo los de medidores activos
+      const activeBills = billsData.filter(bill => activeMeterIds.has(bill.meter_id));
+
       // Enriquecer con datos del medidor y actualizar garden_amount desde garden_values
-      const enrichedBills = billsData.map(bill => {
+      const enrichedBills = activeBills.map(bill => {
         const meter = meters.find(m => m.code_meter === bill.meter_id);
         const gardenAmount = gardenValuesMap.get(bill.meter_id) ?? bill.garden_amount ?? 0;
         return {
