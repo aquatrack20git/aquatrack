@@ -919,17 +919,12 @@ const Billing: React.FC = () => {
       let skipped = 0;
 
       // Procesar todas las filas en memoria primero (sin consultas a BD)
-      const gardenValuesToUpsert: Array<{
-        meter_id: string;
-        period: string;
-        amount: number;
-        imported_from_excel: boolean;
-        import_date: string;
-      }> = [];
+      // Crear un mapa con los valores del Excel: meter_id -> amount
+      const excelValuesMap = new Map<string, number>();
 
       const importDate = new Date().toISOString();
 
-      // Procesar filas de datos
+      // Procesar filas de datos del Excel
       for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         
@@ -968,23 +963,50 @@ const Billing: React.FC = () => {
           amount = isNaN(parsed) ? 0 : parsed;
         }
 
-        // Obtener período de la fila si existe, sino usar el seleccionado
-        let periodToUse = selectedPeriod;
-        if (periodoIndex !== -1 && row[periodoIndex]) {
-          const periodFromExcel = String(row[periodoIndex]).trim();
-          if (periodFromExcel) {
-            periodToUse = periodFromExcel;
-          }
-        }
+        // Guardar en el mapa (si el código ya existe, se sobrescribe con el último valor)
+        excelValuesMap.set(meterCode, amount);
+      }
 
-        // Agregar a la lista para upsert batch
+      // Ahora crear la lista completa de valores para upsert:
+      // - Medidores que están en el Excel: usar el valor del Excel
+      // - Medidores que NO están en el Excel: establecer valor en 0
+      const gardenValuesToUpsert: Array<{
+        meter_id: string;
+        period: string;
+        amount: number;
+        imported_from_excel: boolean;
+        import_date: string;
+      }> = [];
+
+      // Obtener todos los medidores activos para asegurar que todos tengan registro
+      const allActiveMeters = meters.map(m => m.code_meter);
+
+      // Procesar todos los medidores activos
+      for (const meterId of allActiveMeters) {
+        // Si el medidor está en el Excel, usar su valor; si no, usar 0
+        const amount = excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0;
+        
         gardenValuesToUpsert.push({
-          meter_id: meterCode,
-          period: periodToUse,
+          meter_id: meterId,
+          period: selectedPeriod,
           amount: amount,
           imported_from_excel: true,
           import_date: importDate,
         });
+      }
+
+      // También incluir medidores que están en el Excel pero no en la lista de medidores activos
+      // (por si hay medidores nuevos o con código diferente)
+      for (const [meterId, amount] of excelValuesMap.entries()) {
+        if (!allActiveMeters.includes(meterId)) {
+          gardenValuesToUpsert.push({
+            meter_id: meterId,
+            period: selectedPeriod,
+            amount: amount,
+            imported_from_excel: true,
+            import_date: importDate,
+          });
+        }
       }
 
       // Hacer upsert batch de todos los valores de jardín de una vez
@@ -1005,12 +1027,14 @@ const Billing: React.FC = () => {
         }
 
         imported = upsertedData?.length || 0;
-        console.log(`✓ Se importaron ${imported} valores de jardín en batch`);
+        console.log(`✓ Se importaron ${imported} valores de jardín en batch (incluyendo medidores con valor 0 que no estaban en el Excel)`);
       }
 
-      console.log(`Importación completada: ${imported} importados, ${skipped} filas omitidas`);
+      const importedFromExcel = excelValuesMap.size;
+      const setToZero = gardenValuesToUpsert.length - importedFromExcel;
+      console.log(`Importación completada: ${importedFromExcel} valores del Excel, ${setToZero} medidores establecidos en 0 (no estaban en el Excel), ${skipped} filas omitidas`);
 
-      const message = `Se importaron ${imported} valores de jardín${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
+      const message = `Se importaron ${importedFromExcel} valores del Excel${setToZero > 0 ? ` y se establecieron ${setToZero} medidores en 0 (no estaban en el archivo)` : ''}${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
       showSnackbar(
         message,
         'success'
