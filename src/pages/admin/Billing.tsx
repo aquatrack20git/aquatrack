@@ -1045,15 +1045,22 @@ const Billing: React.FC = () => {
       
       setImportDialogOpen(false);
       
-      // PRIMERO: Actualizar todos los bills del período a PENDIENTE
-      const { data: allBillsForPeriod } = await supabase
+      // PRIMERO: Actualizar TODOS los bills del período a PENDIENTE (para todos los medidores)
+      console.log('Actualizando todos los bills del período a PENDIENTE antes de importar jardín...');
+      
+      const { data: allBillsForPeriod, error: fetchBillsError } = await supabase
         .from('bills')
-        .select('id')
+        .select('id, meter_id')
         .eq('period', selectedPeriod);
+
+      if (fetchBillsError) {
+        console.error('Error al obtener bills:', fetchBillsError);
+        throw fetchBillsError;
+      }
 
       if (allBillsForPeriod && allBillsForPeriod.length > 0) {
         const allBillIds = allBillsForPeriod.map(b => b.id);
-        console.log(`Actualizando ${allBillIds.length} facturas a PENDIENTE antes de importar jardín...`);
+        console.log(`Encontrados ${allBillIds.length} facturas para actualizar a PENDIENTE`);
         
         const { error: updatePendingError } = await supabase
           .from('bills')
@@ -1068,7 +1075,9 @@ const Billing: React.FC = () => {
           throw updatePendingError;
         }
         
-        console.log(`✓ Se actualizaron ${allBillIds.length} facturas a PENDIENTE`);
+        console.log(`✓ Se actualizaron ${allBillIds.length} facturas (todos los medidores) a PENDIENTE`);
+      } else {
+        console.log('No hay facturas existentes para este período. Se crearán nuevas facturas con estado PENDIENTE.');
       }
       
       // SEGUNDO: Actualizar solo los bills existentes con los nuevos valores de jardín (más eficiente que recalcular todo)
