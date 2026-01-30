@@ -1042,10 +1042,7 @@ const Billing: React.FC = () => {
       
       setImportDialogOpen(false);
       
-      // Recalcular facturas con los nuevos valores de jardín
-      await calculateAllBills();
-      
-      // Actualizar payment_status a ACREDITADO para los registros que tienen valores de jardín
+      // Actualizar solo los bills existentes con los nuevos valores de jardín (más eficiente que recalcular todo)
       // Obtener los valores de jardín importados para este período
       const { data: gardenValuesData } = await supabase
         .from('garden_values')
@@ -1053,10 +1050,10 @@ const Billing: React.FC = () => {
         .eq('period', selectedPeriod);
 
       if (gardenValuesData && gardenValuesData.length > 0) {
-        // Obtener bills existentes después del recálculo
+        // Obtener bills existentes del período
         const { data: existingBills } = await supabase
           .from('bills')
-          .select('id, meter_id, payment_status, garden_amount')
+          .select('id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_mingas, mora_amount')
           .eq('period', selectedPeriod);
 
         if (existingBills && existingBills.length > 0) {
@@ -1064,34 +1061,78 @@ const Billing: React.FC = () => {
             gardenValuesData.map(gv => [gv.meter_id, gv.amount || 0])
           );
 
-          const billsToUpdateIds: number[] = [];
+          const billsToUpdate: Array<{
+            id: number;
+            garden_amount: number;
+            total_amount: number;
+            payment_status: string;
+            payment_date?: string;
+          }> = [];
           
-          // Identificar bills que tienen valores de jardín mayores a 0
+          // Identificar bills que necesitan actualización
           for (const bill of existingBills) {
-            const gardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
-            // Si tiene valor de jardín mayor a 0, marcar como ACREDITADO
-            if (gardenAmount > 0) {
-              billsToUpdateIds.push(bill.id);
+            const newGardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
+            const oldGardenAmount = bill.garden_amount || 0;
+            
+            // Solo actualizar si el valor cambió
+            if (newGardenAmount !== oldGardenAmount) {
+              // Recalcular total_amount: previous_debt + tariff_total + fines_mingas + mora_amount
+              // (garden_amount no se suma al total, solo se registra)
+              const newTotalAmount = 
+                (bill.previous_debt || 0) +
+                (bill.tariff_total || 0) +
+                (bill.fines_mingas || 0) +
+                (bill.mora_amount || 0);
+              
+              const updateData: {
+                id: number;
+                garden_amount: number;
+                total_amount: number;
+                payment_status: string;
+                payment_date?: string;
+              } = {
+                id: bill.id,
+                garden_amount: newGardenAmount,
+                total_amount: newTotalAmount,
+                payment_status: newGardenAmount > 0 ? 'ACREDITADO' : (bill.payment_status || 'PENDIENTE'),
+              };
+              
+              // Si tiene valor de jardín mayor a 0, agregar payment_date
+              if (newGardenAmount > 0) {
+                updateData.payment_date = new Date().toISOString();
+              }
+              
+              billsToUpdate.push(updateData);
             }
           }
 
-          // Actualizar en batch: payment_status a ACREDITADO para registros con valores de jardín
-          if (billsToUpdateIds.length > 0) {
-            const paymentDate = new Date().toISOString();
-            const { error: updateError } = await supabase
-              .from('bills')
-              .update({ 
-                payment_status: 'ACREDITADO',
-                payment_date: paymentDate
-              })
-              .in('id', billsToUpdateIds);
-
-            if (updateError) {
-              console.error('Error al actualizar payment_status en batch:', updateError);
-              // No lanzar error, solo registrar
-            } else {
-              console.log(`Se marcaron ${billsToUpdateIds.length} facturas como ACREDITADO por tener valores de jardín`);
+          // Actualizar en batch todos los bills afectados (en paralelo para mayor velocidad)
+          if (billsToUpdate.length > 0) {
+            console.log(`Actualizando ${billsToUpdate.length} facturas con nuevos valores de jardín...`);
+            
+            // Actualizar todos los bills en paralelo usando Promise.all
+            const updatePromises = billsToUpdate.map(update =>
+              supabase
+                .from('bills')
+                .update({
+                  garden_amount: update.garden_amount,
+                  total_amount: update.total_amount,
+                  payment_status: update.payment_status,
+                  ...(update.payment_date && { payment_date: update.payment_date }),
+                })
+                .eq('id', update.id)
+            );
+            
+            const updateResults = await Promise.all(updatePromises);
+            
+            // Verificar errores
+            const errors = updateResults.filter(result => result.error);
+            if (errors.length > 0) {
+              console.error(`Error al actualizar ${errors.length} facturas:`, errors);
             }
+            
+            const acreditadosCount = billsToUpdate.filter(b => b.garden_amount > 0).length;
+            console.log(`✓ Se actualizaron ${billsToUpdate.length} facturas. ${acreditadosCount} marcadas como ACREDITADO.`);
           }
         }
       }
