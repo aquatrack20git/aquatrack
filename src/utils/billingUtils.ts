@@ -95,46 +95,55 @@ export const calculateBillingWithTariffs = (
           // Rango con límite superior
           // Calcular m³ adicionales en este rango específico
           // Según fórmulas Excel:
-          // - Si consumo >= maxConsumption: usar max_units (o calcular hasta el límite)
+          // - Si consumo >= maxConsumption: usar máximo del rango (maxConsumption - límite_anterior)
           // - Si consumo < maxConsumption: usar (consumo - límite_anterior)
           // Ejemplo: rango 16-20, consumo 28
-          // - Límite anterior: 15
-          // - Si consumo >= 20: unidades = 5 (máximo del rango)
+          // - Límite anterior: 15 (minConsumption - 1)
+          // - Si consumo >= 20: unidades = 20 - 15 = 5 (máximo del rango)
           // - Si consumo < 20: unidades = consumo - 15
-          const previousLimit = minConsumption - 1; // 15 para rango 16-20
+          const previousLimit = minConsumption - 1; // 15 para rango 16-20, 20 para rango 21-25
           
           if (consumption >= maxConsumption) {
             // Consumo supera el máximo del rango: usar el máximo de unidades del rango
-            // Para rango 16-20: si consumo >= 20, entonces 5 unidades
+            // Para rango 16-20: si consumo >= 20, entonces 5 unidades (20 - 15)
             units = maxConsumption - previousLimit; // 20 - 15 = 5
           } else {
             // Consumo dentro del rango: calcular unidades desde el límite anterior
-            units = consumption - previousLimit; // Ej: consumo 18, entonces 18 - 15 = 3
+            // Ej: consumo 18, entonces 18 - 15 = 3 unidades
+            units = Math.max(0, consumption - previousLimit);
           }
+          
+          // Validación: asegurar que las unidades no excedan el rango
+          const maxUnitsInRange = maxConsumption - previousLimit;
+          units = Math.min(units, maxUnitsInRange);
         }
         
-        // Si hay límite de unidades (max_units), aplicar (esto es una validación adicional)
-        if (tariff.max_units !== null && tariff.max_units !== undefined) {
+        // Si hay límite de unidades (max_units) configurado en la tarifa, aplicar
+        // Esto es una validación adicional para casos especiales
+        if (tariff.max_units !== null && tariff.max_units !== undefined && tariff.max_units > 0) {
           units = Math.min(units, tariff.max_units);
         }
 
         const amount = units * tariff.price_per_unit;
         
         // Asignar al rango correspondiente de manera dinámica basado en los valores de min/max
-        // Esto permite que los rangos sean completamente parametrizables
-        if (minConsumption >= 16 && (maxConsumption === null || maxConsumption <= 20)) {
-          // Rango 16-20 (parametrizable)
+        // Validaciones estrictas para asegurar que cada tarifa se asigne al rango correcto
+        if (minConsumption >= 16 && minConsumption <= 20 && (maxConsumption === null || (maxConsumption >= 16 && maxConsumption <= 20))) {
+          // Rango 16-20: min debe estar entre 16-20 y max debe estar entre 16-20 o ser null
           range_16_20_amount += amount;
-        } else if (minConsumption >= 21 && (maxConsumption === null || maxConsumption <= 25)) {
-          // Rango 21-25 (parametrizable)
+        } else if (minConsumption >= 21 && minConsumption <= 25 && (maxConsumption === null || (maxConsumption >= 21 && maxConsumption <= 25))) {
+          // Rango 21-25: min debe estar entre 21-25 y max debe estar entre 21-25 o ser null
           range_21_25_amount += amount;
         } else if (minConsumption >= 26) {
-          // Rango 26+ (parametrizable)
+          // Rango 26+: min debe ser >= 26 (sin límite superior o con límite >= 26)
           range_26_plus_amount += amount;
         } else if (minConsumption === 0 && (maxConsumption === null || maxConsumption <= 15)) {
           // Rango base (0-15) - esto no se cobra por unidad, solo cargo fijo
           // Pero si hay precio por unidad en este rango, se puede aplicar
           // Por ahora, solo aplicamos cargo fijo para el rango base
+        } else {
+          // Tarifa que no coincide con ningún rango conocido - registrar para depuración
+          console.warn(`Tarifa no asignada a ningún rango: ${tariff.name}, min: ${minConsumption}, max: ${maxConsumption}, amount: ${amount}`);
         }
 
         if (units > 0) {
