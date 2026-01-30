@@ -101,6 +101,7 @@ const Billing: React.FC = () => {
     severity: 'success' as 'success' | 'error' | 'info' | 'warning',
   });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFinesDialogOpen, setImportFinesDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchPeriods();
@@ -1147,6 +1148,323 @@ const Billing: React.FC = () => {
     }
   };
 
+  const handleImportFines = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+
+      // Buscar la fila de encabezados (buscar "Código" o similar)
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(10, jsonData.length); i++) {
+        const row = jsonData[i];
+        if (Array.isArray(row) && row.some((cell: any) => 
+          String(cell).toLowerCase().includes('código') || 
+          String(cell).toLowerCase().includes('codigo')
+        )) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        throw new Error('No se encontró la fila de encabezados');
+      }
+
+      const headers = jsonData[headerRowIndex] as string[];
+      
+      // Buscar columna de código con múltiples variaciones
+      const codigoIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('código') || 
+               headerLower.includes('codigo') ||
+               headerLower.includes('code') ||
+               headerLower.includes('medidor') ||
+               headerLower.includes('meter');
+      });
+      
+      // Buscar columna de valor con múltiples variaciones (multas, reuniones, etc.)
+      const valorIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('valor') || 
+               headerLower.includes('amount') ||
+               headerLower.includes('monto') ||
+               headerLower.includes('importe') ||
+               headerLower.includes('multa') ||
+               headerLower.includes('reunión') ||
+               headerLower.includes('reunion');
+      });
+
+      if (codigoIndex === -1) {
+        throw new Error('No se encontró la columna de código. Busque columnas con: Código, Codigo, Code, Medidor, Meter');
+      }
+      
+      if (valorIndex === -1) {
+        throw new Error('No se encontró la columna de valor. Busque columnas con: Valor, Amount, Monto, Importe, Multa, Reunión');
+      }
+
+      // Buscar columna de período (opcional, si no existe se usa selectedPeriod)
+      const periodoIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return headerLower.includes('período') || 
+               headerLower.includes('periodo') ||
+               headerLower.includes('period');
+      });
+
+      console.log(`Columnas encontradas: Código en índice ${codigoIndex} (${headers[codigoIndex]}), Valor en índice ${valorIndex} (${headers[valorIndex]})${periodoIndex !== -1 ? `, Período en índice ${periodoIndex} (${headers[periodoIndex]})` : ', Período no encontrado (usando período seleccionado)'}`);
+      console.log(`Período seleccionado para importación: ${selectedPeriod}`);
+
+      if (!selectedPeriod) {
+        throw new Error('No hay período seleccionado. Por favor, selecciona un período antes de importar.');
+      }
+
+      let imported = 0;
+      let skipped = 0;
+
+      // Procesar todas las filas en memoria primero (sin consultas a BD)
+      // Crear un mapa con los valores del Excel: meter_id -> amount
+      const excelValuesMap = new Map<string, number>();
+
+      const importDate = new Date().toISOString();
+
+      // Procesar filas de datos del Excel
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        
+        // Verificar que la fila sea un array válido
+        if (!Array.isArray(row)) {
+          skipped++;
+          continue;
+        }
+
+        // Obtener código y valor, manejando valores vacíos, nulos o undefined
+        const codigoCell = row[codigoIndex];
+        const valorCell = row[valorIndex];
+
+        // Si ambos están vacíos, nulos o undefined, saltar la fila
+        if ((codigoCell === undefined || codigoCell === null || codigoCell === '') &&
+            (valorCell === undefined || valorCell === null || valorCell === '')) {
+          skipped++;
+          continue;
+        }
+
+        // Convertir código a string y limpiar
+        const meterCode = codigoCell ? String(codigoCell).trim() : '';
+        
+        // Si no hay código, saltar
+        if (!meterCode) {
+          skipped++;
+          continue;
+        }
+
+        // Convertir valor a número, permitiendo 0
+        let amount: number;
+        if (valorCell === undefined || valorCell === null || valorCell === '') {
+          amount = 0;
+        } else {
+          const parsed = parseFloat(String(valorCell));
+          amount = isNaN(parsed) ? 0 : parsed;
+        }
+
+        // Guardar en el mapa (si el código ya existe, se sobrescribe con el último valor)
+        excelValuesMap.set(meterCode, amount);
+      }
+
+      // Validar que todos los medidores del Excel existan en la base de datos
+      if (excelValuesMap.size > 0) {
+        const excelMeterCodes = Array.from(excelValuesMap.keys());
+        const allActiveMeters = meters.map(m => m.code_meter);
+        const invalidMeters = excelMeterCodes.filter(code => !allActiveMeters.includes(code));
+        
+        if (invalidMeters.length > 0) {
+          const invalidMetersList = invalidMeters.join(', ');
+          throw new Error(
+            `Se encontraron ${invalidMeters.length} medidor(es) en el Excel que no existen en la base de datos: ${invalidMetersList}. Por favor, verifica los códigos e intenta nuevamente.`
+          );
+        }
+      }
+
+      // Obtener todos los medidores activos para asegurar que todos tengan registro
+      const allActiveMeters = meters.map(m => m.code_meter);
+
+      // Obtener multas existentes del período para preservar otros campos
+      const { data: existingFines } = await supabase
+        .from('meter_fines')
+        .select('meter_id, fines_mingas, mora_percentage, mora_amount')
+        .eq('period', selectedPeriod)
+        .in('meter_id', allActiveMeters);
+
+      const existingFinesMap = new Map(
+        (existingFines || []).map(fine => [fine.meter_id, fine])
+      );
+
+      // Crear la lista completa de multas para upsert
+      const finesToUpsert: Array<{
+        meter_id: string;
+        period: string;
+        fines_reuniones: number;
+        fines_mingas?: number;
+        mora_percentage?: number;
+        mora_amount?: number;
+      }> = [];
+
+      // Procesar todos los medidores activos
+      for (const meterId of allActiveMeters) {
+        // Si el medidor está en el Excel, usar su valor; si no, usar 0
+        const finesReuniones = excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0;
+        
+        // Preservar otros campos si existen
+        const existingFine = existingFinesMap.get(meterId);
+        
+        finesToUpsert.push({
+          meter_id: meterId,
+          period: selectedPeriod,
+          fines_reuniones: finesReuniones,
+          fines_mingas: existingFine?.fines_mingas || 0,
+          mora_percentage: existingFine?.mora_percentage || 0,
+          mora_amount: existingFine?.mora_amount || 0,
+        });
+      }
+
+      // Hacer upsert batch de todas las multas de una vez
+      if (finesToUpsert.length > 0) {
+        console.log(`Importando ${finesToUpsert.length} multas de reuniones en batch...`);
+        
+        const { data: upsertedData, error: upsertError } = await supabase
+          .from('meter_fines')
+          .upsert(finesToUpsert, { 
+            onConflict: 'meter_id,period',
+            ignoreDuplicates: false 
+          })
+          .select('meter_id, period, fines_reuniones');
+
+        if (upsertError) {
+          console.error('Error al hacer upsert batch de meter_fines:', upsertError);
+          throw upsertError;
+        }
+
+        imported = upsertedData?.length || 0;
+        console.log(`✓ Se importaron ${imported} multas de reuniones en batch (incluyendo medidores con valor 0 que no estaban en el Excel)`);
+      }
+
+      const importedFromExcel = excelValuesMap.size;
+      const setToZero = finesToUpsert.length - importedFromExcel;
+      console.log(`Importación completada: ${importedFromExcel} valores del Excel, ${setToZero} medidores establecidos en 0 (no estaban en el Excel), ${skipped} filas omitidas`);
+
+      const message = `Se importaron ${importedFromExcel} multas de reuniones del Excel${setToZero > 0 ? ` y se establecieron ${setToZero} medidores en 0 (no estaban en el archivo)` : ''}${skipped > 0 ? `. ${skipped} filas omitidas` : ''}`;
+      showSnackbar(
+        message,
+        'success'
+      );
+      
+      setImportFinesDialogOpen(false);
+      
+      // Actualizar solo los bills existentes con los nuevos valores de multas (más eficiente que recalcular todo)
+      // Obtener las multas importadas para este período
+      const { data: finesData } = await supabase
+        .from('meter_fines')
+        .select('meter_id, fines_reuniones, fines_mingas, mora_amount')
+        .eq('period', selectedPeriod);
+
+      if (finesData && finesData.length > 0) {
+        // Obtener bills existentes del período
+        const { data: existingBills } = await supabase
+          .from('bills')
+          .select('id, meter_id, fines_reuniones, previous_debt, tariff_total, fines_mingas, mora_amount')
+          .eq('period', selectedPeriod);
+
+        if (existingBills && existingBills.length > 0) {
+          const finesMap = new Map(
+            finesData.map(fine => [fine.meter_id, fine])
+          );
+
+          const billsToUpdate: Array<{
+            id: number;
+            fines_reuniones: number;
+            fines_mingas: number;
+            mora_amount: number;
+            total_amount: number;
+          }> = [];
+          
+          // Identificar bills que necesitan actualización
+          for (const bill of existingBills) {
+            const fineData = finesMap.get(bill.meter_id);
+            const newFinesReuniones = fineData?.fines_reuniones || 0;
+            const newFinesMingas = fineData?.fines_mingas || 0;
+            const newMoraAmount = fineData?.mora_amount || 0;
+            
+            const oldFinesReuniones = bill.fines_reuniones || 0;
+            const oldFinesMingas = bill.fines_mingas || 0;
+            const oldMoraAmount = bill.mora_amount || 0;
+            
+            // Solo actualizar si algún valor cambió
+            if (newFinesReuniones !== oldFinesReuniones || 
+                newFinesMingas !== oldFinesMingas || 
+                newMoraAmount !== oldMoraAmount) {
+              // Recalcular total_amount: previous_debt + tariff_total + fines_mingas + mora_amount
+              // (fines_reuniones no se suma al total, solo se registra)
+              const newTotalAmount = 
+                (bill.previous_debt || 0) +
+                (bill.tariff_total || 0) +
+                newFinesMingas +
+                newMoraAmount;
+              
+              billsToUpdate.push({
+                id: bill.id,
+                fines_reuniones: newFinesReuniones,
+                fines_mingas: newFinesMingas,
+                mora_amount: newMoraAmount,
+                total_amount: newTotalAmount,
+              });
+            }
+          }
+
+          // Actualizar en batch todos los bills afectados (en paralelo para mayor velocidad)
+          if (billsToUpdate.length > 0) {
+            console.log(`Actualizando ${billsToUpdate.length} facturas con nuevos valores de multas...`);
+            
+            // Actualizar todos los bills en paralelo usando Promise.all
+            const updatePromises = billsToUpdate.map(update =>
+              supabase
+                .from('bills')
+                .update({
+                  fines_reuniones: update.fines_reuniones,
+                  fines_mingas: update.fines_mingas,
+                  mora_amount: update.mora_amount,
+                  total_amount: update.total_amount,
+                })
+                .eq('id', update.id)
+            );
+            
+            const updateResults = await Promise.all(updatePromises);
+            
+            // Verificar errores
+            const errors = updateResults.filter(result => result.error);
+            if (errors.length > 0) {
+              console.error(`Error al actualizar ${errors.length} facturas:`, errors);
+            }
+            
+            console.log(`✓ Se actualizaron ${billsToUpdate.length} facturas con nuevos valores de multas.`);
+          }
+        }
+      }
+      
+      // Refrescar los bills
+      await fetchBills();
+    } catch (error: any) {
+      console.error('Error importing fines:', error);
+      showSnackbar(error.message || 'Error al importar multas de reuniones', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTogglePaymentStatus = async (meterId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'ACREDITADO' ? 'PENDIENTE' : 'ACREDITADO';
@@ -1226,6 +1544,13 @@ const Billing: React.FC = () => {
             onClick={() => setImportDialogOpen(true)}
           >
             Importar Jardín
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadIcon />}
+            onClick={() => setImportFinesDialogOpen(true)}
+          >
+            Importar Multas Reuniones
           </Button>
           <Button
             variant="contained"
@@ -1585,6 +1910,36 @@ const Billing: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportDialogOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para importar multas de reuniones */}
+      <Dialog open={importFinesDialogOpen} onClose={() => setImportFinesDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Importar Multas de Reuniones</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Selecciona un archivo Excel con las multas de reuniones. 
+              El archivo debe contener columnas: Código y Valor (o Multa/Reunión).
+            </Typography>
+            <Button
+              variant="outlined"
+              component="label"
+              fullWidth
+              startIcon={<UploadIcon />}
+            >
+              Seleccionar Archivo Excel
+              <input
+                type="file"
+                hidden
+                accept=".xlsx,.xls"
+                onChange={handleImportFines}
+              />
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportFinesDialogOpen(false)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
 
