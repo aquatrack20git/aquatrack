@@ -94,18 +94,26 @@ export const calculateBillingWithTariffs = (
         } else {
           // Rango con límite superior
           // Calcular m³ adicionales en este rango específico
-          // Ejemplo: rango 16-20, consumo 30
+          // Según fórmulas Excel:
+          // - Si consumo >= maxConsumption: usar max_units (o calcular hasta el límite)
+          // - Si consumo < maxConsumption: usar (consumo - límite_anterior)
+          // Ejemplo: rango 16-20, consumo 28
           // - Límite anterior: 15
-          // - Límite actual: min(30, 20) = 20
-          // - Unidades: 20 - 15 = 5 m³
+          // - Si consumo >= 20: unidades = 5 (máximo del rango)
+          // - Si consumo < 20: unidades = consumo - 15
           const previousLimit = minConsumption - 1; // 15 para rango 16-20
-          const actualMax = Math.min(consumption, maxConsumption);
-          if (actualMax > previousLimit) {
-            units = actualMax - previousLimit;
+          
+          if (consumption >= maxConsumption) {
+            // Consumo supera el máximo del rango: usar el máximo de unidades del rango
+            // Para rango 16-20: si consumo >= 20, entonces 5 unidades
+            units = maxConsumption - previousLimit; // 20 - 15 = 5
+          } else {
+            // Consumo dentro del rango: calcular unidades desde el límite anterior
+            units = consumption - previousLimit; // Ej: consumo 18, entonces 18 - 15 = 3
           }
         }
         
-        // Si hay límite de unidades (max_units), aplicar
+        // Si hay límite de unidades (max_units), aplicar (esto es una validación adicional)
         if (tariff.max_units !== null && tariff.max_units !== undefined) {
           units = Math.min(units, tariff.max_units);
         }
