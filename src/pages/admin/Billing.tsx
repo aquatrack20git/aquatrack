@@ -103,6 +103,23 @@ const Billing: React.FC = () => {
   });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFinesDialogOpen, setImportFinesDialogOpen] = useState(false);
+  const [meterSearch, setMeterSearch] = useState('');
+
+  // Filtrar facturas por código, ubicación o descripción (misma lógica que Registro de lecturas)
+  const filteredBills = React.useMemo(() => {
+    if (!meterSearch.trim()) return bills;
+    const searchTerm = meterSearch.toLowerCase().trim();
+    return bills.filter(bill => {
+      const code = (bill.meter_id || '').toLowerCase();
+      const location = (bill.meter_location || '').toLowerCase();
+      const description = (bill.meter_description || '').toLowerCase();
+      return (
+        code.includes(searchTerm) ||
+        location.includes(searchTerm) ||
+        description.includes(searchTerm)
+      );
+    });
+  }, [bills, meterSearch]);
 
   useEffect(() => {
     fetchPeriods();
@@ -839,7 +856,7 @@ const Billing: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-    const exportData = bills.map(bill => {
+    const exportData = filteredBills.map(bill => {
       const meter = meters.find(m => m.code_meter === bill.meter_id);
       return {
         'COD': bill.meter_id,
@@ -1654,7 +1671,7 @@ const Billing: React.FC = () => {
             color="success"
             startIcon={<DownloadIcon />}
             onClick={handleExportExcel}
-            disabled={bills.length === 0}
+            disabled={filteredBills.length === 0}
           >
             Exportar Excel
           </Button>
@@ -1667,13 +1684,45 @@ const Billing: React.FC = () => {
         </Alert>
       )}
 
+      {/* Buscador de medidor (misma lógica que Registro de lecturas) */}
+      {bills.length > 0 && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
+            <TextField
+              label="Buscar Medidor"
+              value={meterSearch}
+              onChange={(e) => setMeterSearch(e.target.value)}
+              placeholder="Buscar por código, ubicación o nombres"
+              sx={{ minWidth: 280 }}
+              size="small"
+            />
+            <Button
+              variant="outlined"
+              onClick={() => setMeterSearch('')}
+              disabled={!meterSearch.trim()}
+            >
+              Limpiar filtros
+            </Button>
+            <Typography variant="body2" color="text.secondary">
+              Total de registros: {filteredBills.length}
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
       {loading && (
         <Box display="flex" justifyContent="center" p={3}>
           <CircularProgress />
         </Box>
       )}
 
-      {!loading && bills.length > 0 && (
+      {!loading && bills.length > 0 && filteredBills.length === 0 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Ninguna factura coincide con el criterio de búsqueda. Prueba otro texto o limpia el filtro.
+        </Alert>
+      )}
+
+      {!loading && bills.length > 0 && filteredBills.length > 0 && (
         <Paper>
           <TableContainer sx={{ maxHeight: '70vh' }}>
             <Table stickyHeader size="small">
@@ -1701,7 +1750,7 @@ const Billing: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {bills.map((bill) => {
+                {filteredBills.map((bill) => {
                   const meter = meters.find(m => m.code_meter === bill.meter_id);
                   const displayName = bill.meter_description || meter?.description || bill.meter_id;
                   return (
