@@ -468,17 +468,6 @@ const Billing: React.FC = () => {
         (previousDebtsData || []).map(debt => [debt.meter_id, debt.amount || 0])
       );
 
-      // Deudas explícitas del mismo período que se factura (import Excel / gestión de deudas = punto de partida)
-      const { data: samePeriodDebtsData } = await supabase
-        .from('debts')
-        .select('meter_id, amount')
-        .eq('period', selectedPeriod)
-        .in('meter_id', meterIds);
-
-      const samePeriodDebtsMap = new Map(
-        (samePeriodDebtsData || []).map(d => [d.meter_id, d.amount ?? 0])
-      );
-
       // Consulta batch: multas y costo reconexión del período actual
       const { data: finesDataAll } = await supabase
         .from('meter_fines')
@@ -591,18 +580,16 @@ const Billing: React.FC = () => {
           // Calcular tarifas (usar tarifas ya cargadas, sin consultar BD)
           const billingCalc = calculateBillingWithTariffs(consumption, tariffs);
           
-          // Deuda: si hay registro en debts para ESTE período, es el punto de partida (import / deudas manuales).
-          // Si no, arrastrar desde el período anterior (debts del mes anterior o diferencia del bill anterior).
+          // Deuda arrastrada al período actual (como antes de importar deuda por período seleccionado):
+          // 1) Si existe fila en debts del período anterior → usar amount
+          // 2) Si no → diferencia del bill del período anterior (total_amount - garden_amount)
           let previousDebt = 0;
-          if (samePeriodDebtsMap.has(meter.code_meter)) {
-            previousDebt = samePeriodDebtsMap.get(meter.code_meter) ?? 0;
+          const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
+
+          if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
+            previousDebt = debtFromDebtsTable;
           } else {
-            const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
-            if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
-              previousDebt = debtFromDebtsTable;
-            } else {
-              previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
-            }
+            previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
           }
 
           // Obtener multas y costo reconexión desde el mapa (ya cargado en batch)
@@ -2325,10 +2312,13 @@ const Billing: React.FC = () => {
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Define el <strong>punto de partida de la deuda</strong> para el período seleccionado en Facturación (
-              <strong>{selectedPeriod}</strong>): solo se actualizan los medidores que vengan en el archivo. El
-              cálculo y la columna <strong>DEUDA</strong> usan ese valor cuando existe registro de deuda para ese
-              período; si no, se sigue arrastrando la deuda desde el mes anterior como antes.
+              Actualiza el registro de deudas y las facturas ya generadas del período{' '}
+              <strong>{selectedPeriod}</strong> para los medidores del archivo (punto de partida manual).
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Si pulsas <strong>Calcular todo</strong>, la columna <strong>DEUDA</strong> vuelve a calcularse como
+              antes: primero la deuda registrada del <strong>mes anterior</strong> en Gestión de deudas; si no hay,
+              la <strong>diferencia</strong> del mes anterior (total a pagar menos valor jardín).
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               El archivo debe contener columnas: Código y valor de deuda (Deuda, Saldo, Valor, Monto, etc.).
