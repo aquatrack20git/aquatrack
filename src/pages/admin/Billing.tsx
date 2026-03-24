@@ -468,6 +468,17 @@ const Billing: React.FC = () => {
         (previousDebtsData || []).map(debt => [debt.meter_id, debt.amount || 0])
       );
 
+      // Deudas explícitas del mismo período que se factura (import Excel / gestión de deudas = punto de partida)
+      const { data: samePeriodDebtsData } = await supabase
+        .from('debts')
+        .select('meter_id, amount')
+        .eq('period', selectedPeriod)
+        .in('meter_id', meterIds);
+
+      const samePeriodDebtsMap = new Map(
+        (samePeriodDebtsData || []).map(d => [d.meter_id, d.amount ?? 0])
+      );
+
       // Consulta batch: multas y costo reconexión del período actual
       const { data: finesDataAll } = await supabase
         .from('meter_fines')
@@ -580,18 +591,18 @@ const Billing: React.FC = () => {
           // Calcular tarifas (usar tarifas ya cargadas, sin consultar BD)
           const billingCalc = calculateBillingWithTariffs(consumption, tariffs);
           
-          // Obtener deuda del mes anterior:
-          // 1. Primero buscar en la tabla debts del período anterior
-          // 2. Si no existe en debts, usar la diferencia del bill del período anterior (total_amount - garden_amount)
+          // Deuda: si hay registro en debts para ESTE período, es el punto de partida (import / deudas manuales).
+          // Si no, arrastrar desde el período anterior (debts del mes anterior o diferencia del bill anterior).
           let previousDebt = 0;
-          const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
-          
-          if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
-            // Existe en la tabla debts, usar ese valor
-            previousDebt = debtFromDebtsTable;
+          if (samePeriodDebtsMap.has(meter.code_meter)) {
+            previousDebt = samePeriodDebtsMap.get(meter.code_meter) ?? 0;
           } else {
-            // No existe en debts, usar la diferencia del bill del período anterior (total_amount - garden_amount)
-            previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
+            const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
+            if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
+              previousDebt = debtFromDebtsTable;
+            } else {
+              previousDebt = previousBillsDifferenceMap.get(meter.code_meter) || 0;
+            }
           }
 
           // Obtener multas y costo reconexión desde el mapa (ya cargado en batch)
@@ -1583,13 +1594,6 @@ const Billing: React.FC = () => {
         throw new Error('No hay período seleccionado. Por favor, selecciona un período antes de importar.');
       }
 
-      const debtPeriod = getPreviousPeriod(selectedPeriod);
-      if (!debtPeriod) {
-        throw new Error(
-          'No se pudo determinar el período anterior al seleccionado. Verifica el formato del período (ej. ENERO 2025).'
-        );
-      }
-
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
@@ -1693,97 +1697,97 @@ const Billing: React.FC = () => {
         excelValuesMap.set(meterCode, amount);
       }
 
-      if (excelValuesMap.size > 0) {
-        const excelMeterCodes = Array.from(excelValuesMap.keys());
-        const allActiveMeters = meters.map(m => m.code_meter);
-        const invalidMeters = excelMeterCodes.filter(code => !allActiveMeters.includes(code));
-
-        if (invalidMeters.length > 0) {
-          const invalidMetersList = invalidMeters.join(', ');
-          throw new Error(
-            `Se encontraron ${invalidMeters.length} medidor(es) en el Excel que no existen en la base de datos: ${invalidMetersList}. Por favor, verifica los códigos e intenta nuevamente.`
-          );
-        }
+      if (excelValuesMap.size === 0) {
+        throw new Error('No se encontraron filas con código y monto de deuda en el archivo.');
       }
 
+      const excelMeterCodes = Array.from(excelValuesMap.keys());
       const allActiveMeters = meters.map(m => m.code_meter);
+      const invalidMeters = excelMeterCodes.filter(code => !allActiveMeters.includes(code));
 
-      const debtsToUpsert = allActiveMeters.map(meterId => ({
-        meter_id: meterId,
-        period: debtPeriod,
-        amount: excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0,
-        description: 'Importado desde Excel',
-      }));
-
-      if (debtsToUpsert.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('debts')
-          .upsert(debtsToUpsert, {
-            onConflict: 'meter_id,period',
-            ignoreDuplicates: false,
-          });
-
-        if (upsertError) {
-          console.error('Error al hacer upsert batch de debts:', upsertError);
-          throw upsertError;
-        }
-      }
-
-      const debtAmountByMeter = new Map<string, number>();
-      for (const meterId of allActiveMeters) {
-        debtAmountByMeter.set(
-          meterId,
-          excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0
+      if (invalidMeters.length > 0) {
+        const invalidMetersList = invalidMeters.join(', ');
+        throw new Error(
+          `Se encontraron ${invalidMeters.length} medidor(es) en el Excel que no existen en la base de datos: ${invalidMetersList}. Por favor, verifica los códigos e intenta nuevamente.`
         );
       }
 
+      // Solo medidores del Excel: punto de partida de deuda para el período seleccionado (no poner en 0 al resto)
+      const debtsToUpsert = excelMeterCodes.map(meterId => ({
+        meter_id: meterId,
+        period: selectedPeriod,
+        amount: excelValuesMap.get(meterId)!,
+        description: 'Importado desde Excel',
+      }));
+
+      const { error: upsertError } = await supabase.from('debts').upsert(debtsToUpsert, {
+        onConflict: 'meter_id,period',
+        ignoreDuplicates: false,
+      });
+
+      if (upsertError) {
+        console.error('Error al hacer upsert batch de debts:', upsertError);
+        throw upsertError;
+      }
+
       const importedFromExcel = excelValuesMap.size;
-      const setToZero = debtsToUpsert.length - importedFromExcel;
 
       const { data: existingBills } = await supabase
         .from('bills')
         .select('id, meter_id, tariff_total, fines_reuniones, fines_mingas, mora_amount')
         .eq('period', selectedPeriod);
 
+      let billsSynced = 0;
       if (existingBills && existingBills.length > 0) {
-        const billsToUpdate = existingBills.map(bill => {
-          const newPreviousDebt = debtAmountByMeter.get(bill.meter_id) ?? 0;
-          const newTotalAmount =
-            newPreviousDebt +
-            (bill.tariff_total || 0) +
-            (bill.fines_reuniones || 0) +
-            (bill.fines_mingas || 0) +
-            (bill.mora_amount || 0);
-          return { id: bill.id, previous_debt: newPreviousDebt, total_amount: newTotalAmount };
-        });
+        const billsToUpdate = existingBills
+          .filter(bill => excelValuesMap.has(bill.meter_id))
+          .map(bill => {
+            const newPreviousDebt = excelValuesMap.get(bill.meter_id)!;
+            const newTotalAmount =
+              newPreviousDebt +
+              (bill.tariff_total || 0) +
+              (bill.fines_reuniones || 0) +
+              (bill.fines_mingas || 0) +
+              (bill.mora_amount || 0);
+            return { id: bill.id, previous_debt: newPreviousDebt, total_amount: newTotalAmount };
+          });
 
-        const updatePromises = billsToUpdate.map(update =>
-          supabase
-            .from('bills')
-            .update({
-              previous_debt: update.previous_debt,
-              total_amount: update.total_amount,
-            })
-            .eq('id', update.id)
-        );
+        if (billsToUpdate.length > 0) {
+          const updatePromises = billsToUpdate.map(update =>
+            supabase
+              .from('bills')
+              .update({
+                previous_debt: update.previous_debt,
+                total_amount: update.total_amount,
+              })
+              .eq('id', update.id)
+          );
 
-        const updateResults = await Promise.all(updatePromises);
-        const errors = updateResults.filter(result => result.error);
-        if (errors.length > 0) {
-          console.error(`Error al actualizar ${errors.length} facturas tras importar deuda:`, errors);
+          const updateResults = await Promise.all(updatePromises);
+          const errors = updateResults.filter(result => result.error);
+          if (errors.length > 0) {
+            console.error(`Error al actualizar ${errors.length} facturas tras importar deuda:`, errors);
+          }
+          billsSynced = billsToUpdate.length;
         }
-      } else {
-        showSnackbar(
-          'Deudas guardadas. No hay facturas para este período; usa "Calcular todo" o "Guardar todo" para generarlas y ver la columna DEUDA.',
-          'info'
-        );
       }
 
       setImportDebtDialogOpen(false);
 
-      if (existingBills && existingBills.length > 0) {
+      const skippedMsg = skipped > 0 ? ` ${skipped} filas omitidas.` : '';
+      if (!existingBills || existingBills.length === 0) {
         showSnackbar(
-          `Deudas registradas para ${debtPeriod} (${importedFromExcel} del Excel${setToZero > 0 ? `, ${setToZero} en 0` : ''}${skipped > 0 ? `, ${skipped} filas omitidas` : ''}). Facturas de ${selectedPeriod} actualizadas.`,
+          `Punto de partida de deuda guardado para ${importedFromExcel} medidor(es) (${selectedPeriod}). Calcula o guarda facturas para ver la columna DEUDA.${skippedMsg}`,
+          'info'
+        );
+      } else if (billsSynced > 0) {
+        showSnackbar(
+          `Punto de partida de deuda (${selectedPeriod}): ${importedFromExcel} medidor(es) en registro de deudas. ${billsSynced} factura(s) actualizada(s).${skippedMsg}`,
+          'success'
+        );
+      } else {
+        showSnackbar(
+          `Punto de partida de deuda guardado para ${importedFromExcel} medidor(es) (${selectedPeriod}). No había facturas en este período para esos medidores.${skippedMsg}`,
           'success'
         );
       }
@@ -2321,10 +2325,10 @@ const Billing: React.FC = () => {
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Los montos se registran como deuda del período{' '}
-              <strong>{getPreviousPeriod(selectedPeriod) || 'anterior'}</strong>, que es la fuente que usa el
-              cálculo de la columna <strong>DEUDA</strong> en las facturas del período seleccionado (
-              <strong>{selectedPeriod}</strong>).
+              Define el <strong>punto de partida de la deuda</strong> para el período seleccionado en Facturación (
+              <strong>{selectedPeriod}</strong>): solo se actualizan los medidores que vengan en el archivo. El
+              cálculo y la columna <strong>DEUDA</strong> usan ese valor cuando existe registro de deuda para ese
+              período; si no, se sigue arrastrando la deuda desde el mes anterior como antes.
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               El archivo debe contener columnas: Código y valor de deuda (Deuda, Saldo, Valor, Monto, etc.).
