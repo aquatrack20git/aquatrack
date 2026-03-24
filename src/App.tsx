@@ -18,6 +18,7 @@ import ChangePassword from './pages/admin/ChangePassword';
 import TariffManagement from './pages/admin/TariffManagement';
 import CalculationParams from './pages/admin/CalculationParams';
 import Billing from './pages/admin/Billing';
+import MeterBillingHistory from './pages/admin/MeterBillingHistory';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Readings from './pages/Readings';
 import VerifyEmail from './pages/admin/VerifyEmail';
@@ -137,6 +138,7 @@ const AdminRoutes = () => {
         <Route path="tariffs" element={<TariffManagement />} />
         <Route path="calculation-params" element={<CalculationParams />} />
         <Route path="billing" element={<Billing />} />
+        <Route path="billing-history" element={<MeterBillingHistory />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>

@@ -33,6 +33,7 @@ import {
   AttachMoney as AttachMoneyIcon,
   Calculate as CalculateIcon,
   Receipt as ReceiptIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
@@ -45,6 +46,7 @@ const menuItems = [
   { text: 'Usuarios', icon: <PeopleIcon />, path: '/admin/users' },
   { text: 'Lecturas', icon: <AssessmentIcon />, path: '/admin/readings' },
   { text: 'Facturación', icon: <ReceiptIcon />, path: '/admin/billing' },
+  { text: 'Historial facturación', icon: <HistoryIcon />, path: '/admin/billing-history' },
   { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/reports/readings' },
   { text: 'Reporte de Comentarios', icon: <CommentIcon />, path: '/admin/reports/comments' },
   { text: 'Tarifario', icon: <AttachMoneyIcon />, path: '/admin/tariffs' },
