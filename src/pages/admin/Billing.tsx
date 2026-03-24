@@ -103,6 +103,7 @@ const Billing: React.FC = () => {
   });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFinesDialogOpen, setImportFinesDialogOpen] = useState(false);
+  const [importDebtDialogOpen, setImportDebtDialogOpen] = useState(false);
   const [meterSearch, setMeterSearch] = useState('');
 
   // Filtrar facturas por código, ubicación o descripción (misma lógica que Registro de lecturas)
@@ -1571,6 +1572,232 @@ const Billing: React.FC = () => {
     }
   };
 
+  const handleImportDebt = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+
+      if (!selectedPeriod) {
+        throw new Error('No hay período seleccionado. Por favor, selecciona un período antes de importar.');
+      }
+
+      const debtPeriod = getPreviousPeriod(selectedPeriod);
+      if (!debtPeriod) {
+        throw new Error(
+          'No se pudo determinar el período anterior al seleccionado. Verifica el formato del período (ej. ENERO 2025).'
+        );
+      }
+
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(10, jsonData.length); i++) {
+        const row = jsonData[i];
+        if (
+          Array.isArray(row) &&
+          row.some((cell: any) =>
+            String(cell).toLowerCase().includes('código') || String(cell).toLowerCase().includes('codigo')
+          )
+        ) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        throw new Error('No se encontró la fila de encabezados');
+      }
+
+      const headers = jsonData[headerRowIndex] as string[];
+
+      const codigoIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return (
+          headerLower.includes('código') ||
+          headerLower.includes('codigo') ||
+          headerLower.includes('code') ||
+          headerLower.includes('medidor') ||
+          headerLower.includes('meter')
+        );
+      });
+
+      const valorIndex = headers.findIndex(h => {
+        const headerLower = String(h || '').toLowerCase().trim();
+        return (
+          headerLower.includes('deuda') ||
+          headerLower.includes('saldo') ||
+          headerLower.includes('adeudado') ||
+          headerLower.includes('valor') ||
+          headerLower.includes('amount') ||
+          headerLower.includes('monto') ||
+          headerLower.includes('importe') ||
+          headerLower.includes('multa') ||
+          headerLower.includes('reunión') ||
+          headerLower.includes('reunion')
+        );
+      });
+
+      if (codigoIndex === -1) {
+        throw new Error(
+          'No se encontró la columna de código. Busque columnas con: Código, Codigo, Code, Medidor, Meter'
+        );
+      }
+
+      if (valorIndex === -1) {
+        throw new Error(
+          'No se encontró la columna de valor. Busque columnas con: Deuda, Saldo, Adeudado, Valor, Amount, Monto, Importe'
+        );
+      }
+
+      let skipped = 0;
+      const excelValuesMap = new Map<string, number>();
+
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!Array.isArray(row)) {
+          skipped++;
+          continue;
+        }
+
+        const codigoCell = row[codigoIndex];
+        const valorCell = row[valorIndex];
+
+        if (
+          (codigoCell === undefined || codigoCell === null || codigoCell === '') &&
+          (valorCell === undefined || valorCell === null || valorCell === '')
+        ) {
+          skipped++;
+          continue;
+        }
+
+        const meterCode = codigoCell ? String(codigoCell).trim() : '';
+        if (!meterCode) {
+          skipped++;
+          continue;
+        }
+
+        let amount: number;
+        if (valorCell === undefined || valorCell === null || valorCell === '') {
+          amount = 0;
+        } else {
+          const parsed = parseFloat(String(valorCell));
+          amount = isNaN(parsed) ? 0 : parsed;
+        }
+
+        excelValuesMap.set(meterCode, amount);
+      }
+
+      if (excelValuesMap.size > 0) {
+        const excelMeterCodes = Array.from(excelValuesMap.keys());
+        const allActiveMeters = meters.map(m => m.code_meter);
+        const invalidMeters = excelMeterCodes.filter(code => !allActiveMeters.includes(code));
+
+        if (invalidMeters.length > 0) {
+          const invalidMetersList = invalidMeters.join(', ');
+          throw new Error(
+            `Se encontraron ${invalidMeters.length} medidor(es) en el Excel que no existen en la base de datos: ${invalidMetersList}. Por favor, verifica los códigos e intenta nuevamente.`
+          );
+        }
+      }
+
+      const allActiveMeters = meters.map(m => m.code_meter);
+
+      const debtsToUpsert = allActiveMeters.map(meterId => ({
+        meter_id: meterId,
+        period: debtPeriod,
+        amount: excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0,
+        description: 'Importado desde Excel',
+      }));
+
+      if (debtsToUpsert.length > 0) {
+        const { error: upsertError } = await supabase
+          .from('debts')
+          .upsert(debtsToUpsert, {
+            onConflict: 'meter_id,period',
+            ignoreDuplicates: false,
+          });
+
+        if (upsertError) {
+          console.error('Error al hacer upsert batch de debts:', upsertError);
+          throw upsertError;
+        }
+      }
+
+      const debtAmountByMeter = new Map<string, number>();
+      for (const meterId of allActiveMeters) {
+        debtAmountByMeter.set(
+          meterId,
+          excelValuesMap.has(meterId) ? excelValuesMap.get(meterId)! : 0
+        );
+      }
+
+      const importedFromExcel = excelValuesMap.size;
+      const setToZero = debtsToUpsert.length - importedFromExcel;
+
+      const { data: existingBills } = await supabase
+        .from('bills')
+        .select('id, meter_id, tariff_total, fines_reuniones, fines_mingas, mora_amount')
+        .eq('period', selectedPeriod);
+
+      if (existingBills && existingBills.length > 0) {
+        const billsToUpdate = existingBills.map(bill => {
+          const newPreviousDebt = debtAmountByMeter.get(bill.meter_id) ?? 0;
+          const newTotalAmount =
+            newPreviousDebt +
+            (bill.tariff_total || 0) +
+            (bill.fines_reuniones || 0) +
+            (bill.fines_mingas || 0) +
+            (bill.mora_amount || 0);
+          return { id: bill.id, previous_debt: newPreviousDebt, total_amount: newTotalAmount };
+        });
+
+        const updatePromises = billsToUpdate.map(update =>
+          supabase
+            .from('bills')
+            .update({
+              previous_debt: update.previous_debt,
+              total_amount: update.total_amount,
+            })
+            .eq('id', update.id)
+        );
+
+        const updateResults = await Promise.all(updatePromises);
+        const errors = updateResults.filter(result => result.error);
+        if (errors.length > 0) {
+          console.error(`Error al actualizar ${errors.length} facturas tras importar deuda:`, errors);
+        }
+      } else {
+        showSnackbar(
+          'Deudas guardadas. No hay facturas para este período; usa "Calcular todo" o "Guardar todo" para generarlas y ver la columna DEUDA.',
+          'info'
+        );
+      }
+
+      setImportDebtDialogOpen(false);
+
+      if (existingBills && existingBills.length > 0) {
+        showSnackbar(
+          `Deudas registradas para ${debtPeriod} (${importedFromExcel} del Excel${setToZero > 0 ? `, ${setToZero} en 0` : ''}${skipped > 0 ? `, ${skipped} filas omitidas` : ''}). Facturas de ${selectedPeriod} actualizadas.`,
+          'success'
+        );
+      }
+
+      await fetchBills();
+    } catch (error: any) {
+      console.error('Error importing debt:', error);
+      showSnackbar(error.message || 'Error al importar deudas', 'error');
+    } finally {
+      setLoading(false);
+      event.target.value = '';
+    }
+  };
+
   const handleTogglePaymentStatus = async (meterId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'ACREDITADO' ? 'PENDIENTE' : 'ACREDITADO';
@@ -1657,6 +1884,14 @@ const Billing: React.FC = () => {
             onClick={() => setImportFinesDialogOpen(true)}
           >
             Importar Multas Reuniones
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadIcon />}
+            onClick={() => setImportDebtDialogOpen(true)}
+            disabled={!selectedPeriod}
+          >
+            Importar deuda
           </Button>
           <Button
             variant="contained"
@@ -2078,6 +2313,35 @@ const Billing: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportFinesDialogOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={importDebtDialogOpen} onClose={() => setImportDebtDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Importar deuda</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Los montos se registran como deuda del período{' '}
+              <strong>{getPreviousPeriod(selectedPeriod) || 'anterior'}</strong>, que es la fuente que usa el
+              cálculo de la columna <strong>DEUDA</strong> en las facturas del período seleccionado (
+              <strong>{selectedPeriod}</strong>).
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              El archivo debe contener columnas: Código y valor de deuda (Deuda, Saldo, Valor, Monto, etc.).
+            </Typography>
+            <Button variant="outlined" component="label" fullWidth startIcon={<UploadIcon />}>
+              Seleccionar archivo Excel
+              <input
+                type="file"
+                hidden
+                accept=".xlsx,.xls"
+                onChange={handleImportDebt}
+              />
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDebtDialogOpen(false)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
 
