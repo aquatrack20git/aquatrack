@@ -128,4 +128,11 @@ console.log('Supabase Config - Initiating security policies setup');
 setupSecurityPolicies(); 
 
 // Función helper para obtener la URL de redirección
-export const getRedirectUrl = () => `${siteUrl}/admin/verify-email`; 
+export const getRedirectUrl = () => `${siteUrl}/admin/verify-email`;
+
+/**
+ * URL a la que Supabase redirige tras el enlace del correo de recuperación.
+ * Debe coincidir con una entrada en Supabase Dashboard → Authentication → URL Configuration
+ * (Redirect URLs), p. ej. https://tu-dominio.com/admin/reset-password y http://localhost:5173/admin/reset-password en desarrollo.
+ */
+export const getPasswordResetRedirectUrl = () => `${siteUrl}/admin/reset-password`;

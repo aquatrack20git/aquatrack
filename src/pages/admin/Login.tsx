@@ -9,9 +9,14 @@ import {
   Button,
   Alert,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Link,
 } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../config/supabase';
+import { supabase, getPasswordResetRedirectUrl } from '../../config/supabase';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -21,6 +26,11 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [searchParams] = useSearchParams();
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const resetSuccess = searchParams.get('reset') === 'success';
 
   useEffect(() => {
     // Verificar si hay un mensaje de verificación exitosa
@@ -166,6 +176,36 @@ const Login: React.FC = () => {
     }
   };
 
+  const handleOpenForgot = () => {
+    setForgotMessage(null);
+    setForgotEmail(email.trim().toLowerCase());
+    setForgotOpen(true);
+  };
+
+  const handleForgotSubmit = async () => {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setForgotMessage('Ingresa tu correo electrónico');
+      return;
+    }
+
+    setForgotLoading(true);
+    setForgotMessage(null);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: getPasswordResetRedirectUrl(),
+      });
+      if (resetError) throw resetError;
+      setForgotMessage(
+        'Si existe una cuenta con ese correo, recibirás un enlace para restablecer la contraseña.'
+      );
+    } catch (err: any) {
+      setForgotMessage(err.message || 'No se pudo enviar el correo. Intenta de nuevo más tarde.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const handleResendConfirmation = async () => {
     if (!email) {
       setError('Por favor, ingresa tu correo electrónico');
@@ -262,6 +302,12 @@ const Login: React.FC = () => {
             Iniciar Sesión
           </Typography>
 
+          {resetSuccess && (
+            <Alert severity="success" sx={{ width: '100%', mb: 2 }}>
+              Contraseña actualizada. Inicia sesión con tu nueva contraseña.
+            </Alert>
+          )}
+
           {error && (
             <Alert 
               severity="error" 
@@ -308,6 +354,18 @@ const Login: React.FC = () => {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
             />
+            <Box sx={{ width: '100%', textAlign: 'right', mt: 0.5 }}>
+              <Link
+                component="button"
+                type="button"
+                variant="body2"
+                onClick={handleOpenForgot}
+                disabled={loading}
+                sx={{ cursor: 'pointer' }}
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </Box>
             <Button
               type="submit"
               fullWidth
@@ -318,6 +376,41 @@ const Login: React.FC = () => {
               {loading ? <CircularProgress size={24} /> : 'Iniciar Sesión'}
             </Button>
           </form>
+
+          <Dialog open={forgotOpen} onClose={() => !forgotLoading && setForgotOpen(false)} fullWidth maxWidth="xs">
+            <DialogTitle>Restablecer contraseña</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Te enviaremos un enlace a tu correo para elegir una nueva contraseña.
+              </Typography>
+              {forgotMessage && (
+                <Alert
+                  severity={forgotMessage.includes('Si existe') ? 'success' : 'error'}
+                  sx={{ mb: 2 }}
+                >
+                  {forgotMessage}
+                </Alert>
+              )}
+              <TextField
+                autoFocus
+                margin="dense"
+                label="Correo electrónico"
+                type="email"
+                fullWidth
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                disabled={forgotLoading}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setForgotOpen(false)} disabled={forgotLoading}>
+                Cerrar
+              </Button>
+              <Button onClick={handleForgotSubmit} variant="contained" disabled={forgotLoading}>
+                {forgotLoading ? <CircularProgress size={22} /> : 'Enviar enlace'}
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Paper>
       </Box>
     </Container>

@@ -21,6 +21,7 @@ import Billing from './pages/admin/Billing';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Readings from './pages/Readings';
 import VerifyEmail from './pages/admin/VerifyEmail';
+import ResetPassword from './pages/admin/ResetPassword';
 
 const ErrorScreen = ({ message }: { message: string }) => (
   <Box
@@ -106,7 +107,7 @@ const AdminRoutes = () => {
   }
 
   // Lista de rutas públicas que no requieren autenticación
-  const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email'];
+  const publicRoutes = ['/admin/login', '/admin/setup', '/admin/verify-email', '/admin/reset-password'];
 
   // Si no está autenticado y no está en una ruta pública, redirigir a login
   if (!isAuthenticated && !loading && !publicRoutes.some(route => location.pathname.includes(route))) {
@@ -118,6 +119,7 @@ const AdminRoutes = () => {
       <Route path="login" element={<Login />} />
       <Route path="setup" element={<SetupAdmin />} />
       <Route path="verify-email" element={<VerifyEmail />} />
+      <Route path="reset-password" element={<ResetPassword />} />
       <Route path="change-password" element={<ChangePassword />} />
       <Route
         element={
