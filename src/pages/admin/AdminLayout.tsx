@@ -31,7 +31,6 @@ import {
   Settings as SettingsIcon,
   Key as KeyIcon,
   AttachMoney as AttachMoneyIcon,
-  Calculate as CalculateIcon,
   Receipt as ReceiptIcon,
   History as HistoryIcon,
 } from '@mui/icons-material';
@@ -50,7 +49,6 @@ const menuItems = [
   { text: 'Reporte de Lecturas', icon: <AssessmentIcon />, path: '/admin/reports/readings' },
   { text: 'Reporte de Comentarios', icon: <CommentIcon />, path: '/admin/reports/comments' },
   { text: 'Tarifario', icon: <AttachMoneyIcon />, path: '/admin/tariffs' },
-  { text: 'Parámetros de Cálculo', icon: <CalculateIcon />, path: '/admin/calculation-params' },
 ];
 
 const AdminLayout: React.FC = () => {
