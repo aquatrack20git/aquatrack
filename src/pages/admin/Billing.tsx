@@ -86,6 +86,17 @@ interface BillRow extends Bill {
   isEditing?: boolean;
 }
 
+/**
+ * Diferencia del bill = total a pagar − valor jardín (misma columna DIFERENCIA en pantalla y Excel).
+ * Al calcular facturas: la DEUDA del mes actual es igual a la diferencia del mes anterior,
+ * salvo que exista un monto en Gestión de deudas para ese medidor en el mes anterior (entonces prevalece ese monto).
+ */
+function billDifferenceTotalMinusGarden(
+  bill: Pick<Bill, 'total_amount' | 'garden_amount'>
+): number {
+  return (bill.total_amount || 0) - (bill.garden_amount || 0);
+}
+
 const Billing: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>(getCurrentPeriod());
   const [availablePeriods, setAvailablePeriods] = useState<string[]>([]);
@@ -445,14 +456,9 @@ const Billing: React.FC = () => {
             .in('meter_id', meterIds)
         : { data: [] };
 
-      // Mapa con la diferencia del período anterior: total_amount - garden_amount
+      // Mapa: diferencia del mes anterior = total a pagar − valor jardín
       const previousBillsDifferenceMap = new Map(
-        (previousBillsData || []).map(bill => {
-          const totalAmount = bill.total_amount || 0;
-          const gardenAmount = bill.garden_amount || 0;
-          const diferencia = totalAmount - gardenAmount;
-          return [bill.meter_id, diferencia];
-        })
+        (previousBillsData || []).map(bill => [bill.meter_id, billDifferenceTotalMinusGarden(bill)])
       );
 
       // Consulta batch: deudas manuales del período anterior
@@ -580,9 +586,8 @@ const Billing: React.FC = () => {
           // Calcular tarifas (usar tarifas ya cargadas, sin consultar BD)
           const billingCalc = calculateBillingWithTariffs(consumption, tariffs);
           
-          // Deuda arrastrada al período actual (como antes de importar deuda por período seleccionado):
-          // 1) Si existe fila en debts del período anterior → usar amount
-          // 2) Si no → diferencia del bill del período anterior (total_amount - garden_amount)
+          // DEUDA del período actual = por defecto la diferencia del mes anterior (total a pagar − jardín de ese mes).
+          // Solo si hay registro en `debts` para el mes anterior, se usa ese monto en lugar de la diferencia.
           let previousDebt = 0;
           const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
 
@@ -875,7 +880,7 @@ const Billing: React.FC = () => {
         'TOTAL A PAGAR': bill.total_amount.toFixed(2),
         'CONCEPTO': bill.payment_status,
         'VALOR JARDIN': bill.garden_amount.toFixed(2),
-        'DIFERENCIA': (bill.total_amount - bill.garden_amount).toFixed(2),
+        'DIFERENCIA': billDifferenceTotalMinusGarden(bill).toFixed(2),
         'OBSERVACIONES OCTUBRE': bill.observations || '',
       };
     });
@@ -2201,12 +2206,15 @@ const Billing: React.FC = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      ${((editingRow === bill.meter_id 
-                        ? (editData.total_amount ?? bill.total_amount)
-                        : bill.total_amount) - 
-                        (editingRow === bill.meter_id 
-                          ? (editData.garden_amount ?? bill.garden_amount)
-                          : bill.garden_amount)).toFixed(2)}
+                      $
+                      {billDifferenceTotalMinusGarden(
+                        editingRow === bill.meter_id
+                          ? {
+                              total_amount: editData.total_amount ?? bill.total_amount,
+                              garden_amount: editData.garden_amount ?? bill.garden_amount,
+                            }
+                          : bill
+                      ).toFixed(2)}
                     </TableCell>
                     <TableCell>
                       {editingRow === bill.meter_id ? (
@@ -2316,9 +2324,10 @@ const Billing: React.FC = () => {
               <strong>{selectedPeriod}</strong> para los medidores del archivo (punto de partida manual).
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Si pulsas <strong>Calcular todo</strong>, la columna <strong>DEUDA</strong> vuelve a calcularse como
-              antes: primero la deuda registrada del <strong>mes anterior</strong> en Gestión de deudas; si no hay,
-              la <strong>diferencia</strong> del mes anterior (total a pagar menos valor jardín).
+              Si pulsas <strong>Calcular todo</strong>, la <strong>DEUDA</strong> del período seleccionado es, por
+              regla general, <strong>igual a la diferencia del mes anterior</strong> (total a pagar − valor jardín de
+              ese mes). Solo si en <strong>Gestión de deudas</strong> hay un monto para el mes anterior, ese valor
+              sustituye a la diferencia.
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               El archivo debe contener columnas: Código y valor de deuda (Deuda, Saldo, Valor, Monto, etc.).
