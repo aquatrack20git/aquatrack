@@ -36,6 +36,15 @@ import {
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
 
+/** Valor para input type="datetime-local" (hora local del navegador). */
+function toDatetimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 interface Meter {
   code_meter: string;
   location: string;
@@ -60,6 +69,7 @@ const MetersManagement: React.FC = () => {
     identification: '',
     email: '',
     contact_number: '',
+    created_at_local: '',
   });
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -136,6 +146,7 @@ const MetersManagement: React.FC = () => {
         identification: meter.identification || '',
         email: meter.email || '',
         contact_number: meter.contact_number || '',
+        created_at_local: toDatetimeLocalValue(meter.created_at),
       });
     } else {
       setSelectedMeter(null);
@@ -147,6 +158,7 @@ const MetersManagement: React.FC = () => {
         identification: '',
         email: '',
         contact_number: '',
+        created_at_local: toDatetimeLocalValue(new Date().toISOString()),
       });
     }
     setOpenDialog(true);
@@ -167,6 +179,16 @@ const MetersManagement: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
+      const createdAtIso =
+        formData.created_at_local.trim() !== ''
+          ? new Date(formData.created_at_local).toISOString()
+          : new Date().toISOString();
+
+      if (Number.isNaN(new Date(createdAtIso).getTime())) {
+        showSnackbar('La fecha de creación no es válida', 'error');
+        return;
+      }
+
       if (selectedMeter) {
         // Actualizar medidor existente
         const { error } = await supabase
@@ -178,6 +200,7 @@ const MetersManagement: React.FC = () => {
             identification: formData.identification,
             email: formData.email,
             contact_number: formData.contact_number,
+            created_at: createdAtIso,
           })
           .eq('code_meter', selectedMeter.code_meter);
 
@@ -195,7 +218,7 @@ const MetersManagement: React.FC = () => {
             identification: formData.identification,
             email: formData.email,
             contact_number: formData.contact_number,
-            created_at: new Date().toISOString(),
+            created_at: createdAtIso,
           }]);
 
         if (error) throw error;
@@ -585,6 +608,17 @@ const MetersManagement: React.FC = () => {
               <option value="inactive">Inactivo</option>
               <option value="maintenance">En Mantenimiento</option>
             </TextField>
+            <TextField
+              name="created_at_local"
+              label="Fecha de creación"
+              type="datetime-local"
+              value={formData.created_at_local}
+              onChange={handleInputChange}
+              fullWidth
+              required
+              InputLabelProps={{ shrink: true }}
+              helperText="Fecha registrada para este medidor (afecta reglas que usan la fecha de alta, p. ej. facturación)."
+            />
           </Box>
         </DialogContent>
         <DialogActions>
