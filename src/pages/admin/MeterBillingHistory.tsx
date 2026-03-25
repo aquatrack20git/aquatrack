@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Autocomplete,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Paper,
@@ -17,6 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { PictureAsPdf as PdfIcon } from '@mui/icons-material';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '../../config/supabase';
@@ -90,6 +92,14 @@ function fmtPaymentDate(iso: string | null): string {
   } catch {
     return iso;
   }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 const MeterBillingHistory: React.FC = () => {
@@ -166,6 +176,99 @@ const MeterBillingHistory: React.FC = () => {
       ? `${m.code_meter} — ${m.description}`
       : `${m.code_meter} — ${m.location || 'Sin ubicación'}`;
 
+  const exportToPDF = () => {
+    if (!selectedMeter || sortedBills.length === 0) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setSnackbar({
+        open: true,
+        message:
+          'No se pudo abrir la ventana de impresión. Desactiva el bloqueador de ventanas emergentes e intenta de nuevo.',
+        severity: 'error',
+      });
+      return;
+    }
+
+    const title = escapeHtml(meterLabel(selectedMeter));
+    const rowsHtml = sortedBills
+      .map((row) => {
+        const multas = (row.fines_reuniones || 0) + (row.fines_mingas || 0);
+        return `
+                <tr>
+                  <td>${escapeHtml(row.period)}</td>
+                  <td style="text-align:right">${fmtMoney(row.previous_reading)}</td>
+                  <td style="text-align:right">${fmtMoney(row.current_reading)}</td>
+                  <td style="text-align:right">${fmtMoney(row.consumption)}</td>
+                  <td style="text-align:right">${fmtMoney(row.tariff_total)}</td>
+                  <td style="text-align:right">${fmtMoney(row.previous_debt)}</td>
+                  <td style="text-align:right">${fmtMoney(multas)}</td>
+                  <td style="text-align:right">${fmtMoney(row.mora_amount)}</td>
+                  <td style="text-align:right">${fmtMoney(row.garden_amount)}</td>
+                  <td style="text-align:right;font-weight:bold">${fmtMoney(row.total_amount)}</td>
+                  <td>${escapeHtml(row.payment_status || 'PENDIENTE')}</td>
+                  <td>${escapeHtml(fmtPaymentDate(row.payment_date))}</td>
+                  <td>${escapeHtml(row.observations || '—')}</td>
+                </tr>`;
+      })
+      .join('');
+
+    const content = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Historial de facturación — ${title}</title>
+          <style>
+            body { font-family: Arial, sans-serif; font-size: 10px; }
+            h1 { font-size: 14px; margin: 0 0 8px 0; color: #333; }
+            .meta { color: #666; margin-bottom: 12px; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ccc; padding: 4px 6px; }
+            th { background: #f0f0f0; text-align: left; font-size: 9px; }
+            th.num, td.num { text-align: right; }
+            @media print {
+              @page { size: landscape; margin: 12mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Historial de facturación — AquaTrack</h1>
+          <div class="meta">${title} · ${sortedBills.length} registro(s) · Generado: ${new Date().toLocaleString('es-EC')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th class="num">Lect. ant.</th>
+                <th class="num">Lect. act.</th>
+                <th class="num">Consumo</th>
+                <th class="num">Tarifario</th>
+                <th class="num">Deuda ant.</th>
+                <th class="num">Multas</th>
+                <th class="num">Mora</th>
+                <th class="num">Jardín</th>
+                <th class="num">Total</th>
+                <th>Estado</th>
+                <th>Fecha pago</th>
+                <th>Observaciones</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() { window.close(); };
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -216,13 +319,31 @@ const MeterBillingHistory: React.FC = () => {
 
       {selectedMeter && (
         <Paper>
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            <Typography variant="subtitle1" fontWeight={600}>
-              {meterLabel(selectedMeter)}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {sortedBills.length} registro(s) de facturación
-            </Typography>
+          <Box
+            sx={{
+              p: 2,
+              borderBottom: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 2,
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                {meterLabel(selectedMeter)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {sortedBills.length} registro(s) de facturación
+              </Typography>
+            </Box>
+            {!loadingBills && sortedBills.length > 0 && (
+              <Button variant="outlined" startIcon={<PdfIcon />} onClick={exportToPDF}>
+                Exportar PDF
+              </Button>
+            )}
           </Box>
 
           {loadingBills ? (
