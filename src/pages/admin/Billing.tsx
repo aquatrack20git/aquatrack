@@ -77,10 +77,13 @@ function findColIndex(headers: unknown[], predicate: (n: string) => boolean): nu
 
 /** Filas desde texto separado por tabuladores (export tipo Excel → TXT). */
 function parseTabSeparatedSheet(text: string): unknown[][] {
-  return text
+  const raw = text.replace(/^\uFEFF/, '');
+  return raw
     .split(/\r?\n/)
     .filter((line) => line.replace(/\t/g, '').trim().length > 0)
-    .map((line) => line.split('\t').map((c) => String(c).trim()));
+    .map((line) =>
+      line.split('\t').map((c) => String(c).replace(/^\uFEFF/, '').trim())
+    );
 }
 
 interface Meter {
@@ -1166,7 +1169,12 @@ const Billing: React.FC = () => {
       const idxDif = findColIndex(headers, (n) => n.includes('diferencia'));
       const idxObs = findColIndex(headers, (n) => n.includes('observacion'));
 
-      const validMeters = new Set(meters.map((m) => m.code_meter));
+      const { data: meterRows, error: metersFetchError } = await supabase
+        .from('meters')
+        .select('code_meter')
+        .eq('status', 'active');
+      if (metersFetchError) throw metersFetchError;
+      const validMeters = new Set((meterRows || []).map((m) => m.code_meter));
       type BillingExcelUpsertRow = {
         meter_id: string;
         period: string;
@@ -1294,6 +1302,25 @@ const Billing: React.FC = () => {
         if (upsertError) {
           console.error('Error upsert bills import Excel:', upsertError);
           throw upsertError;
+        }
+      }
+
+      const importDate = new Date().toISOString();
+      const gardenRows = billsToUpsert.map((row) => ({
+        meter_id: row.meter_id,
+        period: selectedPeriod,
+        amount: row.garden_amount,
+        imported_from_excel: true,
+        import_date: importDate,
+      }));
+      for (let b = 0; b < gardenRows.length; b += BATCH) {
+        const chunk = gardenRows.slice(b, b + BATCH);
+        const { error: gvError } = await supabase
+          .from('garden_values')
+          .upsert(chunk, { onConflict: 'meter_id,period' });
+        if (gvError) {
+          console.error('Error upsert garden_values tras import cobro:', gvError);
+          throw gvError;
         }
       }
 
