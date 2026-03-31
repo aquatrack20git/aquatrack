@@ -34,6 +34,7 @@ import {
   FileDownload as FileDownloadIcon,
   Assessment as AssessmentIcon,
   PictureAsPdf as PdfIcon,
+  Flag as FlagIcon,
 } from '@mui/icons-material';
 import { supabase } from '../../config/supabase';
 import * as XLSX from 'xlsx';
@@ -83,6 +84,7 @@ const ReadingsManagement: React.FC = () => {
     meter_id: '',
     period: '',
   });
+  const [showNovedadesOnly, setShowNovedadesOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [printContent, setPrintContent] = useState<string | null>(null);
@@ -132,6 +134,7 @@ const ReadingsManagement: React.FC = () => {
         meter_id: '',
         period: '',
       });
+      setShowNovedadesOnly(false);
       setPage(0);
       setRowsPerPage(25);
       setPrintContent(null);
@@ -149,10 +152,14 @@ const ReadingsManagement: React.FC = () => {
         meterCode.includes(searchTerm) ||
         meterLocation.includes(searchTerm);
       const matchesPeriod = !filters.period || reading.period.toUpperCase().includes(filters.period.toUpperCase());
-      return matchesMeter && matchesPeriod;
+      const matchesNovedades =
+        !showNovedadesOnly ||
+        (typeof reading.consumption === 'number' &&
+          (reading.consumption < 0 || reading.consumption > 20));
+      return matchesMeter && matchesPeriod && matchesNovedades;
     });
     setFilteredReadings(filtered);
-  }, [filters, readings]);
+  }, [filters, readings, showNovedadesOnly]);
 
   useEffect(() => {
     // Extraer periodos únicos de las lecturas
@@ -371,6 +378,15 @@ const ReadingsManagement: React.FC = () => {
       message,
       severity,
     });
+  };
+
+  const handleToggleNovedades = () => {
+    if (!showNovedadesOnly && !filters.period) {
+      showSnackbar('Selecciona un período para ver las novedades', 'error');
+      return;
+    }
+    setShowNovedadesOnly((prev) => !prev);
+    setPage(0);
   };
 
   const handleImageClick = (photoUrl: string) => {
@@ -627,7 +643,7 @@ const ReadingsManagement: React.FC = () => {
 
       {/* Controles de búsqueda */}
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" gap={2} alignItems="center">
+        <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
           <TextField
             label="Buscar Medidor"
             value={filters.meter_id}
@@ -639,7 +655,11 @@ const ReadingsManagement: React.FC = () => {
             <InputLabel>Período</InputLabel>
             <Select
               value={filters.period}
-              onChange={(e) => setFilters({ ...filters, period: e.target.value })}
+              onChange={(e) => {
+                const period = e.target.value;
+                setFilters({ ...filters, period });
+                if (!period) setShowNovedadesOnly(false);
+              }}
               label="Período"
             >
               <MenuItem value="">Todos</MenuItem>
@@ -651,8 +671,18 @@ const ReadingsManagement: React.FC = () => {
             </Select>
           </FormControl>
           <Button
+            variant={showNovedadesOnly ? 'contained' : 'outlined'}
+            startIcon={<FlagIcon />}
+            onClick={handleToggleNovedades}
+          >
+            Novedades
+          </Button>
+          <Button
             variant="outlined"
-            onClick={() => setFilters({ meter_id: '', period: '' })}
+            onClick={() => {
+              setFilters({ meter_id: '', period: '' });
+              setShowNovedadesOnly(false);
+            }}
           >
             Limpiar filtros
           </Button>
