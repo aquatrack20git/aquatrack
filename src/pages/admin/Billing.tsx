@@ -75,6 +75,14 @@ function findColIndex(headers: unknown[], predicate: (n: string) => boolean): nu
   return -1;
 }
 
+/** Filas desde texto separado por tabuladores (export tipo Excel → TXT). */
+function parseTabSeparatedSheet(text: string): unknown[][] {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.replace(/\t/g, '').trim().length > 0)
+    .map((line) => line.split('\t').map((c) => String(c).trim()));
+}
+
 interface Meter {
   code_meter: string;
   location: string;
@@ -1055,10 +1063,23 @@ const Billing: React.FC = () => {
     try {
       setLoading(true);
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
+      const nameLower = file.name.toLowerCase();
+      const isTextSheet =
+        nameLower.endsWith('.txt') ||
+        nameLower.endsWith('.tsv') ||
+        file.type === 'text/plain' ||
+        file.type === 'text/tab-separated-values';
+
+      let jsonData: unknown[][];
+      if (isTextSheet) {
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
+        jsonData = parseTabSeparatedSheet(text);
+      } else {
+        const workbook = XLSX.read(data);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
+      }
 
       let headerRowIndex = -1;
       for (let i = 0; i < Math.min(25, jsonData.length); i++) {
@@ -1131,7 +1152,10 @@ const Billing: React.FC = () => {
       );
       const idxMora = findColIndex(
         headers,
-        (n) => n.includes('costo reconexion') || n.includes('reconexion')
+        (n) =>
+          n === 'mora' ||
+          n.includes('costo reconexion') ||
+          n.includes('reconexion')
       );
       const idxTotal = findColIndex(headers, (n) => n.includes('total a pagar'));
       const idxConcepto = findColIndex(headers, (n) => n.includes('concepto'));
@@ -2307,7 +2331,7 @@ const Billing: React.FC = () => {
               onClick={() => setImportBillingSheetDialogOpen(true)}
               disabled={!selectedPeriod || loading}
             >
-              Importar Excel cobro (temporal)
+              Importar cobro (Excel/TXT)
             </Button>
           )}
         </Box>
@@ -2710,21 +2734,21 @@ const Billing: React.FC = () => {
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle>Importar Excel de cobro (temporal)</DialogTitle>
+          <DialogTitle>Importar cobro (Excel o TXT)</DialogTitle>
           <DialogContent>
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Sube un Excel con el mismo esquema que &quot;Exportar Excel&quot; (columnas COD, lecturas,
-                tramos, DEUDA, COBRO…, multas, TOTAL A PAGAR, CONCEPTO, VALOR JARDIN, DIFERENCIA,
-                observaciones). El período aplicado es el seleccionado arriba:{' '}
-                <strong>{selectedPeriod}</strong> (no se usa el nombre del archivo).
+                Sube un .xlsx/.xls como &quot;Exportar Excel&quot;, o un .txt/.tsv con columnas separadas por
+                tabulador (CODIGO o COD, lecturas, TOTAL CONSUMO, tramos, DEUDA, COBRO, multas, MORA o COSTO
+                RECONEXIÓN, TOTAL A PAGAR, CONCEPTO, VALOR JARDIN, DIFERENCIA, etc.). El período guardado es el
+                seleccionado arriba: <strong>{selectedPeriod}</strong> (no se usa la columna PERIODO del archivo).
               </Typography>
               <Button variant="outlined" component="label" fullWidth startIcon={<UploadIcon />}>
-                Seleccionar archivo Excel
+                Seleccionar archivo
                 <input
                   type="file"
                   hidden
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.txt,.tsv,text/plain,text/tab-separated-values"
                   onChange={handleImportBillingFromExcel}
                 />
               </Button>
