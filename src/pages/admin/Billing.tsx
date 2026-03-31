@@ -41,6 +41,40 @@ import { calculateBilling, calculateBillingWithTariffs, calculateConsumption } f
 import * as XLSX from 'xlsx';
 import { getCurrentPeriod, getPreviousPeriod, getPeriodFromDate } from '../../utils/periodUtils';
 
+/** Desactivar en false para ocultar el import temporal de Excel de cobro completo. */
+const ENABLE_TEMP_BILLING_IMPORT = true;
+
+function normHeaderCell(s: unknown): string {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseExcelNumber(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const s = String(v).replace(/,/g, '.').trim();
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseExcelNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).replace(/,/g, '.').trim();
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function findColIndex(headers: unknown[], predicate: (n: string) => boolean): number {
+  for (let i = 0; i < headers.length; i++) {
+    const n = normHeaderCell(headers[i]);
+    if (n && predicate(n)) return i;
+  }
+  return -1;
+}
+
 interface Meter {
   code_meter: string;
   location: string;
@@ -181,6 +215,7 @@ const Billing: React.FC = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFinesDialogOpen, setImportFinesDialogOpen] = useState(false);
   const [importDebtDialogOpen, setImportDebtDialogOpen] = useState(false);
+  const [importBillingSheetDialogOpen, setImportBillingSheetDialogOpen] = useState(false);
   const [meterSearch, setMeterSearch] = useState('');
 
   // Filtrar facturas por código, ubicación o descripción (misma lógica que Registro de lecturas)
@@ -1005,6 +1040,256 @@ const Billing: React.FC = () => {
     const fileName = `FACTURACION CORRESPONDIENTE A ${selectedPeriod}.xlsx`;
     XLSX.writeFile(wb, fileName);
     showSnackbar('Archivo Excel exportado exitosamente', 'success');
+  };
+
+  const handleImportBillingFromExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!selectedPeriod) {
+      showSnackbar('Selecciona un período antes de importar', 'warning');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
+
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(25, jsonData.length); i++) {
+        const row = jsonData[i];
+        if (!Array.isArray(row)) continue;
+        const norms = row.map((c) => normHeaderCell(c));
+        const hasCod = norms.some(
+          (n) => n === 'cod' || /^cod\s/.test(n) || n.includes('codigo')
+        );
+        const hasLectura = norms.some((n) => n.includes('lectura'));
+        const hasConsumo = norms.some((n) => n.includes('consumo'));
+        if (hasCod && (hasLectura || hasConsumo)) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        throw new Error(
+          'No se encontró la fila de encabezados (se espera algo como la exportación: COD, lecturas, consumo).'
+        );
+      }
+
+      const headers = jsonData[headerRowIndex] as unknown[];
+      const idxCod = findColIndex(
+        headers,
+        (n) => n === 'cod' || /^cod\s/.test(n) || (n.includes('codigo') && !n.includes('recaud'))
+      );
+      if (idxCod === -1) {
+        throw new Error('No se encontró la columna COD');
+      }
+
+      const idxLectAnt = findColIndex(headers, (n) => n.includes('lectura anterior'));
+      const idxLectAct = findColIndex(headers, (n) => n.includes('lectura actual'));
+      const idxConsumo = findColIndex(
+        headers,
+        (n) => n.includes('total consumo') || (n.includes('consumo') && !n.includes('lectura'))
+      );
+      const idxBase = findColIndex(headers, (n) => n === 'base');
+      const idxR16 = findColIndex(
+        headers,
+        (n) =>
+          (n.includes('16') && n.includes('20') && !n.includes('25')) ||
+          n === '16-20'
+      );
+      const idxR21 = findColIndex(
+        headers,
+        (n) =>
+          (n.includes('20') && n.includes('25')) ||
+          (n.includes('21') && n.includes('25')) ||
+          n === '20-25'
+      );
+      const idxR26 = findColIndex(
+        headers,
+        (n) =>
+          (n.includes('26') && (n.includes('100') || n.includes('+'))) || n.includes('26-100')
+      );
+      const idxDeuda = findColIndex(headers, (n) => n === 'deuda');
+      const idxCobro = findColIndex(
+        headers,
+        (n) => n.startsWith('cobro') || (n.includes('cobro') && !n.includes('total a pagar'))
+      );
+      const idxMulReu = findColIndex(
+        headers,
+        (n) => n.includes('multas') && n.includes('reunion')
+      );
+      const idxMulMin = findColIndex(
+        headers,
+        (n) => n.includes('multas') && n.includes('minga')
+      );
+      const idxMora = findColIndex(
+        headers,
+        (n) => n.includes('costo reconexion') || n.includes('reconexion')
+      );
+      const idxTotal = findColIndex(headers, (n) => n.includes('total a pagar'));
+      const idxConcepto = findColIndex(headers, (n) => n.includes('concepto'));
+      const idxJardin = findColIndex(
+        headers,
+        (n) => n.includes('valor') && n.includes('jardin')
+      );
+      const idxDif = findColIndex(headers, (n) => n.includes('diferencia'));
+      const idxObs = findColIndex(headers, (n) => n.includes('observacion'));
+
+      const validMeters = new Set(meters.map((m) => m.code_meter));
+      type BillingExcelUpsertRow = {
+        meter_id: string;
+        period: string;
+        previous_reading: number | null;
+        current_reading: number;
+        consumption: number;
+        base_amount: number;
+        range_16_20_amount: number;
+        range_21_25_amount: number;
+        range_26_plus_amount: number;
+        tariff_total: number;
+        previous_debt: number;
+        fines_reuniones: number;
+        fines_mingas: number;
+        mora_amount: number;
+        garden_amount: number;
+        total_amount: number;
+        difference_amount: number;
+        payment_status: string;
+        payment_date: string | null;
+        observations: string | null;
+      };
+
+      const byMeter = new Map<string, BillingExcelUpsertRow>();
+
+      let skippedEmpty = 0;
+      let skippedInvalidMeter = 0;
+
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!Array.isArray(row)) {
+          skippedEmpty++;
+          continue;
+        }
+        const codRaw = row[idxCod];
+        const meter_id =
+          codRaw !== undefined && codRaw !== null && codRaw !== ''
+            ? String(codRaw).trim()
+            : '';
+        if (!meter_id) {
+          skippedEmpty++;
+          continue;
+        }
+        if (!validMeters.has(meter_id)) {
+          skippedInvalidMeter++;
+          continue;
+        }
+
+        const cell = (idx: number) => (idx >= 0 ? row[idx] : undefined);
+        const previous_reading =
+          idxLectAnt >= 0 ? parseExcelNumberOrNull(cell(idxLectAnt)) : null;
+        const current_reading = idxLectAct >= 0 ? parseExcelNumber(cell(idxLectAct)) : 0;
+        const consumption = idxConsumo >= 0 ? parseExcelNumber(cell(idxConsumo)) : 0;
+        const base_amount = idxBase >= 0 ? parseExcelNumber(cell(idxBase)) : 0;
+        const range_16_20_amount = idxR16 >= 0 ? parseExcelNumber(cell(idxR16)) : 0;
+        const range_21_25_amount = idxR21 >= 0 ? parseExcelNumber(cell(idxR21)) : 0;
+        const range_26_plus_amount = idxR26 >= 0 ? parseExcelNumber(cell(idxR26)) : 0;
+        const previous_debt = idxDeuda >= 0 ? parseExcelNumber(cell(idxDeuda)) : 0;
+        const tariff_total = idxCobro >= 0 ? parseExcelNumber(cell(idxCobro)) : 0;
+        const fines_reuniones = idxMulReu >= 0 ? parseExcelNumber(cell(idxMulReu)) : 0;
+        const fines_mingas = idxMulMin >= 0 ? parseExcelNumber(cell(idxMulMin)) : 0;
+        const mora_amount = idxMora >= 0 ? parseExcelNumber(cell(idxMora)) : 0;
+        const total_amount = idxTotal >= 0 ? parseExcelNumber(cell(idxTotal)) : 0;
+        const garden_amount = idxJardin >= 0 ? parseExcelNumber(cell(idxJardin)) : 0;
+        const diffParsed =
+          idxDif >= 0 ? parseExcelNumberOrNull(cell(idxDif)) : null;
+        const difference_amount =
+          diffParsed !== null ? diffParsed : total_amount - garden_amount;
+
+        const rawConcepto =
+          idxConcepto >= 0 ? String(cell(idxConcepto) ?? '').trim() : '';
+        let payment_status = 'PENDIENTE';
+        if (/acredit/i.test(rawConcepto)) payment_status = 'ACREDITADO';
+        else if (/pend/i.test(rawConcepto)) payment_status = 'PENDIENTE';
+        else if (rawConcepto) payment_status = rawConcepto.slice(0, 20);
+
+        const payment_date =
+          payment_status === 'ACREDITADO' ? new Date().toISOString() : null;
+
+        const observations =
+          idxObs >= 0
+            ? String(cell(idxObs) ?? '').trim() || null
+            : null;
+
+        byMeter.set(meter_id, {
+          meter_id,
+          period: selectedPeriod,
+          previous_reading:
+            previous_reading !== null ? previous_reading : null,
+          current_reading,
+          consumption,
+          base_amount,
+          range_16_20_amount,
+          range_21_25_amount,
+          range_26_plus_amount,
+          tariff_total,
+          previous_debt,
+          fines_reuniones,
+          fines_mingas,
+          mora_amount,
+          garden_amount,
+          total_amount,
+          difference_amount,
+          payment_status,
+          payment_date,
+          observations,
+        });
+      }
+
+      const billsToUpsert = Array.from(byMeter.values());
+
+      if (billsToUpsert.length === 0) {
+        throw new Error(
+          'No hay filas válidas con COD de medidor existente. Revisa el archivo y el período.'
+        );
+      }
+
+      const BATCH = 250;
+      for (let b = 0; b < billsToUpsert.length; b += BATCH) {
+        const chunk = billsToUpsert.slice(b, b + BATCH);
+        const { error: upsertError } = await supabase
+          .from('bills')
+          .upsert(chunk, { onConflict: 'meter_id,period' });
+
+        if (upsertError) {
+          console.error('Error upsert bills import Excel:', upsertError);
+          throw upsertError;
+        }
+      }
+
+      setImportBillingSheetDialogOpen(false);
+      fetchBills();
+      const parts = [
+        `Importadas ${billsToUpsert.length} factura(s) para ${selectedPeriod}`,
+        skippedInvalidMeter > 0
+          ? `${skippedInvalidMeter} fila(s) con medidor desconocido`
+          : null,
+        skippedEmpty > 0 ? `${skippedEmpty} fila(s) vacías omitidas` : null,
+      ].filter(Boolean);
+      showSnackbar(parts.join('. '), 'success');
+    } catch (error: unknown) {
+      console.error('Error importando Excel de facturación:', error);
+      const msg = error instanceof Error ? error.message : 'Error al importar Excel';
+      showSnackbar(msg, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImportGarden = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2014,6 +2299,17 @@ const Billing: React.FC = () => {
           >
             Exportar Excel
           </Button>
+          {ENABLE_TEMP_BILLING_IMPORT && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<UploadIcon />}
+              onClick={() => setImportBillingSheetDialogOpen(true)}
+              disabled={!selectedPeriod || loading}
+            >
+              Importar Excel cobro (temporal)
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -2405,6 +2701,39 @@ const Billing: React.FC = () => {
             </Table>
           </TableContainer>
         </Paper>
+      )}
+
+      {ENABLE_TEMP_BILLING_IMPORT && (
+        <Dialog
+          open={importBillingSheetDialogOpen}
+          onClose={() => setImportBillingSheetDialogOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>Importar Excel de cobro (temporal)</DialogTitle>
+          <DialogContent>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Sube un Excel con el mismo esquema que &quot;Exportar Excel&quot; (columnas COD, lecturas,
+                tramos, DEUDA, COBRO…, multas, TOTAL A PAGAR, CONCEPTO, VALOR JARDIN, DIFERENCIA,
+                observaciones). El período aplicado es el seleccionado arriba:{' '}
+                <strong>{selectedPeriod}</strong> (no se usa el nombre del archivo).
+              </Typography>
+              <Button variant="outlined" component="label" fullWidth startIcon={<UploadIcon />}>
+                Seleccionar archivo Excel
+                <input
+                  type="file"
+                  hidden
+                  accept=".xlsx,.xls"
+                  onChange={handleImportBillingFromExcel}
+                />
+              </Button>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setImportBillingSheetDialogOpen(false)}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
       )}
 
       {/* Dialog para importar valores de jardín */}
