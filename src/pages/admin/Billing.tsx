@@ -445,15 +445,20 @@ const Billing: React.FC = () => {
       // Filtrar bills para mostrar solo los de medidores activos
       const activeBills = billsData.filter(bill => activeMeterIds.has(bill.meter_id));
 
-      // Enriquecer con datos del medidor y actualizar garden_amount desde garden_values
+      // Enriquecer con datos del medidor y jardín desde garden_values.
+      // Diferencia: mostrar la persistida en BD si existe; si no, total − jardín (igual que sin importar).
       const enrichedBills = activeBills.map(bill => {
         const meter = meters.find(m => m.code_meter === bill.meter_id);
         const gardenAmount = gardenValuesMap.get(bill.meter_id) ?? bill.garden_amount ?? 0;
         const totalAmt = Number(bill.total_amount) || 0;
         return {
           ...bill,
-          garden_amount: gardenAmount, // Usar el valor más reciente de garden_values
-          difference_amount: totalAmt - gardenAmount,
+          garden_amount: gardenAmount,
+          difference_amount: billDifferenceForDebtCarry({
+            difference_amount: bill.difference_amount,
+            total_amount: totalAmt,
+            garden_amount: gardenAmount,
+          }),
           meter_name: meter?.code_meter || bill.meter_id,
           meter_description: meter?.description || '', // Apellidos y Nombres
           meter_location: meter?.location || '',
@@ -1011,11 +1016,7 @@ const Billing: React.FC = () => {
         'TOTAL A PAGAR': bill.total_amount.toFixed(2),
         'CONCEPTO': bill.payment_status,
         'VALOR JARDIN': bill.garden_amount.toFixed(2),
-        'DIFERENCIA': (
-          bill.difference_amount != null && !Number.isNaN(Number(bill.difference_amount))
-            ? Number(bill.difference_amount)
-            : billDifferenceTotalMinusGarden(bill)
-        ).toFixed(2),
+        'DIFERENCIA': billDifferenceForDebtCarry(bill).toFixed(2),
         'OBSERVACIONES OCTUBRE': bill.observations || '',
       };
     });
@@ -2707,12 +2708,7 @@ const Billing: React.FC = () => {
                           sx={{ width: 100 }}
                         />
                       ) : (
-                        `$${(
-                          bill.difference_amount != null &&
-                          !Number.isNaN(Number(bill.difference_amount))
-                            ? Number(bill.difference_amount)
-                            : billDifferenceTotalMinusGarden(bill)
-                        ).toFixed(2)}`
+                        `$${billDifferenceForDebtCarry(bill).toFixed(2)}`
                       )}
                     </TableCell>
                     <TableCell>
