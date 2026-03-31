@@ -89,9 +89,9 @@ interface BillRow extends Bill {
 }
 
 /**
- * Diferencia del bill = total a pagar − valor jardín (columna DIFERENCIA).
- * Al calcular con "Calcular todo": si hubo factura del mes anterior, la DEUDA arrastrada es siempre esa diferencia.
- * La tabla `debts` del mes anterior solo aplica si no existe factura de ese medidor en el mes anterior.
+ * Diferencia del bill = total a pagar − valor jardín (columna DIFERENCIA, persistida en BD).
+ * Al calcular con "Calcular todo": la DEUDA del período es la diferencia guardada del mes anterior
+ * si existe factura de ese medidor en ese mes; si no, DEUDA = 0.
  */
 function billDifferenceTotalMinusGarden(
   bill: Pick<Bill, 'total_amount' | 'garden_amount'>
@@ -115,6 +115,52 @@ function billDifferenceForDebtCarry(bill: {
     total_amount: bill.total_amount ?? 0,
     garden_amount: bill.garden_amount ?? 0,
   });
+}
+
+/** Total a pagar = deuda + cobro + multas reuniones + multas mingas + mora (sin jardín). */
+function computeBillTotalFromParts(bill: {
+  previous_debt: number;
+  tariff_total: number;
+  fines_reuniones: number;
+  fines_mingas: number;
+  mora_amount: number;
+}): number {
+  return (
+    (bill.previous_debt || 0) +
+    (bill.tariff_total || 0) +
+    (bill.fines_reuniones || 0) +
+    (bill.fines_mingas || 0) +
+    (bill.mora_amount || 0)
+  );
+}
+
+function mergeEditBillParts(
+  editData: Partial<BillRow>,
+  bill: BillRow
+): {
+  previous_debt: number;
+  tariff_total: number;
+  fines_reuniones: number;
+  fines_mingas: number;
+  mora_amount: number;
+  garden_amount: number;
+} {
+  return {
+    previous_debt: editData.previous_debt ?? bill.previous_debt,
+    tariff_total: editData.tariff_total ?? bill.tariff_total,
+    fines_reuniones: editData.fines_reuniones ?? bill.fines_reuniones,
+    fines_mingas: editData.fines_mingas ?? bill.fines_mingas,
+    mora_amount: editData.mora_amount ?? bill.mora_amount,
+    garden_amount: editData.garden_amount ?? bill.garden_amount,
+  };
+}
+
+function totalAndDifferenceFromMergedParts(
+  parts: ReturnType<typeof mergeEditBillParts>
+): { total_amount: number; difference_amount: number } {
+  const total_amount = computeBillTotalFromParts(parts);
+  const difference_amount = total_amount - (parts.garden_amount || 0);
+  return { total_amount, difference_amount };
 }
 
 const Billing: React.FC = () => {
@@ -498,19 +544,6 @@ const Billing: React.FC = () => {
         ])
       );
 
-      // Consulta batch: deudas manuales del período anterior
-      const { data: previousDebtsData } = previousPeriod
-        ? await supabase
-            .from('debts')
-            .select('meter_id, amount')
-            .eq('period', previousPeriod)
-            .in('meter_id', meterIds)
-        : { data: [] };
-
-      const previousDebtsMap = new Map(
-        (previousDebtsData || []).map(debt => [debt.meter_id, debt.amount || 0])
-      );
-
       // Consulta batch: multas y costo reconexión del período actual
       const { data: finesDataAll } = await supabase
         .from('meter_fines')
@@ -623,17 +656,10 @@ const Billing: React.FC = () => {
           // Calcular tarifas (usar tarifas ya cargadas, sin consultar BD)
           const billingCalc = calculateBillingWithTariffs(consumption, tariffs);
           
-          // DEUDA arrastrada: prioridad a la diferencia del mes anterior si existe factura de ese mes.
-          // (Antes primaba `debts` y repetía el mismo “deuda” en lugar de total−jardín del bill anterior.)
-          let previousDebt = 0;
-          if (previousBillsDifferenceMap.has(meter.code_meter)) {
-            previousDebt = previousBillsDifferenceMap.get(meter.code_meter) ?? 0;
-          } else {
-            const debtFromDebtsTable = previousDebtsMap.get(meter.code_meter);
-            if (debtFromDebtsTable !== undefined && debtFromDebtsTable !== null) {
-              previousDebt = debtFromDebtsTable;
-            }
-          }
+          // DEUDA = diferencia (columna persistida) del mes anterior si hay factura de ese mes; si no, 0.
+          const previousDebt = previousBillsDifferenceMap.has(meter.code_meter)
+            ? previousBillsDifferenceMap.get(meter.code_meter) ?? 0
+            : 0;
 
           // Obtener multas y costo reconexión desde el mapa (ya cargado en batch)
           const finesData = finesMap.get(meter.code_meter);
@@ -730,39 +756,49 @@ const Billing: React.FC = () => {
         console.warn(`Meter ${editingRow} no está activo (status: ${meterData.status})`);
       }
 
+      const rowBill = bills.find((b) => b.meter_id === editingRow);
+      if (!rowBill) {
+        showSnackbar('No se encontró la factura en edición', 'error');
+        return;
+      }
+
       const billData = {
         meter_id: editingRow,
         period: selectedPeriod,
-        previous_reading: editData.previous_reading || null,
-        current_reading: editData.current_reading || 0,
-        consumption: editData.consumption || 0,
-        base_amount: editData.base_amount || 0,
-        range_16_20_amount: editData.range_16_20_amount || 0,
-        range_21_25_amount: editData.range_21_25_amount || 0,
-        range_26_plus_amount: editData.range_26_plus_amount || 0,
-        tariff_total: editData.tariff_total || 0,
-        previous_debt: editData.previous_debt || 0,
-        fines_reuniones: editData.fines_reuniones || 0,
-        fines_mingas: editData.fines_mingas || 0,
-        mora_amount: editData.mora_amount || 0,
-        garden_amount: editData.garden_amount || 0,
-        total_amount: editData.total_amount || 0,
+        previous_reading: editData.previous_reading ?? null,
+        current_reading: editData.current_reading ?? 0,
+        consumption: editData.consumption ?? 0,
+        base_amount: editData.base_amount ?? 0,
+        range_16_20_amount: editData.range_16_20_amount ?? 0,
+        range_21_25_amount: editData.range_21_25_amount ?? 0,
+        range_26_plus_amount: editData.range_26_plus_amount ?? 0,
+        tariff_total: editData.tariff_total ?? 0,
+        previous_debt: editData.previous_debt ?? 0,
+        fines_reuniones: editData.fines_reuniones ?? 0,
+        fines_mingas: editData.fines_mingas ?? 0,
+        mora_amount: editData.mora_amount ?? 0,
+        garden_amount: editData.garden_amount ?? 0,
         payment_status: editData.payment_status || 'PENDIENTE',
-        observations: editData.observations || null,
+        observations: editData.observations ?? null,
       };
 
-      // Recalcular total siempre (DEUDA + COBRO + MULTAS_REUNIONES + MULTAS_MINGAS + COSTO_RECONEXION)
-      billData.total_amount = 
-        billData.previous_debt +
-        billData.tariff_total +
-        billData.fines_reuniones +
-        billData.fines_mingas +
-        billData.mora_amount;
+      const parts = mergeEditBillParts(editData, rowBill);
+      const { total_amount: totalFromParts, difference_amount: diffFromParts } =
+        totalAndDifferenceFromMergedParts(parts);
+
+      const total =
+        editData.total_amount !== undefined && editData.total_amount !== null
+          ? Number(editData.total_amount)
+          : totalFromParts;
+      const difference_amount =
+        editData.difference_amount !== undefined && editData.difference_amount !== null
+          ? Number(editData.difference_amount)
+          : diffFromParts;
 
       const billDataWithDiff = {
         ...billData,
-        difference_amount:
-          billData.total_amount - (billData.garden_amount || 0),
+        total_amount: total,
+        difference_amount,
       };
 
       // Verificar si existe
@@ -854,7 +890,9 @@ const Billing: React.FC = () => {
         garden_amount: bill.garden_amount,
         total_amount: bill.total_amount,
         difference_amount:
-          (bill.total_amount || 0) - (bill.garden_amount || 0),
+          bill.difference_amount != null && !Number.isNaN(Number(bill.difference_amount))
+            ? Number(bill.difference_amount)
+            : (bill.total_amount || 0) - (bill.garden_amount || 0),
         payment_status: bill.payment_status,
         observations: bill.observations || null,
         // NO incluir 'id' aquí - Supabase lo manejará automáticamente con onConflict
@@ -2110,6 +2148,20 @@ const Billing: React.FC = () => {
                           onChange={async (e) => {
                             const newConsumption = parseFloat(e.target.value) || 0;
                             const billingCalc = await calculateBilling(newConsumption);
+                            const parts = mergeEditBillParts(
+                              {
+                                ...editData,
+                                consumption: newConsumption,
+                                base_amount: billingCalc.base_amount,
+                                range_16_20_amount: billingCalc.range_16_20_amount,
+                                range_21_25_amount: billingCalc.range_21_25_amount,
+                                range_26_plus_amount: billingCalc.range_26_plus_amount,
+                                tariff_total: billingCalc.tariff_total,
+                              },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               consumption: newConsumption,
@@ -2118,11 +2170,8 @@ const Billing: React.FC = () => {
                               range_21_25_amount: billingCalc.range_21_25_amount,
                               range_26_plus_amount: billingCalc.range_26_plus_amount,
                               tariff_total: billingCalc.tariff_total,
-                              total_amount: 
-                                (editData.previous_debt ?? bill.previous_debt) +
-                                billingCalc.tariff_total +
-                                (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount),
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2143,14 +2192,17 @@ const Billing: React.FC = () => {
                           value={editData.previous_debt ?? bill.previous_debt}
                           onChange={(e) => {
                             const newDebt = parseFloat(e.target.value) || 0;
+                            const parts = mergeEditBillParts(
+                              { ...editData, previous_debt: newDebt },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               previous_debt: newDebt,
-                              total_amount: 
-                                newDebt +
-                                (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount),
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2168,15 +2220,17 @@ const Billing: React.FC = () => {
                           value={editData.fines_reuniones ?? bill.fines_reuniones}
                           onChange={(e) => {
                             const newFines = parseFloat(e.target.value) || 0;
+                            const parts = mergeEditBillParts(
+                              { ...editData, fines_reuniones: newFines },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               fines_reuniones: newFines,
-                              // MULTAS_REUNIONES no se incluye en el total
-                              total_amount: 
-                                (editData.previous_debt ?? bill.previous_debt) +
-                                (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount),
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2193,14 +2247,17 @@ const Billing: React.FC = () => {
                           value={editData.fines_mingas ?? bill.fines_mingas}
                           onChange={(e) => {
                             const newFines = parseFloat(e.target.value) || 0;
+                            const parts = mergeEditBillParts(
+                              { ...editData, fines_mingas: newFines },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               fines_mingas: newFines,
-                              total_amount: 
-                                (editData.previous_debt ?? bill.previous_debt) +
-                                (editData.tariff_total ?? bill.tariff_total) +
-                                newFines +
-                                (editData.mora_amount ?? bill.mora_amount),
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2217,14 +2274,17 @@ const Billing: React.FC = () => {
                           value={editData.mora_amount ?? bill.mora_amount}
                           onChange={(e) => {
                             const newMora = parseFloat(e.target.value) || 0;
+                            const parts = mergeEditBillParts(
+                              { ...editData, mora_amount: newMora },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               mora_amount: newMora,
-                              total_amount: 
-                                (editData.previous_debt ?? bill.previous_debt) +
-                                (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_mingas ?? bill.fines_mingas) +
-                                newMora,
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2257,16 +2317,17 @@ const Billing: React.FC = () => {
                           value={editData.garden_amount ?? bill.garden_amount}
                           onChange={(e) => {
                             const newGarden = parseFloat(e.target.value) || 0;
+                            const parts = mergeEditBillParts(
+                              { ...editData, garden_amount: newGarden },
+                              bill
+                            );
+                            const { total_amount, difference_amount } =
+                              totalAndDifferenceFromMergedParts(parts);
                             setEditData({
                               ...editData,
                               garden_amount: newGarden,
-                              // El jardín NO se incluye en el total, solo se muestra como información adicional
-                              // DIFERENCIA = TOTAL A PAGAR - VALOR JARDIN
-                              total_amount: 
-                                (editData.previous_debt ?? bill.previous_debt) +
-                                (editData.tariff_total ?? bill.tariff_total) +
-                                (editData.fines_mingas ?? bill.fines_mingas) +
-                                (editData.mora_amount ?? bill.mora_amount),
+                              total_amount,
+                              difference_amount,
                             });
                           }}
                           sx={{ width: 100 }}
@@ -2276,15 +2337,36 @@ const Billing: React.FC = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      $
-                      {billDifferenceTotalMinusGarden(
-                        editingRow === bill.meter_id
-                          ? {
+                      {editingRow === bill.meter_id ? (
+                        <TextField
+                          type="number"
+                          size="small"
+                          value={
+                            editData.difference_amount ??
+                            billDifferenceTotalMinusGarden({
                               total_amount: editData.total_amount ?? bill.total_amount,
                               garden_amount: editData.garden_amount ?? bill.garden_amount,
-                            }
-                          : bill
-                      ).toFixed(2)}
+                            })
+                          }
+                          onChange={(e) => {
+                            const newDiff = parseFloat(e.target.value) || 0;
+                            const garden = editData.garden_amount ?? bill.garden_amount;
+                            setEditData({
+                              ...editData,
+                              difference_amount: newDiff,
+                              total_amount: newDiff + (garden || 0),
+                            });
+                          }}
+                          sx={{ width: 100 }}
+                        />
+                      ) : (
+                        `$${(
+                          bill.difference_amount != null &&
+                          !Number.isNaN(Number(bill.difference_amount))
+                            ? Number(bill.difference_amount)
+                            : billDifferenceTotalMinusGarden(bill)
+                        ).toFixed(2)}`
+                      )}
                     </TableCell>
                     <TableCell>
                       {editingRow === bill.meter_id ? (
@@ -2394,9 +2476,9 @@ const Billing: React.FC = () => {
               <strong>{selectedPeriod}</strong> para los medidores del archivo (punto de partida manual).
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Con <strong>Calcular todo</strong>, la <strong>DEUDA</strong> es la <strong>diferencia del mes
-              anterior</strong> (total a pagar − jardín) cuando ya hubo factura ese mes. <strong>Gestión de
-              deudas</strong> del mes anterior solo se usa si ese medidor no tenía factura en ese mes.
+              Con <strong>Calcular todo</strong>, la <strong>DEUDA</strong> es la <strong>diferencia guardada
+              del mes anterior</strong> si hubo factura; si no, 0. Esta importación ajusta la columna DEUDA en
+              las facturas ya generadas del período mostrado (no sustituye el arrastre automático al recalcular).
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               El archivo debe contener columnas: Código y valor de deuda (Deuda, Saldo, Valor, Monto, etc.).
