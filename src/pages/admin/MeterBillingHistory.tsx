@@ -47,6 +47,7 @@ interface BillRow {
   mora_amount: number;
   garden_amount: number;
   total_amount: number;
+  difference_amount?: number | null;
   payment_status: string;
   payment_date: string | null;
   observations: string | null;
@@ -100,6 +101,16 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function billRowDifference(row: BillRow): number {
+  if (
+    row.difference_amount != null &&
+    !Number.isNaN(Number(row.difference_amount))
+  ) {
+    return Number(row.difference_amount);
+  }
+  return (row.total_amount || 0) - (row.garden_amount || 0);
 }
 
 const MeterBillingHistory: React.FC = () => {
@@ -206,6 +217,7 @@ const MeterBillingHistory: React.FC = () => {
                   <td style="text-align:right">${fmtMoney(row.mora_amount)}</td>
                   <td style="text-align:right">${fmtMoney(row.garden_amount)}</td>
                   <td style="text-align:right;font-weight:bold">${fmtMoney(row.total_amount)}</td>
+                  <td style="text-align:right">${fmtMoney(billRowDifference(row))}</td>
                   <td>${escapeHtml(row.payment_status || 'PENDIENTE')}</td>
                   <td>${escapeHtml(fmtPaymentDate(row.payment_date))}</td>
                   <td>${escapeHtml(row.observations || '—')}</td>
@@ -248,6 +260,7 @@ const MeterBillingHistory: React.FC = () => {
                 <th class="num">Mora</th>
                 <th class="num">Jardín</th>
                 <th class="num">Total</th>
+                <th class="num">Diferencia</th>
                 <th>Estado</th>
                 <th>Fecha pago</th>
                 <th>Observaciones</th>
@@ -372,6 +385,7 @@ const MeterBillingHistory: React.FC = () => {
                     <TableCell align="right">Mora</TableCell>
                     <TableCell align="right">Jardín</TableCell>
                     <TableCell align="right">Total</TableCell>
+                    <TableCell align="right">Diferencia</TableCell>
                     <TableCell>Estado</TableCell>
                     <TableCell>Fecha pago</TableCell>
                     <TableCell>Observaciones</TableCell>
@@ -395,6 +409,7 @@ const MeterBillingHistory: React.FC = () => {
                         <TableCell align="right" sx={{ fontWeight: 600 }}>
                           {fmtMoney(row.total_amount)}
                         </TableCell>
+                        <TableCell align="right">{fmtMoney(billRowDifference(row))}</TableCell>
                         <TableCell>
                           <Chip
                             size="small"

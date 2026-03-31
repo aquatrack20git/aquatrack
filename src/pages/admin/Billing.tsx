@@ -75,6 +75,8 @@ interface Bill {
   mora_amount: number;
   garden_amount: number;
   total_amount: number;
+  /** Persistido: total_amount − garden_amount */
+  difference_amount?: number | null;
   payment_status: string;
   observations?: string;
 }
@@ -95,6 +97,24 @@ function billDifferenceTotalMinusGarden(
   bill: Pick<Bill, 'total_amount' | 'garden_amount'>
 ): number {
   return (bill.total_amount || 0) - (bill.garden_amount || 0);
+}
+
+/** Para arrastre de deuda: usa columna guardada si existe, si no la fórmula. */
+function billDifferenceForDebtCarry(bill: {
+  difference_amount?: number | null;
+  total_amount?: number | null;
+  garden_amount?: number | null;
+}): number {
+  if (
+    bill.difference_amount != null &&
+    !Number.isNaN(Number(bill.difference_amount))
+  ) {
+    return Number(bill.difference_amount);
+  }
+  return billDifferenceTotalMinusGarden({
+    total_amount: bill.total_amount ?? 0,
+    garden_amount: bill.garden_amount ?? 0,
+  });
 }
 
 const Billing: React.FC = () => {
@@ -283,13 +303,22 @@ const Billing: React.FC = () => {
       );
 
       // Actualizar garden_amount en la BD si es diferente
-      const billsToUpdate: Array<{ id: number; garden_amount: number }> = [];
+      const billsToUpdate: Array<{
+        id: number;
+        garden_amount: number;
+        difference_amount: number;
+      }> = [];
       let billsData = data || [];
       
       for (const bill of billsData) {
         const gardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
         if (bill.garden_amount !== gardenAmount) {
-          billsToUpdate.push({ id: bill.id, garden_amount: gardenAmount });
+          const totalAmt = Number(bill.total_amount) || 0;
+          billsToUpdate.push({
+            id: bill.id,
+            garden_amount: gardenAmount,
+            difference_amount: totalAmt - gardenAmount,
+          });
         }
       }
 
@@ -298,7 +327,10 @@ const Billing: React.FC = () => {
         for (const update of billsToUpdate) {
           await supabase
             .from('bills')
-            .update({ garden_amount: update.garden_amount })
+            .update({
+              garden_amount: update.garden_amount,
+              difference_amount: update.difference_amount,
+            })
             .eq('id', update.id);
         }
         console.log(`Se actualizaron ${billsToUpdate.length} facturas con valores de jardín desde garden_values`);
@@ -325,9 +357,11 @@ const Billing: React.FC = () => {
       const enrichedBills = activeBills.map(bill => {
         const meter = meters.find(m => m.code_meter === bill.meter_id);
         const gardenAmount = gardenValuesMap.get(bill.meter_id) ?? bill.garden_amount ?? 0;
+        const totalAmt = Number(bill.total_amount) || 0;
         return {
           ...bill,
           garden_amount: gardenAmount, // Usar el valor más reciente de garden_values
+          difference_amount: totalAmt - gardenAmount,
           meter_name: meter?.code_meter || bill.meter_id,
           meter_description: meter?.description || '', // Apellidos y Nombres
           meter_location: meter?.location || '',
@@ -451,14 +485,17 @@ const Billing: React.FC = () => {
       const { data: previousBillsData } = previousPeriod
         ? await supabase
             .from('bills')
-            .select('meter_id, total_amount, garden_amount')
+            .select('meter_id, total_amount, garden_amount, difference_amount')
             .eq('period', previousPeriod)
             .in('meter_id', meterIds)
         : { data: [] };
 
-      // Mapa: diferencia del mes anterior = total a pagar − valor jardín
+      // Mapa: diferencia del mes anterior (columna persistida o fórmula)
       const previousBillsDifferenceMap = new Map(
-        (previousBillsData || []).map(bill => [bill.meter_id, billDifferenceTotalMinusGarden(bill)])
+        (previousBillsData || []).map(bill => [
+          bill.meter_id,
+          billDifferenceForDebtCarry(bill),
+        ])
       );
 
       // Consulta batch: deudas manuales del período anterior
@@ -636,6 +673,7 @@ const Billing: React.FC = () => {
             mora_amount: moraAmount,
             garden_amount: gardenAmount,
             total_amount: totalAmount,
+            difference_amount: totalAmount - gardenAmount,
             payment_status: existingBill?.payment_status || 'PENDIENTE', // Preservar estado de pago
             observations: existingBill?.observations || undefined, // Preservar observaciones
             meter_name: meter.code_meter,
@@ -721,20 +759,26 @@ const Billing: React.FC = () => {
         billData.fines_mingas +
         billData.mora_amount;
 
+      const billDataWithDiff = {
+        ...billData,
+        difference_amount:
+          billData.total_amount - (billData.garden_amount || 0),
+      };
+
       // Verificar si existe
       const existingBill = bills.find(b => b.meter_id === editingRow && b.id);
       
       if (existingBill?.id) {
         const { error } = await supabase
           .from('bills')
-          .update(billData)
+          .update(billDataWithDiff)
           .eq('id', existingBill.id);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('bills')
-          .insert([billData]);
+          .insert([billDataWithDiff]);
 
         if (error) throw error;
       }
@@ -809,6 +853,8 @@ const Billing: React.FC = () => {
         mora_amount: bill.mora_amount,
         garden_amount: bill.garden_amount,
         total_amount: bill.total_amount,
+        difference_amount:
+          (bill.total_amount || 0) - (bill.garden_amount || 0),
         payment_status: bill.payment_status,
         observations: bill.observations || null,
         // NO incluir 'id' aquí - Supabase lo manejará automáticamente con onConflict
@@ -881,7 +927,11 @@ const Billing: React.FC = () => {
         'TOTAL A PAGAR': bill.total_amount.toFixed(2),
         'CONCEPTO': bill.payment_status,
         'VALOR JARDIN': bill.garden_amount.toFixed(2),
-        'DIFERENCIA': billDifferenceTotalMinusGarden(bill).toFixed(2),
+        'DIFERENCIA': (
+          bill.difference_amount != null && !Number.isNaN(Number(bill.difference_amount))
+            ? Number(bill.difference_amount)
+            : billDifferenceTotalMinusGarden(bill)
+        ).toFixed(2),
         'OBSERVACIONES OCTUBRE': bill.observations || '',
       };
     });
@@ -1167,7 +1217,9 @@ const Billing: React.FC = () => {
         // Obtener bills existentes del período
         const { data: existingBills } = await supabase
           .from('bills')
-          .select('id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_reuniones, fines_mingas, mora_amount')
+          .select(
+            'id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_reuniones, fines_mingas, mora_amount'
+          )
           .eq('period', selectedPeriod);
 
         if (existingBills && existingBills.length > 0) {
@@ -1229,6 +1281,8 @@ const Billing: React.FC = () => {
                 .update({
                   garden_amount: update.garden_amount,
                   total_amount: update.total_amount,
+                  difference_amount:
+                    update.total_amount - update.garden_amount,
                   payment_status: update.payment_status,
                   ...(update.payment_date && { payment_date: update.payment_date }),
                 })
@@ -1487,7 +1541,9 @@ const Billing: React.FC = () => {
         // Obtener bills existentes del período
         const { data: existingBills } = await supabase
           .from('bills')
-          .select('id, meter_id, fines_reuniones, previous_debt, tariff_total, fines_mingas, mora_amount')
+          .select(
+            'id, meter_id, fines_reuniones, previous_debt, tariff_total, fines_mingas, mora_amount, garden_amount'
+          )
           .eq('period', selectedPeriod);
 
         if (existingBills && existingBills.length > 0) {
@@ -1501,6 +1557,7 @@ const Billing: React.FC = () => {
             fines_mingas: number;
             mora_amount: number;
             total_amount: number;
+            difference_amount: number;
           }> = [];
           
           // Identificar bills que necesitan actualización
@@ -1532,6 +1589,8 @@ const Billing: React.FC = () => {
                 fines_mingas: newFinesMingas,
                 mora_amount: newMoraAmount,
                 total_amount: newTotalAmount,
+                difference_amount:
+                  newTotalAmount - (bill.garden_amount || 0),
               });
             }
           }
@@ -1549,6 +1608,7 @@ const Billing: React.FC = () => {
                   fines_mingas: update.fines_mingas,
                   mora_amount: update.mora_amount,
                   total_amount: update.total_amount,
+                  difference_amount: update.difference_amount,
                 })
                 .eq('id', update.id)
             );
@@ -1727,7 +1787,9 @@ const Billing: React.FC = () => {
 
       const { data: existingBills } = await supabase
         .from('bills')
-        .select('id, meter_id, tariff_total, fines_reuniones, fines_mingas, mora_amount')
+        .select(
+          'id, meter_id, tariff_total, fines_reuniones, fines_mingas, mora_amount, garden_amount'
+        )
         .eq('period', selectedPeriod);
 
       let billsSynced = 0;
@@ -1742,7 +1804,13 @@ const Billing: React.FC = () => {
               (bill.fines_reuniones || 0) +
               (bill.fines_mingas || 0) +
               (bill.mora_amount || 0);
-            return { id: bill.id, previous_debt: newPreviousDebt, total_amount: newTotalAmount };
+            const garden = bill.garden_amount || 0;
+            return {
+              id: bill.id,
+              previous_debt: newPreviousDebt,
+              total_amount: newTotalAmount,
+              difference_amount: newTotalAmount - garden,
+            };
           });
 
         if (billsToUpdate.length > 0) {
@@ -1752,6 +1820,7 @@ const Billing: React.FC = () => {
               .update({
                 previous_debt: update.previous_debt,
                 total_amount: update.total_amount,
+                difference_amount: update.difference_amount,
               })
               .eq('id', update.id)
           );
