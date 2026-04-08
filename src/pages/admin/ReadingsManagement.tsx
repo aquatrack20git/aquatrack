@@ -263,7 +263,7 @@ const ReadingsManagement: React.FC = () => {
         };
       }) || [];
 
-      // Ordenar todas las lecturas por periodo
+      // Ordenar por período (más reciente primero) y, a igual período, por código de medidor
       const sortedData = processedData.sort((a, b) => {
         const [mesA, añoA] = a.period.split(' ');
         const [mesB, añoB] = b.period.split(' ');
@@ -271,13 +271,17 @@ const ReadingsManagement: React.FC = () => {
         const numMesB = meses[mesB];
         const numAñoA = parseInt(añoA);
         const numAñoB = parseInt(añoB);
-        
-        // Primero comparar por año
+
         if (numAñoA !== numAñoB) {
-          return numAñoB - numAñoA; // Años más recientes primero
+          return numAñoB - numAñoA;
         }
-        // Si es el mismo año, comparar por mes
-        return numMesB - numMesA; // Meses más recientes primero
+        const monthCmp = numMesB - numMesA;
+        if (monthCmp !== 0) {
+          return monthCmp;
+        }
+        const codeA = a.meter?.code_meter ?? '';
+        const codeB = b.meter?.code_meter ?? '';
+        return codeA.localeCompare(codeB, 'es', { numeric: true, sensitivity: 'base' });
       });
 
       console.log('Periodos disponibles:', [...new Set(sortedData.map(r => r.period))]);
