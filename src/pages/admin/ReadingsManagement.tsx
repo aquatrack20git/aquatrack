@@ -51,6 +51,8 @@ interface Reading {
     location: string;
   };
   previous_reading?: number;
+  /** Id de la fila `readings` del período anterior (mismo medidor), si existe */
+  previous_reading_id?: number | null;
   consumption?: number;
 }
 
@@ -69,6 +71,7 @@ const ReadingsManagement: React.FC = () => {
   const [formData, setFormData] = useState({
     meter_id: '',
     value: '',
+    previous_reading: '',
     period: '',
     photo_url: '',
   });
@@ -125,6 +128,7 @@ const ReadingsManagement: React.FC = () => {
       setFormData({
         meter_id: '',
         value: '',
+        previous_reading: '',
         period: '',
         photo_url: '',
       });
@@ -254,6 +258,7 @@ const ReadingsManagement: React.FC = () => {
         return {
           ...reading,
           previous_reading: previousReading?.value,
+          previous_reading_id: previousReading?.id ?? null,
           consumption
         };
       }) || [];
@@ -292,14 +297,19 @@ const ReadingsManagement: React.FC = () => {
       setFormData({
         meter_id: reading.meter_id,
         value: reading.value.toString(),
+        previous_reading:
+          reading.previous_reading != null && reading.previous_reading !== undefined
+            ? String(reading.previous_reading)
+            : '',
         period: reading.period,
-        photo_url: reading.photo_url,
+        photo_url: reading.photo_url ?? '',
       });
     } else {
       setEditingReading(null);
       setFormData({
         meter_id: '',
         value: '',
+        previous_reading: '',
         period: '',
         photo_url: '',
       });
@@ -313,35 +323,69 @@ const ReadingsManagement: React.FC = () => {
     setFormData({
       meter_id: '',
       value: '',
+      previous_reading: '',
       period: '',
       photo_url: '',
     });
   };
 
+  const parseReadingValue = (raw: string): number => {
+    const parsed = parseFloat(raw);
+    if (Number.isNaN(parsed)) return NaN;
+    return Math.round(parsed);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const valActual = parseReadingValue(formData.value);
+      if (Number.isNaN(valActual)) {
+        showSnackbar('La lectura actual no es un número válido', 'error');
+        return;
+      }
+
       if (editingReading) {
-        const { error } = await supabase
+        const { error: errCurrent } = await supabase
           .from('readings')
           .update({
             meter_id: formData.meter_id,
-            value: parseFloat(formData.value),
+            value: valActual,
             period: formData.period,
-            photo_url: formData.photo_url,
+            photo_url: formData.photo_url || null,
           })
           .eq('id', editingReading.id);
 
-        if (error) throw error;
+        if (errCurrent) throw errCurrent;
+
+        if (editingReading.previous_reading_id != null) {
+          const rawPrev = formData.previous_reading.trim();
+          if (rawPrev !== '') {
+            const valPrev = parseReadingValue(rawPrev);
+            if (Number.isNaN(valPrev)) {
+              showSnackbar('La lectura anterior no es un número válido', 'error');
+              return;
+            }
+            const prevNum = Number(editingReading.previous_reading);
+            if (valPrev !== prevNum) {
+              const { error: errPrev } = await supabase
+                .from('readings')
+                .update({ value: valPrev })
+                .eq('id', editingReading.previous_reading_id);
+
+              if (errPrev) throw errPrev;
+            }
+          }
+        }
+
         showSnackbar('Lectura actualizada exitosamente');
       } else {
         const { error } = await supabase
           .from('readings')
           .insert([{
             meter_id: formData.meter_id,
-            value: parseFloat(formData.value),
+            value: valActual,
             period: formData.period,
-            photo_url: formData.photo_url,
+            photo_url: formData.photo_url || null,
             created_at: new Date().toISOString()
           }]);
 
@@ -783,15 +827,34 @@ const ReadingsManagement: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            {editingReading && (
+              <TextField
+                fullWidth
+                label="Lectura anterior"
+                type="number"
+                value={formData.previous_reading}
+                onChange={(e) =>
+                  setFormData({ ...formData, previous_reading: e.target.value })
+                }
+                margin="normal"
+                disabled={editingReading.previous_reading_id == null}
+                helperText={
+                  editingReading.previous_reading_id == null
+                    ? 'No hay lectura registrada en el período anterior para este medidor'
+                    : 'Corresponde al registro del período inmediato anterior (mismo medidor)'
+                }
+                inputProps={{ step: '1' }}
+              />
+            )}
             <TextField
               fullWidth
-              label="Valor"
+              label="Lectura actual"
               type="number"
               value={formData.value}
               onChange={(e) => setFormData({ ...formData, value: e.target.value })}
               margin="normal"
               required
-              inputProps={{ step: "0.01" }}
+              inputProps={{ step: '1' }}
             />
             <TextField
               fullWidth
