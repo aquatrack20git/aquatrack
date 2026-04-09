@@ -19,8 +19,6 @@ import {
   Typography,
 } from '@mui/material';
 import { PictureAsPdf as PdfIcon } from '@mui/icons-material';
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { supabase } from '../../config/supabase';
 
 interface Meter {
@@ -84,15 +82,6 @@ function sortBillsByPeriodDesc(rows: BillRow[]): BillRow[] {
 function fmtMoney(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—';
   return Number(n).toFixed(2);
-}
-
-function fmtPaymentDate(iso: string | null): string {
-  if (!iso) return '—';
-  try {
-    return format(parseISO(iso), 'dd/MM/yyyy HH:mm', { locale: es });
-  } catch {
-    return iso;
-  }
 }
 
 function escapeHtml(text: string): string {
@@ -219,7 +208,6 @@ const MeterBillingHistory: React.FC = () => {
                   <td style="text-align:right;font-weight:bold">${fmtMoney(row.total_amount)}</td>
                   <td style="text-align:right">${fmtMoney(billRowDifference(row))}</td>
                   <td>${escapeHtml(row.payment_status || 'PENDIENTE')}</td>
-                  <td>${escapeHtml(fmtPaymentDate(row.payment_date))}</td>
                   <td>${escapeHtml(row.observations || '—')}</td>
                 </tr>`;
       })
@@ -262,7 +250,6 @@ const MeterBillingHistory: React.FC = () => {
                 <th class="num">Total</th>
                 <th class="num">Diferencia</th>
                 <th>Estado</th>
-                <th>Fecha pago</th>
                 <th>Observaciones</th>
               </tr>
             </thead>
@@ -387,7 +374,6 @@ const MeterBillingHistory: React.FC = () => {
                     <TableCell align="right">Total</TableCell>
                     <TableCell align="right">Diferencia</TableCell>
                     <TableCell>Estado</TableCell>
-                    <TableCell>Fecha pago</TableCell>
                     <TableCell>Observaciones</TableCell>
                   </TableRow>
                 </TableHead>
@@ -418,7 +404,6 @@ const MeterBillingHistory: React.FC = () => {
                             variant={isPaid ? 'filled' : 'outlined'}
                           />
                         </TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtPaymentDate(row.payment_date)}</TableCell>
                         <TableCell sx={{ maxWidth: 220 }}>{row.observations || '—'}</TableCell>
                       </TableRow>
                     );
