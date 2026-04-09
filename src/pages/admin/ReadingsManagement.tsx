@@ -49,6 +49,7 @@ interface Reading {
   meter: {
     code_meter: string;
     location: string;
+    description?: string | null;
   };
   previous_reading?: number;
   /** Id de la fila `readings` del período anterior (mismo medidor), si existe */
@@ -59,6 +60,7 @@ interface Reading {
 interface Meter {
   code_meter: string;
   location: string;
+  description?: string | null;
 }
 
 const ReadingsManagement: React.FC = () => {
@@ -150,11 +152,13 @@ const ReadingsManagement: React.FC = () => {
     const filtered = readings.filter(reading => {
       const meterCode = reading.meter?.code_meter?.toLowerCase() || '';
       const meterLocation = reading.meter?.location?.toLowerCase() || '';
+      const meterDescription = (reading.meter?.description || '').toLowerCase();
       const searchTerm = filters.meter_id.toLowerCase();
       
       const matchesMeter = !filters.meter_id || 
         meterCode.includes(searchTerm) ||
-        meterLocation.includes(searchTerm);
+        meterLocation.includes(searchTerm) ||
+        meterDescription.includes(searchTerm);
       const matchesPeriod = !filters.period || reading.period.toUpperCase().includes(filters.period.toUpperCase());
       const matchesNovedades =
         !showNovedadesOnly ||
@@ -189,7 +193,7 @@ const ReadingsManagement: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('meters')
-        .select('code_meter, location')
+        .select('code_meter, location, description')
         .order('code_meter');
 
       if (error) throw error;
@@ -206,7 +210,7 @@ const ReadingsManagement: React.FC = () => {
         .from('readings')
         .select(`
           *,
-          meter:meters(code_meter, location)
+          meter:meters(code_meter, location, description)
         `)
         .order('id', { ascending: false });
 
@@ -454,6 +458,7 @@ const ReadingsManagement: React.FC = () => {
     // Preparar los datos para exportar
     const exportData = filteredReadings.map(reading => ({
       'Medidor': reading.meter.code_meter,
+      'Nombres y apellidos': reading.meter.description?.trim() || '—',
       'Lectura Anterior': reading.previous_reading || '-',
       'Lectura Actual': reading.value,
       'Consumo': reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-',
@@ -530,6 +535,7 @@ const ReadingsManagement: React.FC = () => {
     // Obtener los datos filtrados
     const data = filteredReadings.map(reading => ({
       medidor: reading.meter?.code_meter || 'Medidor no encontrado',
+      nombres: reading.meter?.description?.trim() || '—',
       lecturaAnterior: reading.previous_reading || '-',
       lecturaActual: reading.value,
       consumo: reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-',
@@ -549,6 +555,7 @@ const ReadingsManagement: React.FC = () => {
           <thead>
             <tr>
               <th>Medidor</th>
+              <th>Nombres y apellidos</th>
               <th>Lectura Anterior</th>
               <th>Lectura Actual</th>
               <th>Consumo</th>
@@ -561,6 +568,7 @@ const ReadingsManagement: React.FC = () => {
             ${data.map(row => `
               <tr>
                 <td>${row.medidor}</td>
+                <td>${row.nombres}</td>
                 <td>${row.lecturaAnterior}</td>
                 <td>${row.lecturaActual}</td>
                 <td>${row.consumo}</td>
@@ -696,7 +704,7 @@ const ReadingsManagement: React.FC = () => {
             label="Buscar Medidor"
             value={filters.meter_id}
             onChange={(e) => setFilters({ ...filters, meter_id: e.target.value })}
-            placeholder="Buscar por código o ubicación"
+            placeholder="Buscar por código, ubicación o nombres"
             sx={{ minWidth: 200 }}
           />
           <FormControl sx={{ minWidth: 200 }}>
@@ -748,6 +756,7 @@ const ReadingsManagement: React.FC = () => {
           <TableHead>
             <TableRow>
               <TableCell>Medidor</TableCell>
+              <TableCell>Nombres y apellidos</TableCell>
               <TableCell>Lectura Anterior</TableCell>
               <TableCell>Lectura Actual</TableCell>
               <TableCell>Consumo</TableCell>
@@ -763,6 +772,9 @@ const ReadingsManagement: React.FC = () => {
               .map((reading) => (
                 <TableRow key={reading.id}>
                   <TableCell>{reading.meter?.code_meter || 'Medidor no encontrado'}</TableCell>
+                  <TableCell sx={{ maxWidth: 260 }}>
+                    {reading.meter?.description?.trim() || '—'}
+                  </TableCell>
                   <TableCell>{reading.previous_reading || '-'}</TableCell>
                   <TableCell>{reading.value}</TableCell>
                   <TableCell>{reading.consumption !== null && reading.consumption !== undefined ? reading.consumption : '-'}</TableCell>
