@@ -144,22 +144,38 @@ function billDifferenceTotalMinusGarden(
   return (bill.total_amount || 0) - (bill.garden_amount || 0);
 }
 
+/**
+ * Diferencia a mostrar/persistir: si valor jardín &gt; 0 → 0; si no, usa valor guardado o total − jardín.
+ */
+function computedDifferenceAmount(
+  total_amount: number,
+  garden_amount: number,
+  storedDifference?: number | null
+): number {
+  const g = Number(garden_amount ?? 0);
+  if (g > 0) {
+    return 0;
+  }
+  if (
+    storedDifference != null &&
+    !Number.isNaN(Number(storedDifference))
+  ) {
+    return Number(storedDifference);
+  }
+  return (Number(total_amount) || 0) - g;
+}
+
 /** Para arrastre de deuda: usa columna guardada si existe, si no la fórmula. */
 function billDifferenceForDebtCarry(bill: {
   difference_amount?: number | null;
   total_amount?: number | null;
   garden_amount?: number | null;
 }): number {
-  if (
-    bill.difference_amount != null &&
-    !Number.isNaN(Number(bill.difference_amount))
-  ) {
-    return Number(bill.difference_amount);
-  }
-  return billDifferenceTotalMinusGarden({
-    total_amount: bill.total_amount ?? 0,
-    garden_amount: bill.garden_amount ?? 0,
-  });
+  return computedDifferenceAmount(
+    Number(bill.total_amount ?? 0),
+    Number(bill.garden_amount ?? 0),
+    bill.difference_amount
+  );
 }
 
 /** Total a pagar = deuda + cobro + multas reuniones + multas mingas + mora (sin jardín). */
@@ -204,7 +220,9 @@ function totalAndDifferenceFromMergedParts(
   parts: ReturnType<typeof mergeEditBillParts>
 ): { total_amount: number; difference_amount: number } {
   const total_amount = computeBillTotalFromParts(parts);
-  const difference_amount = total_amount - (parts.garden_amount || 0);
+  const g = parts.garden_amount || 0;
+  const difference_amount =
+    g > 0 ? 0 : total_amount - g;
   return { total_amount, difference_amount };
 }
 
@@ -409,7 +427,11 @@ const Billing: React.FC = () => {
           billsToUpdate.push({
             id: bill.id,
             garden_amount: gardenAmount,
-            difference_amount: totalAmt - gardenAmount,
+            difference_amount: computedDifferenceAmount(
+              totalAmt,
+              gardenAmount,
+              null
+            ),
           });
         }
       }
@@ -750,7 +772,11 @@ const Billing: React.FC = () => {
             mora_amount: moraAmount,
             garden_amount: gardenAmount,
             total_amount: totalAmount,
-            difference_amount: totalAmount - gardenAmount,
+            difference_amount: computedDifferenceAmount(
+              totalAmount,
+              gardenAmount,
+              null
+            ),
             payment_status: existingBill?.payment_status || 'PENDIENTE', // Preservar estado de pago
             observations: existingBill?.observations || undefined, // Preservar observaciones
             meter_name: meter.code_meter,
@@ -841,10 +867,13 @@ const Billing: React.FC = () => {
         editData.total_amount !== undefined && editData.total_amount !== null
           ? Number(editData.total_amount)
           : totalFromParts;
+      const gardenForDiff = editData.garden_amount ?? rowBill.garden_amount ?? 0;
       const difference_amount =
-        editData.difference_amount !== undefined && editData.difference_amount !== null
-          ? Number(editData.difference_amount)
-          : diffFromParts;
+        gardenForDiff > 0
+          ? 0
+          : editData.difference_amount !== undefined && editData.difference_amount !== null
+            ? Number(editData.difference_amount)
+            : diffFromParts;
 
       const billDataWithDiff = {
         ...billData,
@@ -940,10 +969,11 @@ const Billing: React.FC = () => {
         mora_amount: bill.mora_amount,
         garden_amount: bill.garden_amount,
         total_amount: bill.total_amount,
-        difference_amount:
-          bill.difference_amount != null && !Number.isNaN(Number(bill.difference_amount))
-            ? Number(bill.difference_amount)
-            : (bill.total_amount || 0) - (bill.garden_amount || 0),
+        difference_amount: computedDifferenceAmount(
+          bill.total_amount,
+          bill.garden_amount ?? 0,
+          bill.difference_amount
+        ),
         payment_status: bill.payment_status,
         observations: bill.observations || null,
         // NO incluir 'id' aquí - Supabase lo manejará automáticamente con onConflict
@@ -1242,8 +1272,11 @@ const Billing: React.FC = () => {
         const garden_amount = idxJardin >= 0 ? parseExcelNumber(cell(idxJardin)) : 0;
         const diffParsed =
           idxDif >= 0 ? parseExcelNumberOrNull(cell(idxDif)) : null;
-        const difference_amount =
-          diffParsed !== null ? diffParsed : total_amount - garden_amount;
+        const difference_amount = computedDifferenceAmount(
+          total_amount,
+          garden_amount,
+          diffParsed !== null ? diffParsed : null
+        );
 
         const rawConcepto =
           idxConcepto >= 0 ? String(cell(idxConcepto) ?? '').trim() : '';
@@ -1656,8 +1689,11 @@ const Billing: React.FC = () => {
                 .update({
                   garden_amount: update.garden_amount,
                   total_amount: update.total_amount,
-                  difference_amount:
-                    update.total_amount - update.garden_amount,
+                  difference_amount: computedDifferenceAmount(
+                    update.total_amount,
+                    update.garden_amount,
+                    null
+                  ),
                   payment_status: update.payment_status,
                   ...(update.payment_date && { payment_date: update.payment_date }),
                 })
@@ -1964,8 +2000,11 @@ const Billing: React.FC = () => {
                 fines_mingas: newFinesMingas,
                 mora_amount: newMoraAmount,
                 total_amount: newTotalAmount,
-                difference_amount:
-                  newTotalAmount - (bill.garden_amount || 0),
+                difference_amount: computedDifferenceAmount(
+                  newTotalAmount,
+                  bill.garden_amount || 0,
+                  null
+                ),
               });
             }
           }
@@ -2184,7 +2223,11 @@ const Billing: React.FC = () => {
               id: bill.id,
               previous_debt: newPreviousDebt,
               total_amount: newTotalAmount,
-              difference_amount: newTotalAmount - garden,
+              difference_amount: computedDifferenceAmount(
+                newTotalAmount,
+                garden,
+                null
+              ),
             };
           });
 
