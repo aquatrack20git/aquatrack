@@ -130,6 +130,8 @@ interface BillRow extends Bill {
   meter_name?: string;
   meter_description?: string; // Apellidos y Nombres (description del medidor)
   meter_location?: string;
+  /** Total a pagar de la factura del mismo medidor en el período anterior (solo UI) */
+  previous_period_total?: number | null;
   isEditing?: boolean;
 }
 
@@ -467,6 +469,21 @@ const Billing: React.FC = () => {
       // Filtrar bills para mostrar solo los de medidores activos
       const activeBills = billsData.filter(bill => activeMeterIds.has(bill.meter_id));
 
+      const prevPeriodLabel = getPreviousPeriod(selectedPeriod);
+      let previousPeriodTotalByMeter = new Map<string, number>();
+      if (prevPeriodLabel) {
+        const { data: prevBillsRows } = await supabase
+          .from('bills')
+          .select('meter_id, total_amount')
+          .eq('period', prevPeriodLabel);
+        previousPeriodTotalByMeter = new Map(
+          (prevBillsRows || []).map((row) => [
+            row.meter_id,
+            Number(row.total_amount) || 0,
+          ])
+        );
+      }
+
       // Enriquecer con datos del medidor y jardín desde garden_values.
       // Diferencia: mostrar la persistida en BD si existe; si no, total − jardín (igual que sin importar).
       const enrichedBills = activeBills.map(bill => {
@@ -481,6 +498,9 @@ const Billing: React.FC = () => {
             total_amount: totalAmt,
             garden_amount: gardenAmount,
           }),
+          previous_period_total: previousPeriodTotalByMeter.has(bill.meter_id)
+            ? previousPeriodTotalByMeter.get(bill.meter_id) ?? null
+            : null,
           meter_name: meter?.code_meter || bill.meter_id,
           meter_description: meter?.description || '', // Apellidos y Nombres
           meter_location: meter?.location || '',
@@ -1039,6 +1059,10 @@ const Billing: React.FC = () => {
         '20-25': bill.range_21_25_amount.toFixed(2),
         '26-100': bill.range_26_plus_amount.toFixed(2),
         'DEUDA': bill.previous_debt.toFixed(2),
+        'TOTAL A PAGAR DEL MES ANTERIOR':
+          bill.previous_period_total != null
+            ? bill.previous_period_total.toFixed(2)
+            : '—',
         'COBRO OCTUBRE': bill.tariff_total.toFixed(2),
         'MULTAS REUNIONES': bill.fines_reuniones.toFixed(2),
         'MULTAS MINGAS': bill.fines_mingas.toFixed(2),
@@ -1067,6 +1091,7 @@ const Billing: React.FC = () => {
       { wch: 10 }, // 20-25
       { wch: 10 }, // 26-100
       { wch: 10 }, // DEUDA
+      { wch: 22 }, // TOTAL A PAGAR DEL MES ANTERIOR
       { wch: 15 }, // COBRO
       { wch: 15 }, // MULTAS REUNIONES
       { wch: 15 }, // MULTAS MINGAS
@@ -1626,7 +1651,7 @@ const Billing: React.FC = () => {
         const { data: existingBills } = await supabase
           .from('bills')
           .select(
-            'id, meter_id, payment_status, garden_amount, previous_debt, tariff_total, fines_reuniones, fines_mingas, mora_amount'
+            'id, meter_id, payment_status, garden_amount, tariff_total, fines_reuniones, fines_mingas, mora_amount'
           )
           .eq('period', selectedPeriod);
 
@@ -1635,9 +1660,22 @@ const Billing: React.FC = () => {
             gardenValuesData.map(gv => [gv.meter_id, gv.amount || 0])
           );
 
+          const prevPeriodForDebt = getPreviousPeriod(selectedPeriod);
+          const prevTotalsMap = new Map<string, number>();
+          if (prevPeriodForDebt) {
+            const { data: prevBillsForDebt } = await supabase
+              .from('bills')
+              .select('meter_id, total_amount')
+              .eq('period', prevPeriodForDebt);
+            for (const row of prevBillsForDebt || []) {
+              prevTotalsMap.set(row.meter_id, Number(row.total_amount) || 0);
+            }
+          }
+
           const billsToUpdate: Array<{
             id: number;
             garden_amount: number;
+            previous_debt: number;
             total_amount: number;
             payment_status: string;
             payment_date?: string;
@@ -1646,12 +1684,14 @@ const Billing: React.FC = () => {
           // Identificar bills que necesitan actualización
           for (const bill of existingBills) {
             const newGardenAmount = gardenValuesMap.get(bill.meter_id) || 0;
+            const prevTotal = prevTotalsMap.get(bill.meter_id) ?? 0;
+            const newPreviousDebt = Math.max(0, prevTotal - newGardenAmount);
             
             // Actualizar todos los bills (ya que todos fueron puestos en PENDIENTE)
-            // Recalcular total_amount: previous_debt + tariff_total + fines_reuniones + fines_mingas + mora_amount
-            // (garden_amount no se suma al total, solo se registra)
+            // DEUDA = total a pagar del mes anterior − valor jardín (no negativa)
+            // total_amount = previous_debt + tariff_total + fines + mora (jardín no suma al total)
             const newTotalAmount = 
-              (bill.previous_debt || 0) +
+              newPreviousDebt +
               (bill.tariff_total || 0) +
               (bill.fines_reuniones || 0) +
               (bill.fines_mingas || 0) +
@@ -1660,12 +1700,14 @@ const Billing: React.FC = () => {
             const updateData: {
               id: number;
               garden_amount: number;
+              previous_debt: number;
               total_amount: number;
               payment_status: string;
               payment_date?: string;
             } = {
               id: bill.id,
               garden_amount: newGardenAmount,
+              previous_debt: newPreviousDebt,
               total_amount: newTotalAmount,
               payment_status: newGardenAmount > 0 ? 'ACREDITADO' : 'PENDIENTE',
             };
@@ -1688,6 +1730,7 @@ const Billing: React.FC = () => {
                 .from('bills')
                 .update({
                   garden_amount: update.garden_amount,
+                  previous_debt: update.previous_debt,
                   total_amount: update.total_amount,
                   difference_amount: computedDifferenceAmount(
                     update.total_amount,
@@ -2468,6 +2511,9 @@ const Billing: React.FC = () => {
                   <TableCell>20-25</TableCell>
                   <TableCell>26-100</TableCell>
                   <TableCell>DEUDA</TableCell>
+                  <TableCell sx={{ maxWidth: 140, whiteSpace: 'normal', lineHeight: 1.2 }}>
+                    TOTAL A PAGAR DEL MES ANTERIOR
+                  </TableCell>
                   <TableCell>COBRO</TableCell>
                   <TableCell>MULTAS REUNIONES</TableCell>
                   <TableCell>MULTAS MINGAS</TableCell>
@@ -2601,6 +2647,11 @@ const Billing: React.FC = () => {
                       ) : (
                         `$${bill.previous_debt.toFixed(2)}`
                       )}
+                    </TableCell>
+                    <TableCell>
+                      {bill.previous_period_total != null
+                        ? `$${bill.previous_period_total.toFixed(2)}`
+                        : '—'}
                     </TableCell>
                     <TableCell>${bill.tariff_total.toFixed(2)}</TableCell>
                     <TableCell>
