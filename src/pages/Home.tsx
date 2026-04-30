@@ -59,25 +59,6 @@ interface PendingComment {
   timestamp: number;
 }
 
-/** Consola detallada: entorno desarrollo o `localStorage.setItem('AQUATRACK_SYNC_DEBUG','1')` y recarga. */
-function isAquaTrackSyncDebug(): boolean {
-  try {
-    return Boolean(import.meta.env?.DEV) || localStorage.getItem('AQUATRACK_SYNC_DEBUG') === '1';
-  } catch {
-    return Boolean(import.meta.env?.DEV);
-  }
-}
-
-function aquaTrackSyncLog(...args: unknown[]) {
-  if (isAquaTrackSyncDebug()) {
-    console.log('[AquaTrack sync]', ...args);
-  }
-}
-
-function aquaTrackSyncWarn(...args: unknown[]) {
-  console.warn('[AquaTrack sync]', ...args);
-}
-
 const Home: React.FC = () => {
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB en bytes
   const [meterCode, setMeterCode] = useState('');
@@ -142,9 +123,6 @@ const Home: React.FC = () => {
           return photo;
         });
         setPendingPhotos(processedPhotos);
-        aquaTrackSyncLog(
-          `Carga inicial: ${processedPhotos.length} foto(s) pendiente(s) desde localStorage`
-        );
       } catch (error) {
         console.error('Error al cargar fotos pendientes:', error);
         showSnackbar('Error al cargar las fotos pendientes. Se reiniciará el almacenamiento local.', 'error');
@@ -157,9 +135,6 @@ const Home: React.FC = () => {
       try {
         const parsedReadings = JSON.parse(savedReadings);
         setPendingReadings(parsedReadings);
-        aquaTrackSyncLog(
-          `Carga inicial: ${parsedReadings.length} lectura(s) pendiente(s) desde localStorage`
-        );
       } catch (error) {
         console.error('Error al cargar lecturas pendientes:', error);
       }
@@ -200,26 +175,9 @@ const Home: React.FC = () => {
       });
 
       // Guardar los datos una vez que se hayan convertido todas las fotos
-      Promise.all(photosToSave)
-        .then(processedPhotos => {
-          try {
-            localStorage.setItem('pendingPhotos', JSON.stringify(processedPhotos));
-            aquaTrackSyncLog(
-              `localStorage pendingPhotos guardado (${processedPhotos.length} registro[s])`
-            );
-          } catch (e: unknown) {
-            const name = e instanceof DOMException ? e.name : '';
-            aquaTrackSyncWarn(
-              'No se pudieron guardar fotos pendientes en localStorage (¿cuota excedida?).',
-              name,
-              e
-            );
-            throw e;
-          }
-        })
-        .catch((err: unknown) => {
-          aquaTrackSyncWarn('Fallo al procesar/guardar pendingPhotos (async)', err);
-        });
+      Promise.all(photosToSave).then(processedPhotos => {
+        localStorage.setItem('pendingPhotos', JSON.stringify(processedPhotos));
+      });
 
       localStorage.setItem('pendingReadings', JSON.stringify(pendingReadings));
       localStorage.setItem('pendingComments', JSON.stringify(pendingComments));
@@ -474,7 +432,6 @@ const Home: React.FC = () => {
     let failedComments: { meterCode: string; timestamp: number; error: string }[] = [];
     let successfullySyncedReadings: { meterCode: string; timestamp: number }[] = [];
     let successfullySyncedComments: { meterCode: string; timestamp: number }[] = [];
-    let readingsSyncedWithoutMatchedPhoto = 0;
 
     try {
       // Verificar conexión a Supabase antes de comenzar
@@ -487,47 +444,15 @@ const Home: React.FC = () => {
         throw new Error('Error de conexión con la base de datos. Por favor, intenta nuevamente más tarde.');
       }
 
-      const readingsSnapshot = [...pendingReadings];
-      const photosSnapshot = [...pendingPhotos];
-      aquaTrackSyncLog(
-        'Inicio sincronización:',
-        readingsSnapshot.length,
-        'lectura(s) pendiente(s),',
-        photosSnapshot.length,
-        'foto(s) pendiente(s)'
-      );
-      if (isAquaTrackSyncDebug() && photosSnapshot.length > 0) {
-        console.table(
-          photosSnapshot.map((p) => ({
-            meterCode: p.meterCode,
-            timestamp: p.timestamp,
-            fileKind:
-              p.file instanceof Blob
-                ? 'Blob'
-                : p.file && typeof p.file === 'object' && 'data' in p.file
-                  ? 'base64'
-                  : typeof p.file,
-          }))
-        );
-      }
-
       // Procesar cada lectura pendiente
-      for (const reading of readingsSnapshot) {
+      for (const reading of [...pendingReadings]) {
         let retryCount = 0;
         let success = false;
         let lastError = '';
-        let pendingPhoto = photosSnapshot.find(
-          p =>
-            p.meterCode === reading.meterCode && p.timestamp === reading.timestamp
+        let pendingPhoto = pendingPhotos.find(p => 
+          p.meterCode === reading.meterCode && 
+          p.timestamp === reading.timestamp
         );
-        if (!pendingPhoto) {
-          readingsSyncedWithoutMatchedPhoto++;
-          aquaTrackSyncWarn(
-            `Lectura sin foto emparejada (no hay pendingPhoto con mismo medidor y timestamp). ` +
-              `medidor=${reading.meterCode} ts=${reading.timestamp}. ` +
-              `¿Guardaste con "Guardar lectura" offline (foto requerida)?`
-          );
-        }
 
         while (retryCount < 3 && !success) {
           try {
@@ -635,20 +560,7 @@ const Home: React.FC = () => {
                 });
 
               } catch (error: any) {
-                const msg =
-                  error?.message ||
-                  error?.error_description ||
-                  String(error);
                 console.error('Error al subir foto:', error);
-                failedPhotos.push({
-                  meterCode: reading.meterCode,
-                  timestamp: reading.timestamp,
-                  error: msg,
-                });
-                aquaTrackSyncWarn(
-                  `Fallo al subir foto medidor ${reading.meterCode} (ts=${reading.timestamp}):`,
-                  msg
-                );
                 // Continuar con la sincronización de la lectura incluso si falla la foto
                 photoUrl = reading.photoUrl || '';
               }
@@ -715,10 +627,6 @@ const Home: React.FC = () => {
               meterCode: reading.meterCode,
               timestamp: reading.timestamp
             });
-            aquaTrackSyncLog(
-              `${reading.meterCode} (${reading.timestamp}): lectura OK,`,
-              photoUrl ? `photo_url cargada (${photoUrl.length} caracteres)` : 'photo_url vacía'
-            );
             showSnackbar(`Lectura sincronizada: ${reading.meterCode}`, 'success');
 
           } catch (error: any) {
@@ -742,14 +650,6 @@ const Home: React.FC = () => {
           showSnackbar(`No se pudo sincronizar la lectura del medidor ${reading.meterCode}: ${lastError}`, 'warning');
         }
       }
-
-      aquaTrackSyncLog('Resumen lecturas pendientes procesadas:', {
-        syncedReadings,
-        syncedPhotos,
-        fotoFallidaUpload: failedPhotos.length,
-        lecturasSinPendingPhotoEmparejada: readingsSyncedWithoutMatchedPhoto,
-        lecturasFallidas: failedReadings.length,
-      });
 
       // Sincronizar comentarios pendientes
       for (const comment of [...pendingComments]) {
@@ -915,49 +815,27 @@ const Home: React.FC = () => {
         showSnackbar(`¡Sincronización exitosa! Se sincronizaron ${message}`, 'success');
       }
 
-      if (failedPhotos.length > 0) {
-        showSnackbar(
-          `${failedPhotos.length} foto(s) no se pudieron subir a Storage (las lecturas pueden haberse guardado sin URL). Detalle en consola [AquaTrack sync].`,
-          'warning'
-        );
-        aquaTrackSyncWarn(
-          `Resumen errores subida foto (${failedPhotos.length}):`,
-          failedPhotos
-        );
-      }
-
-      if (
-        readingsSyncedWithoutMatchedPhoto > 0 &&
-        failedPhotos.length === 0 &&
-        syncedReadings > 0
-      ) {
-        showSnackbar(
-          `${readingsSyncedWithoutMatchedPhoto} lectura(s) sin foto en cola (${readingsSyncedWithoutMatchedPhoto} sin URL esperada si no hay reintento). Revisa advertencias [AquaTrack sync] en consola.`,
-          'warning'
-        );
-      }
-
-      // Lecturas/comentarios con error (los fallos solo de foto ya se avisaron arriba)
-      if (errors > 0 || failedReadings.length > 0 || failedComments.length > 0) {
+      // Mostrar errores detallados si los hubo
+      if (errors > 0) {
         const errorDetails = [
+          failedPhotos.length > 0 && `Fotos: ${failedPhotos.length} error(es)`,
           failedReadings.length > 0 && `Lecturas: ${failedReadings.length} error(es)`,
           failedComments.length > 0 && `Comentarios: ${failedComments.length} error(es)`
         ].filter(Boolean).join(', ');
 
         showSnackbar(
-          `Incidencias en sincronización: ${errorDetails}${errors ? ` (${errors} reintento(s) agotado(s))` : ''}`,
+          `Se encontraron ${errors} error${errors !== 1 ? 'es' : ''} durante la sincronización. ${errorDetails}`,
           'warning'
         );
 
+        // Mostrar detalles específicos de errores
         const errorMessages = [
-          ...(failedPhotos.length > 0
-            ? failedPhotos.map(f => `Foto ${f.meterCode}: ${f.error}`)
-            : []),
+          ...failedPhotos.map(f => `Foto ${f.meterCode}: ${f.error}`),
           ...failedReadings.map(r => `Lectura ${r.meterCode}: ${r.error}`),
           ...failedComments.map(c => `Comentario ${c.meterCode}: ${c.error}`)
         ];
 
-        console.error('[AquaTrack sync] Detalle de errores:', errorMessages);
+        console.error('Detalles de errores:', errorMessages);
       }
 
       // Verificar estado final y limpiar registros huérfanos
