@@ -30,6 +30,10 @@ import {
 import { toast } from 'react-toastify';
 import { supabase } from '../config/supabase';
 import { getCurrentPeriod } from '../utils/periodUtils';
+import {
+  loadAllPendingPhotosIntoState,
+  persistPendingPhotosQueue,
+} from '../utils/pendingPhotoIDB';
 import banner from '../assets/images/banner.png';
 import sello from '../assets/images/sello.png';
 import JSZip from 'jszip';
@@ -68,6 +72,7 @@ const Home: React.FC = () => {
   const [isCommentDialogOpen, setIsCommentDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [photosRestored, setPhotosRestored] = useState(false);
   const [pendingReadings, setPendingReadings] = useState<PendingReading[]>([]);
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -92,44 +97,10 @@ const Home: React.FC = () => {
     };
   }, []);
 
-  // Cargar datos pendientes del localStorage al iniciar
+  // Cargar lecturas/comentarios desde localStorage al iniciar (fotos: IndexedDB aparte)
   useEffect(() => {
-    const savedPhotos = localStorage.getItem('pendingPhotos');
     const savedReadings = localStorage.getItem('pendingReadings');
     const savedComments = localStorage.getItem('pendingComments');
-    
-    if (savedPhotos) {
-      try {
-        const parsedPhotos = JSON.parse(savedPhotos);
-        // Convertir los datos del localStorage a objetos File válidos
-        const processedPhotos = parsedPhotos.map((photo: any) => {
-          if (photo.file && photo.file.data) {
-            // Si el archivo está en formato base64, convertirlo a Blob
-            const byteString = atob(photo.file.data.split(',')[1]);
-            const mimeString = photo.file.type || 'image/jpeg';
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            
-            for (let i = 0; i < byteString.length; i++) {
-              ia[i] = byteString.charCodeAt(i);
-            }
-            
-            const blob = new Blob([ab], { type: mimeString });
-            return {
-              ...photo,
-              file: blob
-            };
-          }
-          return photo;
-        });
-        setPendingPhotos(processedPhotos);
-      } catch (error) {
-        console.error('Error al cargar fotos pendientes:', error);
-        showSnackbar('Error al cargar las fotos pendientes. Se reiniciará el almacenamiento local.', 'error');
-        localStorage.removeItem('pendingPhotos');
-        setPendingPhotos([]);
-      }
-    }
 
     if (savedReadings) {
       try {
@@ -150,42 +121,56 @@ const Home: React.FC = () => {
     }
   }, []);
 
-  // Guardar datos pendientes en localStorage cuando cambien
+  // Fotos pendientes: IndexedDB + metadatos livianos (evita límite de tamaño de localStorage)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const loaded = await loadAllPendingPhotosIntoState();
+        if (alive) {
+          setPendingPhotos(loaded as PendingPhoto[]);
+        }
+      } catch (error) {
+        console.error('Error al cargar fotos pendientes desde IndexedDB:', error);
+        showSnackbar(
+          'No se pudieron recuperar las fotos guardadas offline. Si el problema continúa, vuelve a tomar las fotos.',
+          'error'
+        );
+      } finally {
+        if (alive) {
+          setPhotosRestored(true);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Guardar lecturas y comentarios en localStorage
   useEffect(() => {
     try {
-      // Convertir los archivos a base64 antes de guardar
-      const photosToSave = pendingPhotos.map(photo => {
-        if (photo.file instanceof Blob || photo.file instanceof File) {
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              resolve({
-                ...photo,
-                file: {
-                  type: photo.file instanceof Blob ? photo.file.type : 'image/jpeg',
-                  data: reader.result as string,
-                  name: photo.file instanceof File ? photo.file.name : `${photo.meterCode}_${Date.now()}.jpg`
-                }
-              });
-            };
-            reader.readAsDataURL(photo.file as Blob);
-          });
-        }
-        return photo;
-      });
-
-      // Guardar los datos una vez que se hayan convertido todas las fotos
-      Promise.all(photosToSave).then(processedPhotos => {
-        localStorage.setItem('pendingPhotos', JSON.stringify(processedPhotos));
-      });
-
       localStorage.setItem('pendingReadings', JSON.stringify(pendingReadings));
       localStorage.setItem('pendingComments', JSON.stringify(pendingComments));
     } catch (error) {
-      console.error('Error al guardar datos pendientes:', error);
-      showSnackbar('Error al guardar los datos pendientes. Intenta nuevamente.', 'error');
+      console.error('Error al guardar lecturas/comentarios pendientes:', error);
     }
-  }, [pendingPhotos, pendingReadings, pendingComments]);
+  }, [pendingReadings, pendingComments]);
+
+  // Persistir cola de fotos en IndexedDB (debounce: muchas capturas seguidas)
+  useEffect(() => {
+    if (!photosRestored) return;
+    const t = window.setTimeout(() => {
+      persistPendingPhotosQueue(pendingPhotos).catch((err) => {
+        console.error('Error al guardar fotos offline en IndexedDB:', err);
+        showSnackbar(
+          'No hay espacio suficiente o falló el guardado de fotos. Libera espacio en el dispositivo y reintenta.',
+          'error'
+        );
+      });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [pendingPhotos, photosRestored]);
 
   const showSnackbar = (message: string, severity: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setSnackbar({
@@ -344,31 +329,28 @@ const Home: React.FC = () => {
         setPhoto(null);
         showSnackbar('¡Listo! Tu lectura se guardó correctamente');
       } else {
-        // Guardar foto localmente primero
-        const base64File = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(photo);
-        });
+        if (!photosRestored) {
+          showSnackbar(
+            'Espera un momento a que terminen de cargarse los registros locales guardados.',
+            'info'
+          );
+          setIsLoading(false);
+          return;
+        }
 
         const newPendingPhoto: PendingPhoto = {
           meterCode: meterCode.trim(),
-          file: {
-            type: photo.type,
-            data: base64File,
-            name: `${meterCode.trim()}_${timestamp}.${photo.type.split('/')[1]}`
-          },
-          timestamp: timestamp // Usar el mismo timestamp
+          file: photo,
+          timestamp,
         };
-        
-        // Guardar lectura localmente
+
         const newReading: PendingReading = {
           meterCode: meterCode.trim(),
           value,
           period,
-          timestamp: timestamp, // Usar el mismo timestamp
-          photo: photo,
-          photoUrl: URL.createObjectURL(photo)
+          timestamp,
+          photo,
+          photoUrl: URL.createObjectURL(photo),
         };
 
         setPendingPhotos(prev => [...prev, newPendingPhoto]);
@@ -388,6 +370,10 @@ const Home: React.FC = () => {
   };
 
   const saveReadingLocally = () => {
+    if (!photosRestored) {
+      showSnackbar('Espera un momento a que terminen de cargarse los registros locales.', 'info');
+      return;
+    }
     if (!meterCode.trim() || !readingValue.trim()) {
       showSnackbar('Por favor, completa el código del medidor y el valor de la lectura', 'info');
       return;
@@ -418,6 +404,14 @@ const Home: React.FC = () => {
   const handleSync = async () => {
     if (!isOnline) {
       showSnackbar('No hay conexión a internet. Tus datos se guardarán localmente', 'info');
+      return;
+    }
+
+    if (!photosRestored) {
+      showSnackbar(
+        'Espera a que carguen los datos locales antes de sincronizar.',
+        'info'
+      );
       return;
     }
 
@@ -549,15 +543,7 @@ const Home: React.FC = () => {
                   timestamp: reading.timestamp
                 });
 
-                // Eliminar la foto pendiente inmediatamente después de subirla exitosamente
-                setPendingPhotos(prev => {
-                  const updated = prev.filter(p => 
-                    p.meterCode !== reading.meterCode || 
-                    p.timestamp !== reading.timestamp
-                  );
-                  localStorage.setItem('pendingPhotos', JSON.stringify(updated));
-                  return updated;
-                });
+                await new Promise((resolve) => setTimeout(resolve, 200));
 
               } catch (error: any) {
                 console.error('Error al subir foto:', error);
@@ -774,7 +760,6 @@ const Home: React.FC = () => {
                   sp.timestamp === p.timestamp
                 )
               );
-              localStorage.setItem('pendingPhotos', JSON.stringify(updated));
               resolve();
               return updated;
             });
@@ -859,7 +844,6 @@ const Home: React.FC = () => {
                 reading.timestamp === photo.timestamp
               )
             );
-            localStorage.setItem('pendingPhotos', JSON.stringify(updated));
             resolve();
             return updated;
           });
